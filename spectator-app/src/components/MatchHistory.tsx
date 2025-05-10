@@ -17,10 +17,10 @@ export default function MatchHistory({
   if (recentMatches.length === 0) {
     return (
       <div className="bg-white rounded-lg shadow-sm p-6 text-center">
-        <h2 className="text-xl font-semibold text-gray-800 mb-2">
+        <h2 className="text-xl font-semibold text-gray-900 mb-2">
           Aucun match terminé
         </h2>
-        <p className="text-gray-600">
+        <p className="text-gray-800">
           Les résultats des matchs apparaîtront ici dès qu&apos;ils seront
           terminés.
         </p>
@@ -32,7 +32,7 @@ export default function MatchHistory({
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-gray-900">
         Résultats récents{" "}
-        <span className="text-sm font-normal text-gray-500">
+        <span className="text-sm font-medium text-gray-700">
           ({recentMatches.length})
         </span>
       </h2>
@@ -54,13 +54,13 @@ export default function MatchHistory({
           return (
             <div
               key={match.id}
-              className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-100"
+              className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200"
             >
-              <div className="bg-gray-50 px-4 py-3 flex justify-between items-center border-b border-gray-100">
-                <span className="text-sm font-medium text-gray-700">
+              <div className="bg-gray-50 px-4 py-3 flex justify-between items-center border-b border-gray-200">
+                <span className="text-sm font-bold text-gray-800">
                   Match #{match.matchNumber}
                 </span>
-                <span className="text-xs text-gray-500 font-mono">
+                <span className="text-xs font-medium text-gray-700">
                   {formatTime(match.endTime)}
                 </span>
               </div>
@@ -75,15 +75,15 @@ export default function MatchHistory({
                     <div
                       className={`${
                         winnerPosition === "A"
-                          ? "text-blue-700 underline"
-                          : "text-gray-700"
-                      } truncate`}
+                          ? "text-blue-800 underline font-extrabold"
+                          : "text-gray-800 font-semibold"
+                      } truncate text-lg`}
                     >
                       {getParticipantName(match, "A")}
                     </div>
                   </div>
 
-                  <div className="mx-4 text-gray-400 font-bold">VS</div>
+                  <div className="mx-4 text-gray-700 font-bold">VS</div>
 
                   <div
                     className={`flex-1 text-left ${
@@ -93,9 +93,9 @@ export default function MatchHistory({
                     <div
                       className={`${
                         winnerPosition === "B"
-                          ? "text-red-700 underline"
-                          : "text-gray-700"
-                      } truncate`}
+                          ? "text-red-800 underline font-extrabold"
+                          : "text-gray-800 font-semibold"
+                      } truncate text-lg`}
                     >
                       {getParticipantName(match, "B")}
                     </div>
@@ -107,7 +107,7 @@ export default function MatchHistory({
                     {match.rounds.map((round, idx) => (
                       <div
                         key={idx}
-                        className="bg-gray-100 px-2 py-1 rounded text-xs"
+                        className="bg-gray-200 px-3 py-1 rounded text-xs font-medium text-gray-900"
                       >
                         R{round.roundNumber}: {round.scoreA} - {round.scoreB}
                       </div>
@@ -118,7 +118,7 @@ export default function MatchHistory({
                 <div className="mt-3 text-center">
                   <Link
                     href={`/match/${match.id}`}
-                    className="inline-flex items-center text-sm text-blue-600 hover:text-blue-800"
+                    className="inline-flex items-center text-sm font-semibold text-blue-700 hover:text-blue-900"
                   >
                     Voir détails
                     <svg

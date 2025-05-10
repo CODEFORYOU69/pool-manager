@@ -96,7 +96,9 @@ export default function MatchDetails() {
         <div className="flex-grow flex items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-800 mx-auto mb-4"></div>
-            <p className="text-gray-500">Chargement des informations...</p>
+            <p className="text-gray-700 font-medium">
+              Chargement des informations...
+            </p>
           </div>
         </div>
       </div>
@@ -108,10 +110,13 @@ export default function MatchDetails() {
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <div className="flex-grow flex items-center justify-center">
           <div className="bg-red-50 border border-red-200 text-red-700 px-6 py-4 rounded-md max-w-lg mx-auto">
-            <h2 className="text-lg font-semibold mb-2">Erreur</h2>
-            <p>{error}</p>
+            <h2 className="text-lg font-bold mb-2">Erreur</h2>
+            <p className="text-red-800 font-medium">{error}</p>
             <div className="mt-4">
-              <Link href="/" className="text-blue-600 hover:underline">
+              <Link
+                href="/"
+                className="text-blue-700 hover:underline font-bold"
+              >
                 Retourner à l&apos;accueil
               </Link>
             </div>
@@ -125,13 +130,16 @@ export default function MatchDetails() {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <div className="flex-grow flex items-center justify-center">
-          <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-6 py-4 rounded-md max-w-lg mx-auto">
-            <h2 className="text-lg font-semibold mb-2">Match introuvable</h2>
-            <p>
+          <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-6 py-4 rounded-md max-w-lg mx-auto">
+            <h2 className="text-lg font-bold mb-2">Match introuvable</h2>
+            <p className="font-medium">
               Le match que vous recherchez n&apos;existe pas ou a été supprimé.
             </p>
             <div className="mt-4">
-              <Link href="/" className="text-blue-600 hover:underline">
+              <Link
+                href="/"
+                className="text-blue-700 hover:underline font-bold"
+              >
                 Retourner à l&apos;accueil
               </Link>
             </div>
@@ -145,12 +153,12 @@ export default function MatchDetails() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-blue-900 text-white shadow">
+      <header className="bg-blue-800 text-white shadow-lg">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex flex-col sm:flex-row justify-between items-center">
             <Link
               href="/"
-              className="mb-4 sm:mb-0 text-white hover:text-blue-200 flex items-center"
+              className="mb-4 sm:mb-0 text-white hover:text-blue-200 flex items-center font-medium"
             >
               <svg
                 className="w-5 h-5 mr-1"
@@ -169,11 +177,11 @@ export default function MatchDetails() {
               Retour à l&apos;accueil
             </Link>
 
-            <h1 className="text-2xl font-bold">
+            <h1 className="text-2xl font-extrabold">
               Match #{match.matchNumber || ""}
             </h1>
 
-            <div className="text-sm opacity-80 mt-2 sm:mt-0">
+            <div className="text-sm font-medium mt-2 sm:mt-0">
               Mise à jour: {formatTime(lastUpdate.toISOString())}
             </div>
           </div>
@@ -186,39 +194,45 @@ export default function MatchDetails() {
             <div className="bg-gray-50 px-6 py-4 border-b border-gray-200">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <span className="block text-xs text-gray-500">Statut</span>
+                  <span className="block text-xs font-bold text-gray-700">
+                    Statut
+                  </span>
                   <span
-                    className={`inline-block px-2 py-1 rounded text-xs font-medium ${statusInfo.color}`}
+                    className={`inline-block px-2 py-1 rounded text-xs font-bold ${statusInfo.color}`}
                   >
                     {statusInfo.text}
                   </span>
                 </div>
                 <div>
-                  <span className="block text-xs text-gray-500">Aire</span>
-                  <span className="font-medium">
+                  <span className="block text-xs font-bold text-gray-700">
+                    Aire
+                  </span>
+                  <span className="font-bold text-gray-900">
                     {match.areaNumber || match.area?.areaNumber || "N/A"}
                   </span>
                 </div>
                 <div>
-                  <span className="block text-xs text-gray-500">Date</span>
-                  <span className="font-medium">
+                  <span className="block text-xs font-bold text-gray-700">
+                    Date
+                  </span>
+                  <span className="font-bold text-gray-900">
                     {formatDate(match.startTime)}
                   </span>
                 </div>
                 <div>
-                  <span className="block text-xs text-gray-500">
+                  <span className="block text-xs font-bold text-gray-700">
                     Heure prévue
                   </span>
-                  <span className="font-medium">
+                  <span className="font-bold text-gray-900">
                     {formatTime(match.startTime)}
                   </span>
                 </div>
                 {match.status === "completed" && match.endTime && (
                   <div>
-                    <span className="block text-xs text-gray-500">
+                    <span className="block text-xs font-bold text-gray-700">
                       Heure de fin
                     </span>
-                    <span className="font-medium">
+                    <span className="font-bold text-gray-900">
                       {formatTime(match.endTime)}
                     </span>
                   </div>
@@ -248,24 +262,24 @@ export default function MatchDetails() {
                     >
                       <div className="flex items-center justify-between mb-3">
                         <span
-                          className={`px-2 py-1 rounded text-xs font-medium ${
+                          className={`px-2 py-1 rounded text-xs font-bold ${
                             position === "A"
-                              ? "bg-blue-100 text-blue-800"
-                              : "bg-red-100 text-red-800"
+                              ? "bg-blue-200 text-blue-900"
+                              : "bg-red-200 text-red-900"
                           }`}
                         >
                           Position {position}
                         </span>
                         {isWinner && (
-                          <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-medium">
+                          <span className="bg-yellow-200 text-yellow-900 px-2 py-1 rounded text-xs font-bold">
                             Vainqueur
                           </span>
                         )}
                       </div>
 
                       <h3
-                        className={`text-xl font-bold ${
-                          position === "A" ? "text-blue-700" : "text-red-700"
+                        className={`text-xl font-extrabold ${
+                          position === "A" ? "text-blue-800" : "text-red-800"
                         }`}
                       >
                         {getParticipantName(participant)}
@@ -274,20 +288,26 @@ export default function MatchDetails() {
                       {participant && (
                         <div className="mt-3 space-y-1 text-sm">
                           <div className="grid grid-cols-2">
-                            <span className="text-gray-500">Ligue:</span>
-                            <span className="font-medium">
+                            <span className="text-gray-700 font-bold">
+                              Ligue:
+                            </span>
+                            <span className="font-bold text-gray-900">
                               {participant.ligue || "N/A"}
                             </span>
                           </div>
                           <div className="grid grid-cols-2">
-                            <span className="text-gray-500">Âge:</span>
-                            <span className="font-medium">
+                            <span className="text-gray-700 font-bold">
+                              Âge:
+                            </span>
+                            <span className="font-bold text-gray-900">
                               {participant.age || "N/A"}
                             </span>
                           </div>
                           <div className="grid grid-cols-2">
-                            <span className="text-gray-500">Poids:</span>
-                            <span className="font-medium">
+                            <span className="text-gray-700 font-bold">
+                              Poids:
+                            </span>
+                            <span className="font-bold text-gray-900">
                               {participant.poids
                                 ? `${participant.poids} kg`
                                 : "N/A"}
@@ -304,7 +324,7 @@ export default function MatchDetails() {
                 match.rounds &&
                 match.rounds.length > 0 && (
                   <div className="mt-8">
-                    <h3 className="text-lg font-semibold mb-4 pb-2 border-b border-gray-200">
+                    <h3 className="text-lg font-bold mb-4 pb-2 border-b border-gray-200 text-gray-900">
                       Résultats par round
                     </h3>
 
@@ -316,10 +336,10 @@ export default function MatchDetails() {
                         return (
                           <div
                             key={index}
-                            className="border border-gray-200 rounded-lg overflow-hidden"
+                            className="border border-gray-200 rounded-lg overflow-hidden shadow-sm"
                           >
                             <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
-                              <span className="font-medium">
+                              <span className="font-bold text-gray-900">
                                 Round {round.roundNumber}
                               </span>
                             </div>
@@ -327,34 +347,36 @@ export default function MatchDetails() {
                               <div className="flex items-center justify-between">
                                 <div
                                   className={`flex-1 text-right ${
-                                    isBlueWinner ? "font-bold" : ""
+                                    isBlueWinner
+                                      ? "font-extrabold"
+                                      : "font-bold"
                                   }`}
                                 >
                                   <div
                                     className={`text-2xl ${
                                       isBlueWinner
-                                        ? "text-blue-600"
-                                        : "text-gray-700"
+                                        ? "text-blue-800"
+                                        : "text-gray-800"
                                     }`}
                                   >
                                     {round.scoreA}
                                   </div>
                                 </div>
 
-                                <div className="mx-3 text-gray-400 text-xl">
+                                <div className="mx-3 text-gray-700 text-xl font-bold">
                                   -
                                 </div>
 
                                 <div
                                   className={`flex-1 text-left ${
-                                    isRedWinner ? "font-bold" : ""
+                                    isRedWinner ? "font-extrabold" : "font-bold"
                                   }`}
                                 >
                                   <div
                                     className={`text-2xl ${
                                       isRedWinner
-                                        ? "text-red-600"
-                                        : "text-gray-700"
+                                        ? "text-red-800"
+                                        : "text-gray-800"
                                     }`}
                                   >
                                     {round.scoreB}
@@ -365,10 +387,10 @@ export default function MatchDetails() {
                               {round.winnerPosition && (
                                 <div className="text-center mt-2 text-sm">
                                   <span
-                                    className={`inline-block px-2 py-1 rounded ${
+                                    className={`inline-block px-2 py-1 rounded font-bold ${
                                       round.winnerPosition === "A"
-                                        ? "bg-blue-100 text-blue-800"
-                                        : "bg-red-100 text-red-800"
+                                        ? "bg-blue-200 text-blue-900"
+                                        : "bg-red-200 text-red-900"
                                     }`}
                                   >
                                     Vainqueur: {round.winnerPosition}
@@ -389,7 +411,7 @@ export default function MatchDetails() {
 
       <footer className="bg-gray-800 text-white py-6">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <p className="text-center text-sm">
+          <p className="text-center text-sm font-medium">
             Taekwondo Tournament Manager - Vue Spectateur -{" "}
             {new Date().getFullYear()}
           </p>

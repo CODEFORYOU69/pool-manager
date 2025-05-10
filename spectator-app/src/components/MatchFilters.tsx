@@ -29,13 +29,13 @@ export default function MatchFilters({
           <div>
             <label
               htmlFor="areaFilter"
-              className="block text-sm font-medium text-gray-700 mb-1"
+              className="block text-sm font-bold text-gray-800 mb-1"
             >
               Aire
             </label>
             <select
               id="areaFilter"
-              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900 font-medium"
               value={filters.areaNumber}
               onChange={(e) => onFilterChange({ areaNumber: e.target.value })}
             >
@@ -52,14 +52,14 @@ export default function MatchFilters({
           <div>
             <label
               htmlFor="nameFilter"
-              className="block text-sm font-medium text-gray-700 mb-1"
+              className="block text-sm font-bold text-gray-800 mb-1"
             >
               Nom du participant
             </label>
             <input
               type="text"
               id="nameFilter"
-              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900 font-medium"
               placeholder="Nom ou prénom..."
               value={filters.participantName}
               onChange={(e) =>
@@ -72,13 +72,13 @@ export default function MatchFilters({
           <div>
             <label
               htmlFor="ligueFilter"
-              className="block text-sm font-medium text-gray-700 mb-1"
+              className="block text-sm font-bold text-gray-800 mb-1"
             >
               Ligue
             </label>
             <select
               id="ligueFilter"
-              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900 font-medium"
               value={filters.ligue}
               onChange={(e) => onFilterChange({ ligue: e.target.value })}
             >
@@ -103,7 +103,7 @@ export default function MatchFilters({
                   ligue: "",
                 })
               }
-              className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-bold rounded-md text-red-800 bg-red-200 hover:bg-red-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
