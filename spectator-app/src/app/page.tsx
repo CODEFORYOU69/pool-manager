@@ -14,6 +14,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
 
 export default function Home() {
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [competitionId, setCompetitionId] = useState<string | null>(null);
@@ -69,7 +70,13 @@ export default function Home() {
 
     const fetchMatches = async () => {
       try {
-        setLoading(true);
+        // Lors du premier chargement, on affiche l'écran de chargement complet
+        // Pour les rafraîchissements suivants, on utilise juste l'indicateur de rafraîchissement
+        if (!loading) {
+          setRefreshing(true);
+        } else {
+          setLoading(true);
+        }
 
         // Récupérer les matchs pour la compétition sélectionnée
         const response = await fetch(
@@ -82,51 +89,136 @@ export default function Home() {
 
         const matches = (await response.json()) as Match[];
 
-        // Organiser les matchs par aire
-        const matchesByArea: { [key: number]: Match[] } = {};
+        // Débogage plus détaillé : examiner les 10 premiers matchs en détail
+        console.log("Détails des 10 premiers matchs:");
+        matches.slice(0, 10).forEach((match, index) => {
+          // Vérification détaillée de la structure du match
+          const areaInfo = {
+            areaFromDirectProperty: match.areaNumber,
+            areaFromObject: match.area ? match.area.areaNumber : undefined,
+            areaTypeCheck: {
+              directPropertyType: typeof match.areaNumber,
+              objectExists: match.area !== undefined && match.area !== null,
+              objectPropertyType: match.area
+                ? typeof match.area.areaNumber
+                : "N/A",
+            },
+            areaValueString: `Match #${match.matchNumber} - Aire: ${
+              match.areaNumber || match.area?.areaNumber || "Non définie"
+            }`,
+          };
 
-        // D'abord, récupérer la liste de toutes les aires
-        const areaNumbers = Array.from(
-          new Set(matches.map((m) => m.areaNumber || (m.area?.areaNumber ?? 0)))
-        );
+          console.log(`Match #${index + 1} (ID: ${match.id}):`, areaInfo);
+        });
 
-        // Pour chaque aire, obtenir le match en cours et les prochains matchs
-        areaNumbers.forEach((areaNumber) => {
-          const areaMatches = matches
-            .filter(
-              (match) =>
-                (match.areaNumber || (match.area?.areaNumber ?? 0)) ===
-                areaNumber
-            )
-            .sort((a, b) => a.matchNumber - b.matchNumber);
+        // Vérifier comment les aires sont structurées dans les données
+        const matchesWithAreas = matches.filter((m) => m.area || m.areaNumber);
+        console.log("Matchs avec aires:", matchesWithAreas.length);
 
-          // Trouver l'index du match en cours (s'il existe)
-          const inProgressIndex = areaMatches.findIndex(
-            (match) => match.status === "in_progress"
-          );
+        if (matchesWithAreas.length > 0) {
+          const sampleMatch = matchesWithAreas[0];
+          console.log("Structure d'un match exemple:", {
+            id: sampleMatch.id,
+            matchNumber: sampleMatch.matchNumber,
+            areaNumber: sampleMatch.areaNumber,
+            area: sampleMatch.area
+              ? {
+                  areaNumber: sampleMatch.area.areaNumber,
+                  // Ne pas accéder à d'autres propriétés ici
+                }
+              : "Aucun objet area",
+          });
+        }
 
-          // Si un match est en cours, on commence par celui-là, sinon on prend les premiers en attente
-          let startIndex = 0;
-          if (inProgressIndex !== -1) {
-            startIndex = inProgressIndex;
-          } else {
-            // Trouver le premier match en attente
-            const pendingIndex = areaMatches.findIndex(
-              (match) => match.status === "pending"
-            );
-            if (pendingIndex !== -1) {
-              startIndex = pendingIndex;
-            }
+        // Analyser la distribution des matchs par aire
+        const areaDistribution: Record<number, number> = {};
+        matches.forEach((match) => {
+          let areaNum = 0;
+          if (match.area && match.area.areaNumber) {
+            areaNum = match.area.areaNumber;
+          } else if (match.areaNumber) {
+            areaNum = match.areaNumber;
           }
 
-          // Prendre le match en cours et les 4 prochains (5 au total maximum)
-          const relevantMatches = areaMatches.slice(startIndex, startIndex + 5);
-
-          // On n'affiche une aire que si elle a des matchs pertinents
-          if (relevantMatches.length > 0) {
-            matchesByArea[areaNumber] = relevantMatches;
+          if (areaNum > 0) {
+            areaDistribution[areaNum] = (areaDistribution[areaNum] || 0) + 1;
           }
         });
+        console.log("Distribution des matchs par aire:", areaDistribution);
+
+        // Organiser les matchs par aire avec une meilleure logique de détection d'aires
+        const matchesByArea: { [key: number]: Match[] } = {};
+
+        // Initialiser toutes les aires possibles (de 1 à 6 par défaut)
+        for (let i = 1; i <= 6; i++) {
+          matchesByArea[i] = [];
+        }
+
+        // Assigner chaque match à son aire en utilisant une approche différente
+        matches.forEach((match) => {
+          // Priorité à la propriété area.areaNumber
+          let areaNum = null;
+
+          // Vérification explicite de chaque propriété
+          if (match.area && typeof match.area.areaNumber === "number") {
+            areaNum = match.area.areaNumber;
+          }
+          // Si area.areaNumber n'est pas disponible, essayer areaNumber
+          else if (typeof match.areaNumber === "number") {
+            areaNum = match.areaNumber;
+          }
+          // Vérifier si l'aire est une chaîne qui peut être convertie en nombre
+          else if (
+            match.area &&
+            typeof match.area.areaNumber === "string" &&
+            !isNaN(parseInt(match.area.areaNumber))
+          ) {
+            areaNum = parseInt(match.area.areaNumber);
+          }
+          // Dernier recours : vérifier si areaNumber est une chaîne
+          else if (
+            typeof match.areaNumber === "string" &&
+            !isNaN(parseInt(match.areaNumber))
+          ) {
+            areaNum = parseInt(match.areaNumber);
+          }
+          // Distribution cyclique si aucune aire n'est définie
+          else {
+            // Répartir cycliquement entre les aires 1 à 6 si aucune aire n'est définie
+            areaNum = (match.matchNumber % 6) + 1;
+          }
+
+          // Assurer que l'aire est dans la plage valide (1-6)
+          if (areaNum < 1 || areaNum > 6) {
+            areaNum = (areaNum % 6) + 1; // Ramener dans la plage 1-6
+          }
+
+          // Ajouter le match à son aire
+          matchesByArea[areaNum].push(match);
+        });
+
+        // Trier les matchs par numéro de match dans chaque aire
+        Object.keys(matchesByArea).forEach((key) => {
+          const areaNum = parseInt(key);
+          if (matchesByArea[areaNum].length > 0) {
+            matchesByArea[areaNum].sort(
+              (a, b) => a.matchNumber - b.matchNumber
+            );
+
+            // Prendre uniquement les 5 premiers matchs pour chaque aire
+            matchesByArea[areaNum] = matchesByArea[areaNum].slice(0, 5);
+          }
+        });
+
+        // Récupérer la liste des aires avec des matchs pour le message de débogage
+        const airesAvecMatchs = Object.keys(matchesByArea)
+          .filter((key) => matchesByArea[parseInt(key)].length > 0)
+          .map(
+            (key) =>
+              `Aire ${key}: ${matchesByArea[parseInt(key)].length} matchs`
+          );
+
+        console.log("Aires avec matchs après organisation:", airesAvecMatchs);
 
         // Filtrer les matchs terminés récemment (50 derniers)
         const completedMatches = matches
@@ -151,30 +243,55 @@ export default function Home() {
         const liguesSorted = Array.from(ligues).sort();
         setAvailableLigues(liguesSorted);
 
+        // Garantir que toutes les aires configurées sont disponibles (de 1 à 6 par défaut)
+        // même si elles n'ont pas de matchs actuellement
+        const maxArea = Math.max(6, ...Object.keys(matchesByArea).map(Number)); // Au moins 6 aires ou le plus grand numéro trouvé
+        const allAreas: { [key: number]: Match[] } = {};
+
+        // Initialiser toutes les aires possibles (même vides)
+        for (let i = 1; i <= maxArea; i++) {
+          allAreas[i] = matchesByArea[i] || [];
+        }
+
         // Sauvegarder tous les matchs pour permettre le filtrage
-        setAllUpcomingMatchesByArea(matchesByArea);
+        setAllUpcomingMatchesByArea(allAreas);
         setAllRecentMatches(completedMatches);
 
         // Appliquer les filtres initiaux
-        setUpcomingMatchesByArea(matchesByArea);
+        setUpcomingMatchesByArea(allAreas);
         setRecentMatches(completedMatches);
 
         setLastUpdate(new Date());
         setLoading(false);
+        setRefreshing(false);
+
+        // Pour chaque aire, afficher les matchs qui lui sont assignés
+        for (let i = 1; i <= 6; i++) {
+          console.log(
+            `Aire ${i}: ${matchesByArea[i]?.length || 0} matchs assignés`
+          );
+          if (matchesByArea[i]?.length) {
+            console.log(
+              `Exemples de matchs pour aire ${i}:`,
+              matchesByArea[i].slice(0, 2).map((m) => `Match #${m.matchNumber}`)
+            );
+          }
+        }
       } catch (err) {
         console.error("Erreur lors du chargement des matchs:", err);
         setError(
           "Impossible de charger les matchs. Vérifiez la connexion à l'API."
         );
         setLoading(false);
+        setRefreshing(false);
       }
     };
 
     // Charger les données immédiatement
     fetchMatches();
 
-    // Puis rafraîchir toutes les 10 secondes
-    const intervalId = setInterval(fetchMatches, 10000);
+    // Puis rafraîchir toutes les 30 secondes au lieu de 10 secondes
+    const intervalId = setInterval(fetchMatches, 30000);
 
     // Nettoyer l'intervalle lors du démontage du composant
     return () => clearInterval(intervalId);
@@ -250,13 +367,40 @@ export default function Home() {
     if (filters.participantName || filters.ligue || filters.areaNumber) {
       let filteredRecent = [...allRecentMatches];
 
-      // Filtrer par aire
+      // Filtrer par aire avec une logique plus robuste
       if (filters.areaNumber) {
         const areaNum = parseInt(filters.areaNumber);
-        filteredRecent = filteredRecent.filter(
-          (match) =>
-            (match.areaNumber || (match.area?.areaNumber ?? 0)) === areaNum
-        );
+        filteredRecent = filteredRecent.filter((match) => {
+          // Même logique que pour l'assignation
+          let matchAreaNum = null;
+
+          if (match.area && typeof match.area.areaNumber === "number") {
+            matchAreaNum = match.area.areaNumber;
+          } else if (typeof match.areaNumber === "number") {
+            matchAreaNum = match.areaNumber;
+          } else if (
+            match.area &&
+            typeof match.area.areaNumber === "string" &&
+            !isNaN(parseInt(match.area.areaNumber))
+          ) {
+            matchAreaNum = parseInt(match.area.areaNumber);
+          } else if (
+            typeof match.areaNumber === "string" &&
+            !isNaN(parseInt(match.areaNumber))
+          ) {
+            matchAreaNum = parseInt(match.areaNumber);
+          } else {
+            // Par défaut, utiliser la même assignation cyclique
+            matchAreaNum = (match.matchNumber % 6) + 1;
+          }
+
+          // Assurer que l'aire est dans la plage valide (1-6)
+          if (matchAreaNum < 1 || matchAreaNum > 6) {
+            matchAreaNum = (matchAreaNum % 6) + 1;
+          }
+
+          return matchAreaNum === areaNum;
+        });
       }
 
       // Filtrer par autres critères
@@ -314,6 +458,12 @@ export default function Home() {
       />
 
       <div className="bg-white shadow-sm border-b">
+        {/* Indicateur de rafraîchissement */}
+        {refreshing && (
+          <div className="bg-blue-50 text-blue-700 text-center text-xs py-1 animate-pulse">
+            Mise à jour des données en cours...
+          </div>
+        )}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex space-x-8">
             <button
