@@ -928,6 +928,7 @@ app.get("/api/competition/:id", async (req, res) => {
 app.delete("/api/competition/:id", async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`Suppression de la compétition: ${id}`);
 
     // Vérifier que la compétition existe
     const competition = await prisma.competition.findUnique({
@@ -938,12 +939,121 @@ app.delete("/api/competition/:id", async (req, res) => {
       return res.status(404).json({ message: "Compétition non trouvée" });
     }
 
-    // Supprimer la compétition et toutes ses relations grâce aux cascades définies dans le schéma
+    // Approche de suppression explicite pour chaque relation, suivie d'une suppression en cascade
+    // Nous supprimons les entités dans l'ordre inverse des dépendances
+
+    // 1. Supprimer d'abord les rounds car ils dépendent des matchs
+    console.log("Suppression des rounds...");
+    await prisma.round.deleteMany({
+      where: {
+        match: {
+          group: {
+            competitionId: id,
+          },
+        },
+      },
+    });
+
+    // 2. Supprimer les matchParticipants car ils dépendent des matchs
+    console.log("Suppression des matchParticipants...");
+    await prisma.matchParticipant.deleteMany({
+      where: {
+        match: {
+          group: {
+            competitionId: id,
+          },
+        },
+      },
+    });
+
+    // 3. Supprimer les matchs
+    console.log("Suppression des matchs...");
+    await prisma.match.deleteMany({
+      where: {
+        group: {
+          competitionId: id,
+        },
+      },
+    });
+
+    // 4. Supprimer les pauses
+    console.log("Suppression des pauses...");
+    await prisma.break.deleteMany({
+      where: {
+        area: {
+          competitionId: id,
+        },
+      },
+    });
+
+    // 5. Supprimer les poolParticipants
+    console.log("Suppression des poolParticipants...");
+    await prisma.poolParticipant.deleteMany({
+      where: {
+        pool: {
+          group: {
+            competitionId: id,
+          },
+        },
+      },
+    });
+
+    // 6. Supprimer les pools
+    console.log("Suppression des pools...");
+    await prisma.pool.deleteMany({
+      where: {
+        group: {
+          competitionId: id,
+        },
+      },
+    });
+
+    // 7. Supprimer les participantGroups
+    console.log("Suppression des participantGroups...");
+    await prisma.participantGroup.deleteMany({
+      where: {
+        group: {
+          competitionId: id,
+        },
+      },
+    });
+
+    // 8. Supprimer les aires
+    console.log("Suppression des aires...");
+    await prisma.area.deleteMany({
+      where: {
+        competitionId: id,
+      },
+    });
+
+    // 9. Supprimer les groupes
+    console.log("Suppression des groupes...");
+    await prisma.group.deleteMany({
+      where: {
+        competitionId: id,
+      },
+    });
+
+    // 10. Supprimer les participants
+    console.log("Suppression des participants...");
+    await prisma.participant.deleteMany({
+      where: {
+        competitionId: id,
+      },
+    });
+
+    // 11. Finalement, supprimer la compétition elle-même
+    console.log("Suppression de la compétition...");
     await prisma.competition.delete({
       where: { id },
     });
 
-    res.json({ message: "Compétition supprimée avec succès" });
+    res.json({
+      message:
+        "Compétition et toutes ses données associées supprimées avec succès",
+      deletedCompetitionId: id,
+      deletedCompetitionName: competition.name,
+    });
   } catch (error) {
     console.error("Erreur lors de la suppression de la compétition:", error);
     res.status(500).json({
