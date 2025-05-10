@@ -568,14 +568,84 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
             );
 
             // Vérifier s'il y a une inversion des participants
+            // Méthode plus fiable basée à la fois sur l'ID et le nom
             const positionsInverted =
-              localParticipantA.id === dbParticipantB.id &&
-              localParticipantB.id === dbParticipantA.id;
+              (localParticipantA.id === dbParticipantB.id &&
+                localParticipantB.id === dbParticipantA.id) ||
+              (localParticipantA.prenom + localParticipantA.nom ===
+                dbParticipantB.prenom + dbParticipantB.nom &&
+                localParticipantB.prenom + localParticipantB.nom ===
+                  dbParticipantA.prenom + dbParticipantA.nom);
 
-            if (positionsInverted) {
+            console.log("=== ANALYSE DE L'INVERSION DES POSITIONS ===");
+            console.log(
+              `localParticipantA.id (${
+                localParticipantA.id
+              }) === dbParticipantB.id (${dbParticipantB.id}) ? ${
+                localParticipantA.id === dbParticipantB.id
+              }`
+            );
+            console.log(
+              `localParticipantB.id (${
+                localParticipantB.id
+              }) === dbParticipantA.id (${dbParticipantA.id}) ? ${
+                localParticipantB.id === dbParticipantA.id
+              }`
+            );
+            console.log(`Inversion détectée: ${positionsInverted}`);
+
+            // Ajouter une vérification supplémentaire basée sur la correspondance des noms
+            const nameMatchA =
+              `${localParticipantA.prenom} ${localParticipantA.nom}` ===
+              `${dbParticipantA.prenom} ${dbParticipantA.nom}`;
+            const nameMatchB =
+              `${localParticipantB.prenom} ${localParticipantB.nom}` ===
+              `${dbParticipantB.prenom} ${dbParticipantB.nom}`;
+
+            console.log(
+              `Correspondance des noms A: ${nameMatchA} (${localParticipantA.prenom} ${localParticipantA.nom} vs ${dbParticipantA.prenom} ${dbParticipantA.nom})`
+            );
+            console.log(
+              `Correspondance des noms B: ${nameMatchB} (${localParticipantB.prenom} ${localParticipantB.nom} vs ${dbParticipantB.prenom} ${dbParticipantB.nom})`
+            );
+
+            // Nouvelle approche: ne pas inverser automatiquement s'il y a correspondance des noms
+            const shouldInvert =
+              positionsInverted && !nameMatchA && !nameMatchB;
+
+            console.log(`Faut-il inverser? ${shouldInvert}`);
+
+            if (shouldInvert) {
               console.log(
                 "ATTENTION: Les positions des participants sont inversées entre l'interface et la base de données"
               );
+              console.log(
+                "Position A dans l'interface: " +
+                  localParticipantA.prenom +
+                  " " +
+                  localParticipantA.nom
+              );
+              console.log(
+                "Position B dans l'interface: " +
+                  localParticipantB.prenom +
+                  " " +
+                  localParticipantB.nom
+              );
+              console.log(
+                "Position A dans la base: " +
+                  dbParticipantA.prenom +
+                  " " +
+                  dbParticipantA.nom
+              );
+              console.log(
+                "Position B dans la base: " +
+                  dbParticipantB.prenom +
+                  " " +
+                  dbParticipantB.nom
+              );
+
+              console.log("Avant inversion - Résultats:");
+              console.log(JSON.stringify(resultToSave, null, 2));
 
               // Inverser les scores des rounds
               resultToSave.rounds = resultToSave.rounds.map((round) => ({
@@ -596,7 +666,12 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                 resultToSave.winner = "A";
               }
 
-              console.log("Résultats corrigés après inversion:", resultToSave);
+              console.log("Après inversion - Résultats:");
+              console.log(JSON.stringify(resultToSave, null, 2));
+            } else if (positionsInverted) {
+              console.log(
+                "INFORMATION: Une inversion des positions a été détectée mais ignorée car les noms correspondent"
+              );
             }
           }
         }
@@ -754,14 +829,70 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
 
   // Fonction pour commencer l'édition d'un match
   const startEditMatch = (match) => {
+    console.log("Début d'édition du match:", match);
+    console.log("ID du vainqueur:", match.winner);
+
+    // Identifier les participants
+    const participantA = match.matchParticipants?.find(
+      (p) => p.position === "A"
+    )?.participant;
+    const participantB = match.matchParticipants?.find(
+      (p) => p.position === "B"
+    )?.participant;
+
+    if (participantA && participantB) {
+      console.log(
+        `Participant A (${participantA.id}): ${participantA.prenom} ${participantA.nom}`
+      );
+      console.log(
+        `Participant B (${participantB.id}): ${participantB.prenom} ${participantB.nom}`
+      );
+    }
+
+    // Déterminer la position du vainqueur (A ou B) en fonction de l'ID
+    const winnerPosition =
+      match.winner === participantA?.id
+        ? "A"
+        : match.winner === participantB?.id
+        ? "B"
+        : null;
+    console.log("Position du vainqueur déterminée:", winnerPosition);
+
+    // Initialiser les scores en s'assurant que la position du vainqueur correspond à celle dans l'interface
     setEditingMatch(match);
     setEditedScores({
-      rounds: match.rounds.map((round) => ({
-        scoreA: round.scoreA,
-        scoreB: round.scoreB,
-        winner: round.winner,
+      rounds: match.rounds.map((round) => {
+        // Vérifier si le vainqueur du round est correctement défini
+        const roundWinnerPosition =
+          round.winnerPosition ||
+          (round.winner === participantA?.id
+            ? "A"
+            : round.winner === participantB?.id
+            ? "B"
+            : null);
+
+        return {
+          scoreA: round.scoreA,
+          scoreB: round.scoreB,
+          winner: roundWinnerPosition, // Utiliser la position cohérente
+        };
+      }),
+      winner: winnerPosition, // Utiliser la position cohérente
+    });
+
+    console.log("Scores initialisés pour l'édition:", {
+      rounds: match.rounds.map((r) => ({
+        scoreA: r.scoreA,
+        scoreB: r.scoreB,
+        winner:
+          r.winnerPosition ||
+          (r.winner === participantA?.id
+            ? "A"
+            : r.winner === participantB?.id
+            ? "B"
+            : null),
       })),
-      winner: match.winner,
+      winner: winnerPosition,
     });
   };
 
@@ -836,28 +967,44 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
         participantB.id
       );
 
-      // Déterminer l'ID du participant vainqueur
+      // Déterminer l'ID du participant vainqueur en fonction de la position (A ou B)
       let winnerId = null;
       if (editedScores.winner === "A") {
         winnerId = participantA.id;
+        console.log(
+          `Vainqueur: A (${participantA.prenom} ${participantA.nom}, ID: ${participantA.id})`
+        );
       } else if (editedScores.winner === "B") {
         winnerId = participantB.id;
+        console.log(
+          `Vainqueur: B (${participantB.prenom} ${participantB.nom}, ID: ${participantB.id})`
+        );
+      } else {
+        console.log("Pas de vainqueur déterminé");
       }
 
-      // Créer des rounds avec les bons IDs de participants
+      // Créer des rounds avec les bons IDs de participants et la position du vainqueur
       const updatedRounds = editedScores.rounds.map((round) => {
         let roundWinnerId = null;
+        let roundWinnerPosition = null;
+
         if (round.winner === "A") {
           roundWinnerId = participantA.id;
+          roundWinnerPosition = "A";
         } else if (round.winner === "B") {
           roundWinnerId = participantB.id;
+          roundWinnerPosition = "B";
         }
+
+        console.log(
+          `Round - Scores: ${round.scoreA}-${round.scoreB}, Vainqueur: ${roundWinnerPosition} (ID: ${roundWinnerId})`
+        );
 
         return {
           scoreA: round.scoreA,
           scoreB: round.scoreB,
-          winner: roundWinnerId,
-          winnerPosition: round.winner,
+          winner: roundWinnerId, // ID du participant vainqueur
+          winnerPosition: round.winner, // Position du vainqueur (A ou B)
         };
       });
 
@@ -870,7 +1017,20 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
         pointMatch: winnerId ? 3 : 0, // 3 points pour une victoire, 0 pour un match nul
       };
 
+      console.log("Match préparé pour mise à jour:", {
+        id: updatedMatch.id,
+        winner: updatedMatch.winner,
+        rounds: updatedMatch.rounds.map((r) => ({
+          scoreA: r.scoreA,
+          scoreB: r.scoreB,
+          winner: r.winner,
+          winnerPosition: r.winnerPosition,
+        })),
+      });
+
       await updateMatchResult(editingMatch.id, updatedMatch);
+      console.log("Match mis à jour avec succès");
+
       await loadCompletedMatches(); // Recharger la liste des matchs
 
       // Recalculer les retards après la modification d'un match
@@ -1083,134 +1243,179 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   const pendingCount = currentMatches.length - completedCount;
 
   // Modifier le rendu des matchs terminés pour inclure l'édition
-  const renderCompletedMatches = () => (
-    <div className="completed-matches">
-      <h3>Combats terminés</h3>
+  const renderCompletedMatches = () => {
+    console.log(
+      "RENDU HISTORIQUE: Affichage de",
+      completedMatches.length,
+      "matchs terminés"
+    );
+    console.log("Le bouton de suppression devrait être visible");
 
-      {completedMatches.length === 0 ? (
-        <p>Aucun combat terminé pour le moment.</p>
-      ) : (
-        <table className="completed-matches-table">
-          <thead>
-            <tr>
-              <th>N° Combat</th>
-              <th>Aire</th>
-              <th>Athlète A</th>
-              <th>Score</th>
-              <th>Athlète B</th>
-              <th>Vainqueur</th>
-              <th>Heure de fin</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {completedMatches.map((match) => {
-              const participantA = match.matchParticipants?.find(
-                (p) => p.position === "A"
-              )?.participant;
-              const participantB = match.matchParticipants?.find(
-                (p) => p.position === "B"
-              )?.participant;
+    return (
+      <div className="completed-matches">
+        <h3>Combats terminés</h3>
 
-              if (!participantA || !participantB) return null;
+        {completedMatches.length === 0 ? (
+          <p>Aucun combat terminé pour le moment.</p>
+        ) : (
+          <table className="completed-matches-table">
+            <thead>
+              <tr>
+                <th>N° Combat</th>
+                <th>Aire</th>
+                <th>Athlète A</th>
+                <th>Score</th>
+                <th>Athlète B</th>
+                <th>Vainqueur</th>
+                <th>Heure de fin</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {completedMatches.map((match) => {
+                const participantA = match.matchParticipants?.find(
+                  (p) => p.position === "A"
+                )?.participant;
+                const participantB = match.matchParticipants?.find(
+                  (p) => p.position === "B"
+                )?.participant;
 
-              // Déterminer le vainqueur en se basant sur l'ID stocké
-              const isWinnerA = match.winner === participantA.id;
-              const isWinnerB = match.winner === participantB.id;
-              const winnerName = isWinnerA
-                ? `${participantA.prenom} ${participantA.nom}`
-                : isWinnerB
-                ? `${participantB.prenom} ${participantB.nom}`
-                : "Match nul";
+                if (!participantA || !participantB) return null;
 
-              if (editingMatch?.id === match.id) {
+                // Important: Utiliser l'ID du participant pour déterminer le vainqueur
+                // et non la position, pour maintenir la cohérence entre les vues
+                const isWinnerA = match.winner === participantA.id;
+                const isWinnerB = match.winner === participantB.id;
+                const winnerName = isWinnerA
+                  ? `${participantA.prenom} ${participantA.nom}`
+                  : isWinnerB
+                  ? `${participantB.prenom} ${participantB.nom}`
+                  : "Match nul";
+
+                // Log pour débogage afin de s'assurer que le vainqueur est correctement identifié
+                console.log(
+                  `Match #${match.matchNumber} - Vainqueur: ${winnerName}`
+                );
+                console.log(
+                  `  Participant A (${participantA.id}): ${participantA.prenom} ${participantA.nom}`
+                );
+                console.log(
+                  `  Participant B (${participantB.id}): ${participantB.prenom} ${participantB.nom}`
+                );
+                console.log(`  ID du vainqueur dans la DB: ${match.winner}`);
+
+                if (editingMatch?.id === match.id) {
+                  return (
+                    <tr key={match.id} className="editing">
+                      <td>{match.matchNumber}</td>
+                      <td>{match.area.areaNumber}</td>
+                      <td>{`${participantA.prenom} ${participantA.nom}`}</td>
+                      <td>
+                        {editedScores.rounds.map((round, i) => (
+                          <div key={i} className="round-score-edit">
+                            <input
+                              type="number"
+                              min="0"
+                              value={round.scoreA}
+                              onChange={(e) =>
+                                handleEditScoreChange(i, "A", e.target.value)
+                              }
+                            />
+                            {" - "}
+                            <input
+                              type="number"
+                              min="0"
+                              value={round.scoreB}
+                              onChange={(e) =>
+                                handleEditScoreChange(i, "B", e.target.value)
+                              }
+                            />
+                          </div>
+                        ))}
+                      </td>
+                      <td>{`${participantB.prenom} ${participantB.nom}`}</td>
+                      <td>
+                        {editedScores.winner === "A"
+                          ? `${participantA.prenom} ${participantA.nom}`
+                          : editedScores.winner === "B"
+                          ? `${participantB.prenom} ${participantB.nom}`
+                          : "Pas de vainqueur"}
+                      </td>
+                      <td>{formatTime(match.endTime)}</td>
+                      <td>
+                        <button onClick={saveEditedMatch} className="save-btn">
+                          Sauvegarder
+                        </button>
+                        <button
+                          onClick={() => setEditingMatch(null)}
+                          className="cancel-btn"
+                        >
+                          Annuler
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                }
+
+                // En mode affichage normal, présenter les scores avec la même correspondance A/B
                 return (
-                  <tr key={match.id} className="editing">
+                  <tr key={match.id}>
                     <td>{match.matchNumber}</td>
                     <td>{match.area.areaNumber}</td>
-                    <td>{`${participantA.prenom} ${participantA.nom}`}</td>
+                    <td className={isWinnerA ? "winner" : ""}>
+                      {`${participantA.prenom} ${participantA.nom}`}
+                    </td>
                     <td>
-                      {editedScores.rounds.map((round, i) => (
-                        <div key={i} className="round-score-edit">
-                          <input
-                            type="number"
-                            min="0"
-                            value={round.scoreA}
-                            onChange={(e) =>
-                              handleEditScoreChange(i, "A", e.target.value)
-                            }
-                          />
-                          {" - "}
-                          <input
-                            type="number"
-                            min="0"
-                            value={round.scoreB}
-                            onChange={(e) =>
-                              handleEditScoreChange(i, "B", e.target.value)
-                            }
-                          />
+                      {match.rounds.map((round, i) => (
+                        <div key={i} className="round-score">
+                          {round.scoreA} - {round.scoreB}
                         </div>
                       ))}
                     </td>
-                    <td>{`${participantB.prenom} ${participantB.nom}`}</td>
-                    <td>
-                      {editedScores.winner === "A"
-                        ? `${participantA.prenom} ${participantA.nom}`
-                        : editedScores.winner === "B"
-                        ? `${participantB.prenom} ${participantB.nom}`
-                        : "Pas de vainqueur"}
+                    <td className={isWinnerB ? "winner" : ""}>
+                      {`${participantB.prenom} ${participantB.nom}`}
                     </td>
+                    <td>{winnerName}</td>
                     <td>{formatTime(match.endTime)}</td>
                     <td>
-                      <button onClick={saveEditedMatch} className="save-btn">
-                        Sauvegarder
+                      <button
+                        onClick={() => startEditMatch(match)}
+                        className="edit-btn"
+                        style={{
+                          marginBottom: "5px",
+                          display: "block",
+                          width: "100%",
+                        }}
+                      >
+                        Modifier
                       </button>
                       <button
-                        onClick={() => setEditingMatch(null)}
-                        className="cancel-btn"
+                        onClick={() => resetMatch(match)}
+                        className="delete-btn"
+                        style={{
+                          backgroundColor: "#f44336",
+                          color: "white",
+                          padding: "5px 10px",
+                          borderRadius: "4px",
+                          border: "none",
+                          cursor: "pointer",
+                          fontWeight: "bold",
+                          display: "block",
+                          width: "100%",
+                        }}
                       >
-                        Annuler
+                        Supprimer
                       </button>
                     </td>
                   </tr>
                 );
-              }
-
-              return (
-                <tr key={match.id}>
-                  <td>{match.matchNumber}</td>
-                  <td>{match.area.areaNumber}</td>
-                  <td className={isWinnerA ? "winner" : ""}>
-                    {`${participantA.prenom} ${participantA.nom}`}
-                  </td>
-                  <td>
-                    {match.rounds.map((round, i) => (
-                      <div key={i} className="round-score">
-                        {round.scoreA} - {round.scoreB}
-                      </div>
-                    ))}
-                  </td>
-                  <td className={isWinnerB ? "winner" : ""}>
-                    {`${participantB.prenom} ${participantB.nom}`}
-                  </td>
-                  <td>{winnerName}</td>
-                  <td>{formatTime(match.endTime)}</td>
-                  <td>
-                    <button
-                      onClick={() => startEditMatch(match)}
-                      className="edit-btn"
-                    >
-                      Modifier
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    );
+  };
 
   // Fonction pour exporter les fiches de poules au format PDF pour les arbitres
   const handleExportPoolSheetsPDF = () => {
@@ -1629,6 +1834,52 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
     }
   }, [currentMatches, matchesWithPssInfo, pendingPssRequests, isThrottling]);
 
+  // Fonction pour réinitialiser un match (supprimer les résultats et remettre en statut "pending")
+  const resetMatch = async (match) => {
+    if (
+      !confirm(
+        `Êtes-vous sûr de vouloir supprimer les résultats du match #${match.matchNumber} ?`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      console.log(
+        `Réinitialisation du match #${match.matchNumber} (ID: ${match.id})`
+      );
+
+      // Préparer un objet de match avec le statut "pending" et sans vainqueur ni rounds
+      const resetMatchData = {
+        ...match,
+        status: "pending",
+        winner: null,
+        rounds: [], // Supprimer tous les rounds
+        endTime: null,
+        pointMatch: 0, // Remettre les points à 0
+      };
+
+      console.log("Données du match réinitialisé:", resetMatchData);
+
+      // Mettre à jour le match dans la base de données
+      await updateMatchResult(match.id, resetMatchData);
+      console.log("Match réinitialisé avec succès");
+
+      // Recharger la liste des matchs complétés
+      await loadCompletedMatches();
+
+      // Recalculer les retards
+      const updatedDelayInfo = calculateAreasDelayInfo();
+      setAreasDelayInfo(updatedDelayInfo);
+
+      // Notification à l'utilisateur
+      alert(`Le match #${match.matchNumber} a été réinitialisé avec succès.`);
+    } catch (error) {
+      console.error("Erreur lors de la réinitialisation du match:", error);
+      alert("Erreur lors de la réinitialisation du match. Veuillez réessayer.");
+    }
+  };
+
   return (
     <div className="score-input-container">
       <h2>Étape 5: Saisie des scores</h2>
@@ -1857,41 +2108,51 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                                   Round {roundIndex + 1}
                                 </div>
                                 <div className="score-inputs">
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    value={round.fighterA}
-                                    onChange={(e) =>
-                                      handleScoreChange(
-                                        match.id,
-                                        roundIndex,
-                                        "A",
-                                        e.target.value
-                                      )
-                                    }
-                                    disabled={matchResult.completed}
-                                    className={
-                                      round.winner === "A" ? "winner" : ""
-                                    }
-                                  />
-                                  <span className="separator">-</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    value={round.fighterB}
-                                    onChange={(e) =>
-                                      handleScoreChange(
-                                        match.id,
-                                        roundIndex,
-                                        "B",
-                                        e.target.value
-                                      )
-                                    }
-                                    disabled={matchResult.completed}
-                                    className={
-                                      round.winner === "B" ? "winner" : ""
-                                    }
-                                  />
+                                  <div className="fighter-score">
+                                    <span className="fighter-label">
+                                      {getParticipantName(match, 0)}
+                                    </span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={round.fighterA}
+                                      onChange={(e) =>
+                                        handleScoreChange(
+                                          match.id,
+                                          roundIndex,
+                                          "A",
+                                          e.target.value
+                                        )
+                                      }
+                                      disabled={matchResult.completed}
+                                      className={
+                                        round.winner === "A" ? "winner" : ""
+                                      }
+                                    />
+                                  </div>
+                                  <span className="separator">VS</span>
+                                  <div className="fighter-score">
+                                    <span className="fighter-label">
+                                      {getParticipantName(match, 1)}
+                                    </span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={round.fighterB}
+                                      onChange={(e) =>
+                                        handleScoreChange(
+                                          match.id,
+                                          roundIndex,
+                                          "B",
+                                          e.target.value
+                                        )
+                                      }
+                                      disabled={matchResult.completed}
+                                      className={
+                                        round.winner === "B" ? "winner" : ""
+                                      }
+                                    />
+                                  </div>
                                 </div>
                               </div>
                             ))}

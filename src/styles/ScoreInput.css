@@ -180,37 +180,73 @@
 }
 
 .round {
-  text-align: center;
+  margin-bottom: 20px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 15px;
+  background-color: #f9f9f9;
 }
 
 .round-title {
-  font-weight: 500;
+  font-weight: bold;
+  text-align: center;
   margin-bottom: 10px;
+  font-size: 18px;
+  color: #333;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 5px;
 }
 
 .score-inputs {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  justify-content: center;
+}
+
+.fighter-score {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 45%;
+}
+
+.fighter-label {
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 5px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.separator {
+  font-weight: bold;
+  color: #666;
+  font-size: 16px;
 }
 
 .score-inputs input {
-  width: 50px;
+  width: 60px;
+  height: 40px;
   text-align: center;
-  padding: 8px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  font-size: 18px;
+  font-weight: bold;
+  border: 2px solid #ccc;
+  border-radius: 5px;
 }
 
 .score-inputs input.winner {
   border-color: #4caf50;
   background-color: #e8f5e9;
-  font-weight: bold;
+  color: #2e7d32;
 }
 
-.separator {
-  margin: 0 5px;
-  font-weight: bold;
+.score-inputs input:focus {
+  outline: none;
+  border-color: #2196f3;
+  box-shadow: 0 0 5px rgba(33, 150, 243, 0.3);
 }
 
 .match-actions {
