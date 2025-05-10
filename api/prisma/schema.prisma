@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,86 +7,74 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Modèles pour stocker les données de la compétition
-
 model Competition {
-  id                 String   @id @default(uuid())
-  name               String
-  date               DateTime
-  startTime          DateTime
-  endTime            DateTime?
-  roundDuration      Int      // en secondes
-  breakDuration      Int      // en secondes
-  breakFrequency     Int      // nombre de combats
-  poolSize           Int      @default(4) // Nombre de participants par poule
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-  
-  // Relations
-  groups             Group[]
-  areas              Area[]
-  participants       Participant[]
+  id             String        @id @default(uuid())
+  name           String
+  date           DateTime
+  startTime      DateTime
+  endTime        DateTime?
+  roundDuration  Int
+  breakDuration  Int
+  breakFrequency Int
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  poolSize       Int           @default(4)
+  areas          Area[]
+  groups         Group[]
+  participants   Participant[]
 }
 
 model Group {
-  id                 String   @id @default(uuid())
-  gender             String   // "male" ou "female"
+  id                 String             @id @default(uuid())
+  gender             String
   ageCategoryName    String
   ageCategoryMin     Int
   ageCategoryMax     Int
   weightCategoryName String
   weightCategoryMax  Int
-  
-  // Relations
   competitionId      String
-  competition        Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
-  pools              Pool[]
-  participants       ParticipantGroup[]
+  competition        Competition        @relation(fields: [competitionId], references: [id], onDelete: Cascade)
   matches            Match[]
+  participants       ParticipantGroup[]
+  pools              Pool[]
 
   @@index([competitionId])
 }
 
 model Pool {
-  id                 String   @id @default(uuid())
-  poolIndex          Int
-  
-  // Relations
-  groupId            String
-  group              Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  poolParticipants   PoolParticipant[]
-  matches            Match[]
+  id               String            @id @default(uuid())
+  poolIndex        Int
+  groupId          String
+  matches          Match[]
+  group            Group             @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  poolParticipants PoolParticipant[]
 
   @@index([groupId])
 }
 
 model Participant {
-  id                 String   @id @default(uuid())
-  nom                String
-  prenom             String
-  sexe               String   // "male" ou "female"
-  age                Int
-  poids              Float
-  ligue              String
-  
-  // Relations
-  competitionId      String
-  competition        Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
-  participantGroups  ParticipantGroup[]
-  poolParticipants   PoolParticipant[]
-  matchParticipants  MatchParticipant[]
+  id                String             @id @default(uuid())
+  nom               String
+  prenom            String
+  sexe              String
+  age               Int
+  poids             Float
+  ligue             String
+  competitionId     String
+  matchParticipants MatchParticipant[]
+  competition       Competition        @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  participantGroups ParticipantGroup[]
+  poolParticipants  PoolParticipant[]
 
   @@index([competitionId])
 }
 
 model ParticipantGroup {
-  id                 String   @id @default(uuid())
-  
-  // Relations
-  participantId      String
-  participant        Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
-  groupId            String
-  group              Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  id            String      @id @default(uuid())
+  participantId String
+  groupId       String
+  group         Group       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
 
   @@unique([participantId, groupId])
   @@index([participantId])
@@ -97,13 +82,11 @@ model ParticipantGroup {
 }
 
 model PoolParticipant {
-  id                 String   @id @default(uuid())
-  
-  // Relations
-  poolId             String
-  pool               Pool     @relation(fields: [poolId], references: [id], onDelete: Cascade)
-  participantId      String
-  participant        Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  id            String      @id @default(uuid())
+  poolId        String
+  participantId String
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  pool          Pool        @relation(fields: [poolId], references: [id], onDelete: Cascade)
 
   @@unique([poolId, participantId])
   @@index([poolId])
@@ -111,37 +94,33 @@ model PoolParticipant {
 }
 
 model Area {
-  id                 String   @id @default(uuid())
-  areaNumber         Int
-  
-  // Relations
-  competitionId      String
-  competition        Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
-  matches            Match[]
-  breaks             Break[]
+  id            String      @id @default(uuid())
+  areaNumber    Int
+  competitionId String
+  competition   Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  breaks        Break[]
+  matches       Match[]
 
   @@index([competitionId])
 }
 
 model Match {
-  id                 String   @id @default(uuid())
-  matchNumber        Int
-  status             String   // "pending", "completed", "cancelled"
-  startTime          DateTime
-  endTime            DateTime?
-  winner             String?  // "A", "B" ou null
-  poolIndex          Int      // Ajout du champ poolIndex
-  pointMatch         Int      @default(0) // Points attribués pour ce match (3 pour une victoire)
-  
-  // Relations
-  groupId            String
-  group              Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  poolId             String
-  pool               Pool     @relation(fields: [poolId], references: [id], onDelete: Cascade)
-  areaId             String
-  area               Area     @relation(fields: [areaId], references: [id], onDelete: Cascade)
-  matchParticipants  MatchParticipant[]
-  rounds             Round[]
+  id                String             @id @default(uuid())
+  matchNumber       Int
+  status            String
+  startTime         DateTime
+  endTime           DateTime?
+  winner            String?
+  groupId           String
+  poolId            String
+  areaId            String
+  poolIndex         Int
+  pointMatch        Int                @default(0)
+  area              Area               @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  group             Group              @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  pool              Pool               @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  matchParticipants MatchParticipant[]
+  rounds            Round[]
 
   @@index([groupId])
   @@index([poolId])
@@ -149,14 +128,12 @@ model Match {
 }
 
 model MatchParticipant {
-  id                 String   @id @default(uuid())
-  position           String   // "A" ou "B"
-  
-  // Relations
-  matchId            String
-  match              Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  participantId      String
-  participant        Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  id            String      @id @default(uuid())
+  position      String
+  matchId       String
+  participantId String
+  match         Match       @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
 
   @@unique([matchId, position])
   @@index([matchId])
@@ -164,31 +141,40 @@ model MatchParticipant {
 }
 
 model Round {
-  id                 String   @id @default(uuid())
-  roundNumber        Int      // 1, 2 ou 3
-  scoreA             Int      @default(0)
-  scoreB             Int      @default(0)
-  winner             String?  // ID du participant gagnant ou null
-  winnerPosition     String?  // "A", "B" ou null - identifie le côté gagnant
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-  
-  // Relations
-  matchId            String
-  match              Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  id             String   @id @default(uuid())
+  roundNumber    Int
+  scoreA         Int      @default(0)
+  scoreB         Int      @default(0)
+  winner         String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  matchId        String
+  winnerPosition String?
+  match          Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
 
   @@unique([matchId, roundNumber])
   @@index([matchId])
 }
 
 model Break {
-  id                 String   @id @default(uuid())
-  startTime          DateTime
-  endTime            DateTime
-  
-  // Relations
-  areaId             String
-  area               Area     @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  id        String   @id @default(uuid())
+  startTime DateTime
+  endTime   DateTime
+  areaId    String
+  area      Area     @relation(fields: [areaId], references: [id], onDelete: Cascade)
 
   @@index([areaId])
+}
+
+/// Model for CDC synchronization
+model SyncEvent {
+  id        Int      @id @default(autoincrement())
+  table_name String
+  record_id  String
+  operation  String
+  data       Json?
+  created_at DateTime @default(now())
+  processed  Boolean  @default(false)
+
+  @@map("sync_events")
 }
