@@ -197,16 +197,22 @@ export default function Home() {
           matchesByArea[areaNum].push(match);
         });
 
-        // Trier les matchs par numéro de match dans chaque aire
+        // Trier les matchs par numéro de match dans chaque aire et filtrer les matchs
         Object.keys(matchesByArea).forEach((key) => {
           const areaNum = parseInt(key);
           if (matchesByArea[areaNum].length > 0) {
+            // Trier les matchs par numéro de match (ordre croissant)
             matchesByArea[areaNum].sort(
               (a, b) => a.matchNumber - b.matchNumber
             );
 
-            // Prendre uniquement les 5 premiers matchs pour chaque aire
-            matchesByArea[areaNum] = matchesByArea[areaNum].slice(0, 5);
+            // Filtrer pour ne garder que les matchs qui ne sont pas "completed"
+            const nonCompletedMatches = matchesByArea[areaNum].filter(
+              (match) => match.status !== "completed"
+            );
+
+            // Prendre uniquement les 5 premiers matchs non complétés
+            matchesByArea[areaNum] = nonCompletedMatches.slice(0, 5);
           }
         });
 
