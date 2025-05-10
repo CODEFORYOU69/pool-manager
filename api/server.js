@@ -1333,7 +1333,423 @@ app.get("/api/participants", async (req, res) => {
   }
 });
 
+// Route pour récupérer un match par son numéro
+app.get("/api/match/byNumber/:competitionId/:matchNumber", async (req, res) => {
+  try {
+    const { competitionId, matchNumber } = req.params;
+    const matchNum = parseInt(matchNumber, 10);
+
+    if (isNaN(matchNum)) {
+      return res.status(400).json({
+        message: "Numéro de match invalide",
+        details: "Le numéro de match doit être un nombre",
+      });
+    }
+
+    console.log(
+      `Recherche du match numéro ${matchNum} pour la compétition ${competitionId}`
+    );
+
+    // Trouver le match par son numéro et la compétition associée via le groupe
+    const match = await prisma.match.findFirst({
+      where: {
+        matchNumber: matchNum,
+        group: {
+          competitionId: competitionId,
+        },
+      },
+      include: {
+        matchParticipants: {
+          include: {
+            participant: true,
+          },
+        },
+        rounds: true,
+        group: true,
+        pool: true,
+        area: true,
+      },
+    });
+
+    if (!match) {
+      return res.status(404).json({
+        message: "Match non trouvé",
+        details: `Aucun match trouvé avec le numéro ${matchNum} pour cette compétition`,
+      });
+    }
+
+    console.log(`Match #${matchNum} trouvé avec ID: ${match.id}`);
+    res.json(match);
+  } catch (error) {
+    console.error("Erreur lors de la récupération du match par numéro:", error);
+    res.status(500).json({
+      error: "Erreur lors de la récupération du match",
+      message: error.message,
+    });
+  }
+});
+
+// Nouvel endpoint spécifique pour sauvegarder les résultats d'un match
+app.post("/api/match/:id/results", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const resultsData = req.body;
+    console.log("Sauvegarde des résultats pour le match:", id);
+    console.log("Données reçues:", resultsData);
+
+    // Vérifier que le match existe
+    const existingMatch = await prisma.match.findUnique({
+      where: { id },
+      include: {
+        matchParticipants: {
+          include: {
+            participant: true,
+          },
+        },
+      },
+    });
+
+    if (!existingMatch) {
+      return res.status(404).json({
+        message: "Match non trouvé",
+        details: `Aucun match trouvé avec l'ID ${id}`,
+      });
+    }
+
+    // Récupérer les IDs des participants
+    const participantA = existingMatch.matchParticipants.find(
+      (p) => p.position === "A"
+    );
+    const participantB = existingMatch.matchParticipants.find(
+      (p) => p.position === "B"
+    );
+
+    if (!participantA || !participantB) {
+      return res.status(400).json({
+        message: "Participants incomplets",
+        details:
+          "Le match ne possède pas les deux participants requis (A et B)",
+      });
+    }
+
+    // Vérifier quels participants sont en positions A et B
+    console.log(
+      "Participant A:",
+      participantA.participantId,
+      participantA.participant.prenom,
+      participantA.participant.nom
+    );
+    console.log(
+      "Participant B:",
+      participantB.participantId,
+      participantB.participant.prenom,
+      participantB.participant.nom
+    );
+
+    // Calculer le vainqueur en fonction des rounds gagnés
+    let winnerPosition = null;
+    let winnerId = null;
+    let matchStatus = "completed"; // Par défaut, le match est terminé quand on sauvegarde les résultats
+    let pointMatch = 0;
+
+    // Compter les rounds gagnés par chaque athlète
+    const roundsWonByA = resultsData.rounds.filter(
+      (r) => r.winnerPosition === "A" || r.winner === "A"
+    ).length;
+    const roundsWonByB = resultsData.rounds.filter(
+      (r) => r.winnerPosition === "B" || r.winner === "B"
+    ).length;
+
+    // Déterminer le vainqueur du match
+    if (roundsWonByA > roundsWonByB) {
+      winnerPosition = "A";
+      winnerId = participantA.participantId;
+      pointMatch = 3; // 3 points pour une victoire
+    } else if (roundsWonByB > roundsWonByA) {
+      winnerPosition = "B";
+      winnerId = participantB.participantId;
+      pointMatch = 3; // 3 points pour une victoire
+    }
+
+    console.log(
+      `Vainqueur calculé: ${winnerPosition} (A: ${roundsWonByA} rounds, B: ${roundsWonByB} rounds)`
+    );
+    console.log(`ID du vainqueur: ${winnerId}`);
+    console.log(`Points attribués: ${pointMatch}`);
+
+    // Transaction pour garantir la cohérence des données
+    const result = await prisma.$transaction(async (prisma) => {
+      // 1. Supprimer d'abord les rounds existants
+      await prisma.round.deleteMany({
+        where: { matchId: id },
+      });
+
+      // 2. Mettre à jour le match avec ses informations générales
+      const updatedMatch = await prisma.match.update({
+        where: { id },
+        data: {
+          status: matchStatus,
+          winner: winnerId, // Utiliser l'ID du participant au lieu de "A" ou "B"
+          endTime: resultsData.endTime
+            ? new Date(resultsData.endTime)
+            : new Date(),
+          pointMatch: pointMatch,
+        },
+      });
+
+      // 3. Créer les nouveaux rounds
+      const rounds = [];
+      for (const [index, round] of resultsData.rounds.entries()) {
+        // Déterminer l'ID du vainqueur du round et la position
+        let roundWinnerId = null;
+        let roundWinnerPosition = round.winnerPosition || round.winner;
+
+        if (roundWinnerPosition === "A") {
+          roundWinnerId = participantA.participantId;
+        } else if (roundWinnerPosition === "B") {
+          roundWinnerId = participantB.participantId;
+        }
+
+        const newRound = await prisma.round.create({
+          data: {
+            matchId: id,
+            roundNumber: index + 1,
+            scoreA: round.scoreA || round.fighterA || 0,
+            scoreB: round.scoreB || round.fighterB || 0,
+            winner: roundWinnerId, // Utiliser l'ID du participant au lieu de "A" ou "B"
+            winnerPosition: roundWinnerPosition, // Garder l'information de la position (A ou B) dans un nouveau champ
+          },
+        });
+        rounds.push(newRound);
+      }
+
+      // 4. Récupérer le match complet avec ses relations
+      return prisma.match.findUnique({
+        where: { id },
+        include: {
+          rounds: {
+            orderBy: { roundNumber: "asc" },
+          },
+          matchParticipants: {
+            include: {
+              participant: true,
+            },
+          },
+        },
+      });
+    });
+
+    // Ajouter des propriétés utiles à la réponse
+    const response = {
+      ...result,
+      winnerPosition, // Ajouter la position du vainqueur pour la référence du client
+      winnerParticipant: winnerId
+        ? result.matchParticipants.find((p) => p.participantId === winnerId)
+            ?.participant
+        : null,
+    };
+
+    console.log("Résultats sauvegardés avec succès:", response);
+    res.json(response);
+  } catch (error) {
+    console.error("Erreur lors de la sauvegarde des résultats:", error);
+    res.status(500).json({
+      error: "Erreur lors de la sauvegarde des résultats",
+      message: error.message,
+    });
+  }
+});
+
+// Route pour supprimer un groupe et toutes ses dépendances
+app.delete("/api/group/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log(`Demande de suppression du groupe ${id}`);
+
+    // Vérifier que le groupe existe
+    const existingGroup = await prisma.group.findUnique({
+      where: { id },
+      include: {
+        pools: {
+          include: {
+            poolParticipants: true,
+            matches: {
+              include: {
+                matchParticipants: true,
+                rounds: true,
+              },
+            },
+          },
+        },
+        participants: true,
+      },
+    });
+
+    if (!existingGroup) {
+      return res.status(404).json({
+        message: "Groupe non trouvé",
+        details: `Aucun groupe trouvé avec l'ID: ${id}`,
+      });
+    }
+
+    // Transaction pour supprimer toutes les données associées au groupe
+    await prisma.$transaction(async (prisma) => {
+      // Pour chaque poule du groupe
+      for (const pool of existingGroup.pools) {
+        // Pour chaque match de la poule
+        for (const match of pool.matches) {
+          // Supprimer tous les rounds du match
+          await prisma.round.deleteMany({
+            where: { matchId: match.id },
+          });
+
+          // Supprimer toutes les associations match-participant
+          await prisma.matchParticipant.deleteMany({
+            where: { matchId: match.id },
+          });
+        }
+
+        // Supprimer tous les matchs de la poule
+        await prisma.match.deleteMany({
+          where: { poolId: pool.id },
+        });
+
+        // Supprimer toutes les associations pool-participant
+        await prisma.poolParticipant.deleteMany({
+          where: { poolId: pool.id },
+        });
+      }
+
+      // Supprimer toutes les poules du groupe
+      await prisma.pool.deleteMany({
+        where: { groupId: id },
+      });
+
+      // Supprimer toutes les associations groupe-participant
+      await prisma.participantGroup.deleteMany({
+        where: { groupId: id },
+      });
+
+      // Enfin, supprimer le groupe lui-même
+      await prisma.group.delete({
+        where: { id },
+      });
+    });
+
+    console.log(`Groupe ${id} supprimé avec succès`);
+    res.json({ success: true, message: `Groupe ${id} supprimé avec succès` });
+  } catch (error) {
+    console.error(
+      `Erreur lors de la suppression du groupe ${req.params.id}:`,
+      error
+    );
+    res.status(500).json({
+      success: false,
+      message: "Erreur lors de la suppression du groupe",
+      details: error.message,
+    });
+  }
+});
+
+// Route pour supprimer tous les matchs d'une compétition
+app.delete(
+  "/api/match/deleteByCompetition/:competitionId",
+  async (req, res) => {
+    try {
+      const { competitionId } = req.params;
+      console.log(
+        `Demande de suppression de tous les matchs de la compétition ${competitionId}`
+      );
+
+      // Vérifier que la compétition existe
+      const competition = await prisma.competition.findUnique({
+        where: { id: competitionId },
+      });
+
+      if (!competition) {
+        return res.status(404).json({
+          success: false,
+          message: "Compétition non trouvée",
+          details: `Aucune compétition trouvée avec l'ID: ${competitionId}`,
+        });
+      }
+
+      // Transaction pour supprimer tous les matchs de la compétition
+      const result = await prisma.$transaction(async (prisma) => {
+        // 1. Récupérer tous les matchs de la compétition
+        const matches = await prisma.match.findMany({
+          where: {
+            group: {
+              competitionId: competitionId,
+            },
+          },
+          select: { id: true },
+        });
+
+        const matchIds = matches.map((match) => match.id);
+        console.log(`${matchIds.length} matchs trouvés pour suppression`);
+
+        // 2. Supprimer tous les rounds associés aux matchs
+        if (matchIds.length > 0) {
+          const deletedRounds = await prisma.round.deleteMany({
+            where: {
+              matchId: { in: matchIds },
+            },
+          });
+          console.log(`${deletedRounds.count} rounds supprimés`);
+        }
+
+        // 3. Supprimer toutes les associations match-participant
+        if (matchIds.length > 0) {
+          const deletedMatchParticipants =
+            await prisma.matchParticipant.deleteMany({
+              where: {
+                matchId: { in: matchIds },
+              },
+            });
+          console.log(
+            `${deletedMatchParticipants.count} associations match-participant supprimées`
+          );
+        }
+
+        // 4. Supprimer les matchs eux-mêmes
+        const deletedMatches = await prisma.match.deleteMany({
+          where: {
+            group: {
+              competitionId: competitionId,
+            },
+          },
+        });
+
+        return { count: deletedMatches.count };
+      });
+
+      console.log(`${result.count} matchs supprimés avec succès`);
+      res.json({
+        success: true,
+        message: `${result.count} matchs supprimés avec succès`,
+        count: result.count,
+      });
+    } catch (error) {
+      console.error(
+        `Erreur lors de la suppression des matchs de la compétition ${req.params.competitionId}:`,
+        error
+      );
+      res.status(500).json({
+        success: false,
+        message: "Erreur lors de la suppression des matchs",
+        details: error.message,
+      });
+    }
+  }
+);
+
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`Serveur démarré sur le port ${PORT}`);
+const HOST = process.env.HOST || "0.0.0.0"; // Écouter sur toutes les interfaces réseau
+
+app.listen(PORT, HOST, () => {
+  console.log(`Serveur démarré sur http://${HOST}:${PORT}`);
+  console.log(
+    `Pour accéder depuis d'autres ordinateurs, utilisez l'adresse IP de ce serveur`
+  );
 });

@@ -1,5 +1,73 @@
-// Définition de l'URL de l'API
-const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3001/api";
+// Fonction pour détecter si l'application est exécutée dans Electron
+const isElectron = () => {
+  // Vérification plus robuste pour Electron
+  return (
+    typeof window !== "undefined" &&
+    ((window.process && window.process.type === "renderer") ||
+      (window.navigator &&
+        window.navigator.userAgent.indexOf("Electron") !== -1))
+  );
+};
+
+// URLs de l'API - utilise localhost sur votre machine, adresse IP sur le réseau
+const LOCAL_API_URL = "http://localhost:3001/api";
+const NETWORK_API_URL = "http://192.168.1.18:3001/api";
+
+// Utilise l'URL appropriée selon le contexte d'exécution
+const API_URL = isElectron() ? LOCAL_API_URL : NETWORK_API_URL;
+export { API_URL }; // Exporter API_URL pour l'utiliser dans d'autres fichiers
+
+console.log(
+  "Mode d'exécution:",
+  isElectron() ? "Electron (localhost)" : "Navigateur (réseau)"
+);
+console.log("URL de l'API utilisée:", API_URL);
+
+// Nouvelle fonction pour récupérer un match par son numéro dans une compétition
+export const getMatchByNumber = async (competitionId, matchNumber) => {
+  try {
+    console.log(
+      `Recherche du match numéro ${matchNumber} dans la compétition ${competitionId}`
+    );
+
+    // Vérifier que les paramètres sont valides
+    if (!competitionId) {
+      throw new Error("ID de compétition non fourni");
+    }
+
+    if (!matchNumber) {
+      throw new Error("Numéro de match non fourni");
+    }
+
+    // Appel à l'API en respectant l'ordre des paramètres
+    const response = await fetch(
+      `${API_URL}/match/byNumber/${competitionId}/${matchNumber}`,
+      {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Erreur lors de la recherche du match #${matchNumber}: ${response.status}`
+      );
+    }
+
+    const match = await response.json();
+    console.log(`Match #${matchNumber} trouvé avec ID: ${match.id}`);
+    return match;
+  } catch (error) {
+    console.error(
+      `Erreur détaillée lors de la recherche du match #${matchNumber}:`,
+      error
+    );
+    throw error;
+  }
+};
 
 // Sauvegarde d'une compétition nouvelle ou mise à jour d'une existante
 export const saveCompetitionState = async (competitionData) => {
@@ -55,8 +123,22 @@ export const saveCompetitionState = async (competitionData) => {
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.details || "Erreur lors de la sauvegarde");
+      // Capturer le code HTTP de l'erreur pour le traiter plus tard
+      const statusCode = response.status;
+      let errorMessage;
+
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.details || `Erreur HTTP: ${statusCode}`;
+      } catch (jsonError) {
+        // Si le corps de la réponse n'est pas du JSON valide
+        errorMessage = `Erreur HTTP: ${statusCode}`;
+      }
+
+      // Créer une erreur avec le code de statut pour permettre des traitements spécifiques
+      const error = new Error(errorMessage);
+      error.statusCode = statusCode;
+      throw error;
     }
 
     const result = await response.json();
@@ -67,9 +149,14 @@ export const saveCompetitionState = async (competitionData) => {
       "Erreur détaillée lors de la sauvegarde de la compétition:",
       error
     );
-    throw new Error("Erreur lors de la sauvegarde de la compétition.", {
-      cause: error,
-    });
+
+    // Propager l'erreur avec le code de statut si disponible
+    const enhancedError = new Error(
+      "Erreur lors de la sauvegarde de la compétition."
+    );
+    enhancedError.cause = error;
+    enhancedError.statusCode = error.statusCode; // Conserver le code de statut
+    throw enhancedError;
   }
 };
 
@@ -676,11 +763,11 @@ export const saveMatchResult = async (matchId, results) => {
       throw new Error("ID du match non fourni");
     }
 
-    // Vérifier que le match existe
-    console.log("Tentative de vérification de l'existence du match...");
-    console.log("URL de la requête:", `${API_URL}/match/${matchId}`);
-
-    const checkResponse = await fetch(`${API_URL}/match/${matchId}`, {
+    // Récupérer d'abord les informations du match pour vérifier les positions des participants
+    console.log(
+      "Récupération des informations du match avant la mise à jour..."
+    );
+    const matchInfoResponse = await fetch(`${API_URL}/match/${matchId}`, {
       method: "GET",
       headers: {
         Accept: "application/json",
@@ -688,74 +775,136 @@ export const saveMatchResult = async (matchId, results) => {
       },
     });
 
-    console.log("Statut de la réponse de vérification:", checkResponse.status);
+    if (!matchInfoResponse.ok) {
+      throw new Error(
+        `Erreur lors de la récupération des informations du match: ${matchInfoResponse.status}`
+      );
+    }
+
+    const matchInfo = await matchInfoResponse.json();
     console.log(
-      "Headers de la réponse:",
-      Object.fromEntries(checkResponse.headers.entries())
+      "Informations du match récupérées:",
+      JSON.stringify(matchInfo.matchParticipants, null, 2)
     );
 
-    const responseText = await checkResponse.text();
-    console.log("Réponse brute:", responseText);
+    // Identifier les participants par position
+    const participantA = matchInfo.matchParticipants.find(
+      (mp) => mp.position === "A"
+    );
+    const participantB = matchInfo.matchParticipants.find(
+      (mp) => mp.position === "B"
+    );
 
-    let matchData;
-    try {
-      matchData = JSON.parse(responseText);
-    } catch (e) {
-      console.error("Erreur lors du parsing de la réponse:", e);
-      throw new Error("Réponse invalide du serveur");
+    if (!participantA || !participantB) {
+      console.error(
+        "Impossible de trouver les participants A et B dans le match"
+      );
+      throw new Error("Données du match incomplètes");
     }
 
-    if (!checkResponse.ok) {
-      console.error("Réponse de vérification du match:", {
-        status: checkResponse.status,
-        statusText: checkResponse.statusText,
-        data: matchData,
+    console.log("Position A:", participantA.participantId);
+    console.log("Position B:", participantB.participantId);
+
+    // Déterminer le vainqueur en fonction des rounds gagnés par position
+    let winnerId = null;
+    let winnerPosition = null;
+
+    if (results.completed) {
+      // Compter les rounds gagnés par chaque position
+      let roundsWonByA = 0;
+      let roundsWonByB = 0;
+
+      results.rounds.forEach((round) => {
+        if (round.winner === "A") roundsWonByA++;
+        if (round.winner === "B") roundsWonByB++;
       });
-      if (checkResponse.status === 404) {
-        throw new Error("Match non trouvé");
+
+      console.log(`Rounds gagnés - A: ${roundsWonByA}, B: ${roundsWonByB}`);
+
+      // Déterminer le vainqueur du match
+      if (roundsWonByA > roundsWonByB) {
+        winnerId = participantA.participantId;
+        winnerPosition = "A";
+      } else if (roundsWonByB > roundsWonByA) {
+        winnerId = participantB.participantId;
+        winnerPosition = "B";
       }
-      throw new Error("Erreur lors de la vérification du match");
+
+      console.log(
+        `Vainqueur calculé: ${winnerPosition} (A: ${roundsWonByA} rounds, B: ${roundsWonByB} rounds)`
+      );
+      console.log(`ID du vainqueur: ${winnerId}`);
     }
 
-    console.log("Match trouvé:", JSON.stringify(matchData, null, 2));
-
-    // Mettre à jour le match avec les résultats
-    console.log("Tentative de mise à jour du match...");
+    // Préparer les données de mise à jour
+    console.log("Préparation des données de mise à jour...");
     const updateData = {
       status: results.completed ? "completed" : "pending",
-      winner: results.winner,
+      winner: winnerId, // Utiliser l'ID correct du vainqueur
       endTime: results.completed ? new Date().toISOString() : null,
-      rounds: results.rounds.map((round, index) => ({
-        roundNumber: index + 1,
-        scoreA: round.fighterA,
-        scoreB: round.fighterB,
-        winner: round.winner,
-      })),
+      rounds: results.rounds.map((round, index) => {
+        const roundWinnerId =
+          round.winner === "A"
+            ? participantA.participantId
+            : round.winner === "B"
+            ? participantB.participantId
+            : null;
+
+        return {
+          roundNumber: index + 1,
+          scoreA: round.fighterA,
+          scoreB: round.fighterB,
+          winner: roundWinnerId,
+          winnerPosition: round.winner,
+        };
+      }),
     };
+
     console.log("Données de mise à jour:", JSON.stringify(updateData, null, 2));
 
-    const matchResponse = await fetch(`${API_URL}/match/${matchId}`, {
-      method: "PUT",
+    // Envoyer la mise à jour au serveur
+    console.log("Envoi de la mise à jour au serveur...");
+    const url = `${API_URL}/match/${matchId}/results`;
+    console.log("URL de la requête:", url);
+
+    const matchResponse = await fetch(url, {
+      method: "POST", // Utiliser POST au lieu de PUT pour aller à un endpoint spécifique
       headers: {
         "Content-Type": "application/json",
+        Accept: "application/json",
       },
       body: JSON.stringify(updateData),
     });
 
+    console.log("Statut de la réponse:", matchResponse.status);
+
     if (!matchResponse.ok) {
-      const errorData = await matchResponse.json();
-      console.error("Erreur lors de la mise à jour:", errorData);
-      throw new Error(
-        `Erreur serveur: ${errorData.message || matchResponse.statusText}`
-      );
+      let errorMessage = `Erreur HTTP: ${matchResponse.status}`;
+      try {
+        const errorData = await matchResponse.json();
+        errorMessage = errorData.message || errorData.details || errorMessage;
+      } catch (e) {
+        // Si la réponse n'est pas du JSON valide, on garde le message par défaut
+        console.warn("Impossible de parser la réponse d'erreur comme JSON", e);
+      }
+      console.error("Erreur lors de la mise à jour:", errorMessage);
+      throw new Error(errorMessage);
     }
 
     const updatedMatch = await matchResponse.json();
     console.log("Match mis à jour avec succès:", updatedMatch);
-    return { success: true, match: updatedMatch };
+    return {
+      success: true,
+      match: updatedMatch,
+      winnerPosition: winnerPosition,
+    };
   } catch (error) {
     console.error("Erreur détaillée lors de la mise à jour du match:", error);
-    throw error;
+    return {
+      success: false,
+      error: error.message,
+      details: error,
+    };
   }
 };
 
@@ -945,6 +1094,8 @@ export const updateMatchResult = async (matchId, matchData) => {
 export const saveGeneratedMatches = async (competitionId, matchesByPool) => {
   const errors = [];
   const savedMatches = [];
+  // Garder une trace des combinaisons de participants déjà sauvegardées
+  const savedCombinations = new Set();
 
   if (!competitionId) {
     console.error("ID de compétition manquant");
@@ -1027,6 +1178,22 @@ export const saveGeneratedMatches = async (competitionId, matchesByPool) => {
             console.warn(`Match sans participants valides, ignoré`);
             continue;
           }
+
+          // Créer une clé unique pour ce match basée sur les IDs des participants
+          const participant1 = match.participants[0]?.id || "";
+          const participant2 = match.participants[1]?.id || "";
+          const matchKey = [participant1, participant2].sort().join("|");
+
+          // Vérifier si cette combinaison a déjà été sauvegardée
+          if (savedCombinations.has(matchKey)) {
+            console.log(
+              `Match entre ${participant1} et ${participant2} déjà sauvegardé, éviter le doublon`
+            );
+            continue;
+          }
+
+          // Marquer cette combinaison comme sauvegardée
+          savedCombinations.add(matchKey);
 
           // Trouver le numéro du match à partir des informations de schedule
           // Le match.number peut venir du schedule
@@ -1196,7 +1363,7 @@ export const saveGeneratedMatches = async (competitionId, matchesByPool) => {
       }
     }
 
-    console.log(`${savedMatches.length} matchs sauvegardés`);
+    console.log(`${savedMatches.length} matchs sauvegardés (sans doublons)`);
 
     if (errors.length > 0) {
       console.warn(
@@ -1329,43 +1496,88 @@ export const checkExistingGroupsAndPools = async (competitionId) => {
 export const checkExistingMatches = async (competitionId) => {
   try {
     if (!competitionId) {
-      console.error("ID de compétition manquant");
+      console.error("ID de compétition manquant dans checkExistingMatches");
       return { exists: false, count: 0 };
     }
 
+    // Utilisation d'un endpoint qui existe réellement pour vérifier les matchs
+    console.log(
+      `Vérification des matchs existants pour compétition ${competitionId}...`
+    );
     const response = await fetch(
       `${API_URL}/competition/${competitionId}/matches`,
       {
         method: "GET",
         headers: {
+          Accept: "application/json",
           "Content-Type": "application/json",
         },
       }
     );
 
+    console.log(`Statut de la réponse: ${response.status}`);
+
     if (!response.ok) {
-      console.warn(
-        `Erreur lors de la vérification des matchs existants: ${response.status}`
+      console.error(
+        `Erreur HTTP lors de la vérification des matchs: ${response.status}`
       );
+      if (response.status === 404) {
+        // La route n'existe pas - probable erreur côté API
+        console.warn(
+          "L'endpoint /competition/:id/matches n'existe pas. Essai de l'endpoint alternatif..."
+        );
+        // Essayer un autre endpoint si le premier n'existe pas
+        const altResponse = await fetch(
+          `${API_URL}/competition/${competitionId}/matchesWithDetails`,
+          {
+            method: "GET",
+            headers: {
+              Accept: "application/json",
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        if (!altResponse.ok) {
+          console.error(
+            `Erreur HTTP avec l'endpoint alternatif: ${altResponse.status}`
+          );
+          return { exists: false, count: 0 };
+        }
+
+        const matches = await altResponse.json();
+        console.log(
+          `${matches.length} matchs trouvés avec l'endpoint alternatif`
+        );
+        return {
+          exists: matches.length > 0,
+          count: matches.length,
+          matches: matches,
+        };
+      }
+
       return { exists: false, count: 0 };
     }
 
     const matches = await response.json();
+    const count = Array.isArray(matches) ? matches.length : 0;
+
     console.log(
-      `${matches.length} matchs existants trouvés pour la compétition ${competitionId}`
+      `${count} matchs existants trouvés pour la compétition ${competitionId}`
     );
 
     return {
-      exists: matches.length > 0,
-      count: matches.length,
+      exists: count > 0,
+      count: count,
       matches: matches,
     };
   } catch (error) {
     console.error(
-      "Erreur lors de la vérification des matchs existants:",
+      "Erreur détaillée lors de la vérification des matchs existants:",
       error
     );
-    return { exists: false, count: 0 };
+    // En cas d'erreur, considérer qu'il n'y a pas de matchs pour éviter la régénération
+    return { exists: true, count: 1 };
   }
 };
 
@@ -1530,5 +1742,334 @@ export const fetchFormattedMatches = async (competitionId) => {
   } catch (error) {
     console.error("Erreur lors de la récupération des matchs:", error);
     throw error;
+  }
+};
+
+/**
+ * Charge les matchs depuis la base de données
+ * @param {string} competitionId - ID de la compétition
+ * @returns {Promise<Array>} - Liste des matchs
+ */
+export const loadMatches = async (competitionId) => {
+  try {
+    const response = await fetch(`${API_URL}/matches/${competitionId}`, {
+      method: "GET",
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erreur HTTP: ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("Erreur lors du chargement des matchs:", error);
+    throw error;
+  }
+};
+
+/**
+ * Vérifie si des résultats existent pour une compétition
+ * @param {string} competitionId - ID de la compétition
+ * @returns {Promise<{exists: boolean, count: number}>} - Résultat de la vérification
+ */
+export const checkExistingResults = async (competitionId) => {
+  try {
+    const response = await fetch(`${API_URL}/results/count/${competitionId}`, {
+      method: "GET",
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erreur HTTP: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return {
+      exists: data.count > 0,
+      count: data.count,
+    };
+  } catch (error) {
+    console.error(
+      "Erreur lors de la vérification des résultats existants:",
+      error
+    );
+    return { exists: false, count: 0 };
+  }
+};
+
+/**
+ * Charge les résultats depuis la base de données
+ * @param {string} competitionId - ID de la compétition
+ * @returns {Promise<Object>} - Objet avec les résultats des matchs
+ */
+export const loadResults = async (competitionId) => {
+  try {
+    const response = await fetch(`${API_URL}/results/${competitionId}`, {
+      method: "GET",
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erreur HTTP: ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("Erreur lors du chargement des résultats:", error);
+    throw error;
+  }
+};
+
+/**
+ * Récupère toutes les données nécessaires pour le calcul des résultats des poules
+ * @param {string} competitionId - ID de la compétition
+ * @returns {Promise<Object>} - Toutes les données nécessaires
+ */
+export const fetchResultsData = async (competitionId) => {
+  try {
+    console.log(
+      "Récupération des données de résultats pour la compétition:",
+      competitionId
+    );
+
+    // 1. Récupérer les groupes avec leurs détails (poules et participants)
+    const groupsResponse = await fetch(
+      `${API_URL}/competition/${competitionId}/groupsWithDetails`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (!groupsResponse.ok) {
+      throw new Error(
+        `Erreur lors de la récupération des groupes: ${groupsResponse.status}`
+      );
+    }
+
+    const groups = await groupsResponse.json();
+    console.log(`${groups.length} groupes récupérés avec leurs détails`);
+
+    // 2. Récupérer tous les matchs, y compris ceux complétés
+    const matchesResponse = await fetch(
+      `${API_URL}/competition/${competitionId}/matchesWithDetails`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (!matchesResponse.ok) {
+      throw new Error(
+        `Erreur lors de la récupération des matchs: ${matchesResponse.status}`
+      );
+    }
+
+    const matches = await matchesResponse.json();
+    console.log(`${matches.length} matchs récupérés au total`);
+
+    // Vérifier les matchs complétés
+    const completedMatches = matches.filter((m) => m.status === "completed");
+    console.log(`${completedMatches.length} matchs complétés trouvés`);
+
+    if (completedMatches.length > 0) {
+      console.log("Exemple de match complété:", {
+        id: completedMatches[0].id,
+        matchNumber: completedMatches[0].matchNumber,
+        winner: completedMatches[0].winner,
+        rounds: completedMatches[0].rounds?.length || 0,
+      });
+    }
+
+    // 3. Récupérer tous les participants
+    const participantsResponse = await fetch(
+      `${API_URL}/participants?competitionId=${competitionId}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (!participantsResponse.ok) {
+      throw new Error(
+        `Erreur lors de la récupération des participants: ${participantsResponse.status}`
+      );
+    }
+
+    const participants = await participantsResponse.json();
+    console.log(`${participants.length} participants récupérés`);
+
+    // 4. Récupérer tous les résultats de matchs sauvegardés séparément (si applicable)
+    // Dans certains cas, les résultats peuvent être stockés dans une collection séparée
+    let matchResults = {};
+
+    try {
+      const resultsResponse = await fetch(
+        `${API_URL}/match/results/${competitionId}`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (resultsResponse.ok) {
+        const results = await resultsResponse.json();
+        // Organiser les résultats par ID de match
+        results.forEach((result) => {
+          matchResults[result.matchId] = result;
+        });
+        console.log(
+          `${
+            Object.keys(matchResults).length
+          } résultats de matchs récupérés depuis la collection de résultats`
+        );
+      } else {
+        console.log(
+          "Pas de collection de résultats séparée disponible. Utilisation des données intégrées aux matchs."
+        );
+      }
+    } catch (error) {
+      console.log(
+        "Pas de collection de résultats séparée disponible:",
+        error.message
+      );
+    }
+
+    // Si nous n'avons pas de résultats séparés, créer les résultats à partir des données de matchs
+    if (Object.keys(matchResults).length === 0 && completedMatches.length > 0) {
+      console.log(
+        "Création des résultats à partir des données de matchs complétés"
+      );
+
+      completedMatches.forEach((match) => {
+        // Créer un objet de résultat basé sur les données du match
+        matchResults[match.id] = {
+          matchId: match.id,
+          winner: match.winner,
+          completed: true,
+          rounds: match.rounds || [],
+        };
+      });
+
+      console.log(
+        `${
+          Object.keys(matchResults).length
+        } résultats créés à partir des matchs complétés`
+      );
+    }
+
+    return {
+      participants,
+      groups,
+      matches,
+      matchResults,
+    };
+  } catch (error) {
+    console.error("Erreur lors de la récupération des données:", error);
+    throw error;
+  }
+};
+
+/**
+ * Supprime tous les groupes d'une compétition
+ * @param {string} competitionId - ID de la compétition
+ * @returns {Promise<{success: boolean, message: string}>} - Résultat de l'opération
+ */
+export const deleteAllGroups = async (competitionId) => {
+  try {
+    console.log(
+      `Suppression de tous les groupes pour la compétition ${competitionId}`
+    );
+
+    // Vérifier d'abord que la compétition existe
+    const competitionResponse = await fetch(
+      `${API_URL}/competition/${competitionId}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (!competitionResponse.ok) {
+      throw new Error(`Compétition non trouvée avec l'ID: ${competitionId}`);
+    }
+
+    // Récupérer tous les groupes existants pour cette compétition
+    const groupsResponse = await fetch(
+      `${API_URL}/competition/${competitionId}/groups`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (!groupsResponse.ok) {
+      throw new Error(
+        `Erreur lors de la récupération des groupes: ${groupsResponse.status}`
+      );
+    }
+
+    const groups = await groupsResponse.json();
+
+    if (groups.length === 0) {
+      return { success: true, message: "Aucun groupe à supprimer" };
+    }
+
+    console.log(`${groups.length} groupes à supprimer`);
+
+    // Supprimer chaque groupe
+    const deletionPromises = groups.map(async (group) => {
+      try {
+        const deleteResponse = await fetch(`${API_URL}/group/${group.id}`, {
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        });
+
+        if (!deleteResponse.ok) {
+          console.warn(
+            `Erreur lors de la suppression du groupe ${group.id}: ${deleteResponse.status}`
+          );
+          return { success: false, groupId: group.id };
+        }
+
+        return { success: true, groupId: group.id };
+      } catch (error) {
+        console.error(
+          `Erreur lors de la suppression du groupe ${group.id}:`,
+          error
+        );
+        return { success: false, groupId: group.id, error: error.message };
+      }
+    });
+
+    const results = await Promise.all(deletionPromises);
+    const successful = results.filter((r) => r.success).length;
+    const failed = results.filter((r) => !r.success).length;
+
+    return {
+      success: failed === 0,
+      message: `${successful} groupes supprimés avec succès, ${failed} échecs`,
+      details: {
+        total: groups.length,
+        successful,
+        failed,
+        failedGroupIds: results.filter((r) => !r.success).map((r) => r.groupId),
+      },
+    };
+  } catch (error) {
+    console.error("Erreur lors de la suppression des groupes:", error);
+    return { success: false, message: error.message };
   }
 };

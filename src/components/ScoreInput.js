@@ -1,11 +1,21 @@
+import { jsPDF } from "jspdf";
+import "jspdf-autotable";
 import React, { useEffect, useState } from "react";
 import { useCompetition } from "../context/CompetitionContext";
 import {
+  checkExistingResults,
   getCompletedMatches,
+  getMatchByNumber,
+  loadMatches,
+  loadResults,
   saveMatchResult,
   updateMatchResult,
 } from "../services/dbService";
 import "../styles/ScoreInput.css";
+import { findPowerThreshold } from "../utils/constants";
+
+// Définition de l'URL de l'API
+const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3001/api";
 
 const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   const { competitionId } = useCompetition();
@@ -14,33 +24,281 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   const [currentFilter, setCurrentFilter] = useState("all"); // 'all', 'pending', 'completed'
   const [currentArea, setCurrentArea] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [areasCount, setAreasCount] = useState(0);
   const [completedMatches, setCompletedMatches] = useState([]);
   const [showCompleted, setShowCompleted] = useState(false);
   const [savingMatch, setSavingMatch] = useState(null);
   const [editingMatch, setEditingMatch] = useState(null);
   const [editedScores, setEditedScores] = useState(null);
+  const [error, setError] = useState(null);
+  const [dataSource, setDataSource] = useState(""); // 'new' ou 'existing'
+  const [exportingPdf, setExportingPdf] = useState(false);
+  // Nouvel état pour suivre les retards par aire et les heures de fin estimées
+  const [areasDelayInfo, setAreasDelayInfo] = useState({});
 
   // Charger les combats terminés depuis la base de données au chargement
   useEffect(() => {
-    if (competitionId) {
-      loadCompletedMatches();
-    }
-  }, [competitionId]);
+    if (matches && matches.length > 0) {
+      // Utiliser les matchs fournis en props
+      console.log(
+        "Utilisation des matchs fournis par les props:",
+        matches.length
+      );
+      setCurrentMatches(matches);
+      setAreasCount(Math.max(...matches.map((m) => m.areaNumber || 1)));
 
-  // Fonction pour charger les combats terminés
+      // Charger les matchs terminés
+      loadCompletedMatches();
+
+      setIsLoading(false);
+    } else if (competitionId) {
+      // Si pas de matchs passés en props mais un ID de compétition, tenter de charger depuis la DB
+      loadMatchesAndResults();
+    } else {
+      setIsLoading(false);
+    }
+  }, [matches, competitionId]);
+
+  // Charger les combats terminés depuis la base de données
   const loadCompletedMatches = async () => {
     try {
-      const dbCompletedMatches = await getCompletedMatches(competitionId);
-      setCompletedMatches(dbCompletedMatches);
+      console.log(
+        "Chargement des matchs terminés pour la compétition:",
+        competitionId
+      );
+      const completedMatchesData = await getCompletedMatches(competitionId);
+
+      if (completedMatchesData && completedMatchesData.length > 0) {
+        console.log(
+          `${completedMatchesData.length} matchs terminés chargés avec succès`
+        );
+        setCompletedMatches(completedMatchesData);
+
+        // Synchroniser les matchs terminés avec l'état local
+        syncCompletedMatchesWithState(completedMatchesData);
+      } else {
+        console.log("Aucun match terminé trouvé");
+        setCompletedMatches([]);
+      }
     } catch (error) {
-      console.error("Erreur lors du chargement des combats terminés:", error);
+      console.error("Erreur lors du chargement des matchs terminés:", error);
     }
   };
 
+  // Synchroniser les matchs terminés avec l'état local
+  const syncCompletedMatchesWithState = (completedMatches) => {
+    const updatedMatchResults = { ...matchResults };
+
+    completedMatches.forEach((match) => {
+      // Pour chaque match terminé, vérifier s'il est dans l'état local
+      // Si non, ou s'il n'est pas marqué comme terminé, le mettre à jour
+      const matchId = match.id;
+      const matchNumber = match.matchNumber;
+
+      // Transformer les données du match de l'API au format local attendu
+      const matchResultData = {
+        completed: true,
+        winner:
+          match.winner ===
+          match.matchParticipants.find((p) => p.position === "A")?.participantId
+            ? "A"
+            : "B",
+        rounds: match.rounds.map((round) => ({
+          fighterA: round.scoreA,
+          fighterB: round.scoreB,
+          winner: round.winner,
+        })),
+      };
+
+      // Mettre à jour l'état local avec ce match
+      updatedMatchResults[matchId] = matchResultData;
+
+      // Mettre à jour dans la liste des matchs en cours
+      setCurrentMatches((prev) =>
+        prev.map((m) =>
+          m.id === matchId || m.matchNumber === matchNumber
+            ? { ...m, status: "completed" }
+            : m
+        )
+      );
+    });
+
+    // Mettre à jour l'état avec tous les matchs terminés
+    setMatchResults(updatedMatchResults);
+    console.log("État local synchronisé avec les matchs terminés");
+  };
+
+  // Calculer les retards et les temps de fin estimés pour chaque aire
+  const calculateAreasDelayInfo = () => {
+    // Si pas de matchs ou pas d'horaire, on ne peut pas calculer
+    if (!currentMatches.length || !schedule || !schedule.length) {
+      return {};
+    }
+
+    // Récupérer l'heure actuelle
+    const now = new Date();
+
+    // Trouver l'heure de début prévue de la compétition (premier match du planning)
+    const sortedSchedule = [...schedule].sort(
+      (a, b) => new Date(a.startTime) - new Date(b.startTime)
+    );
+    const competitionStartTime =
+      sortedSchedule.length > 0 ? new Date(sortedSchedule[0].startTime) : null;
+
+    // Grouper les matchs par aire
+    const matchesByArea = {};
+    // Trouver le dernier match prévu par aire
+    const lastScheduledMatchByArea = {};
+    // Trouver le dernier match terminé par aire
+    const lastCompletedMatchByArea = {};
+    // Identifier toutes les aires utilisées dans le planning
+    const allAreas = new Set();
+
+    // Identifier toutes les aires utilisées dans le planning
+    schedule.forEach((item) => {
+      if (item.areaNumber) {
+        allAreas.add(item.areaNumber);
+      }
+    });
+
+    // Initialiser les structures de données
+    currentMatches.forEach((match) => {
+      const areaNumber = match.areaNumber || 1;
+      allAreas.add(areaNumber);
+      if (!matchesByArea[areaNumber]) {
+        matchesByArea[areaNumber] = [];
+      }
+      matchesByArea[areaNumber].push(match);
+    });
+
+    // Trouver le dernier match prévu pour chaque aire
+    schedule.forEach((item) => {
+      if (item.type === "match") {
+        const areaNumber = item.areaNumber || 1;
+        if (
+          !lastScheduledMatchByArea[areaNumber] ||
+          new Date(item.startTime) >
+            new Date(lastScheduledMatchByArea[areaNumber].startTime)
+        ) {
+          lastScheduledMatchByArea[areaNumber] = item;
+        }
+      }
+    });
+
+    // Trouver le dernier match terminé pour chaque aire
+    completedMatches.forEach((match) => {
+      const areaNumber = match.area?.areaNumber || 1;
+      if (
+        !lastCompletedMatchByArea[areaNumber] ||
+        (match.endTime &&
+          (!lastCompletedMatchByArea[areaNumber].endTime ||
+            new Date(match.endTime) >
+              new Date(lastCompletedMatchByArea[areaNumber].endTime)))
+      ) {
+        lastCompletedMatchByArea[areaNumber] = match;
+      }
+    });
+
+    // Calculer le retard et l'heure de fin estimée pour chaque aire
+    const result = {};
+
+    // Traiter toutes les aires identifiées
+    Array.from(allAreas).forEach((areaNumber) => {
+      const area = parseInt(areaNumber);
+      const lastScheduled = lastScheduledMatchByArea[area];
+      const lastCompleted = lastCompletedMatchByArea[area];
+
+      // Cas 1: L'aire a des matchs terminés
+      if (lastScheduled && lastCompleted && lastCompleted.endTime) {
+        // Trouver le match prévu correspondant au dernier match terminé
+        const scheduledMatchForCompleted = schedule.find(
+          (item) =>
+            item.matchId === lastCompleted.id ||
+            item.matchNumber === lastCompleted.matchNumber
+        );
+
+        if (scheduledMatchForCompleted) {
+          // Calculer le retard en minutes
+          const scheduledEndTime = new Date(scheduledMatchForCompleted.endTime);
+          const actualEndTime = new Date(lastCompleted.endTime);
+          const delayInMs = actualEndTime - scheduledEndTime;
+          const delayInMinutes = Math.round(delayInMs / 60000);
+
+          // Calculer la nouvelle heure de fin estimée
+          const originalScheduledEndTime = new Date(lastScheduled.endTime);
+          const newEstimatedEndTime = new Date(
+            originalScheduledEndTime.getTime() + delayInMs
+          );
+
+          result[area] = {
+            delayInMinutes,
+            originalEndTime: originalScheduledEndTime,
+            estimatedEndTime: newEstimatedEndTime,
+            lastCompletedMatch: lastCompleted.matchNumber,
+            message:
+              delayInMinutes > 0
+                ? `Retard de ${delayInMinutes} min. basé sur le match #${lastCompleted.matchNumber}`
+                : delayInMinutes < 0
+                ? `Avance de ${Math.abs(
+                    delayInMinutes
+                  )} min. basé sur le match #${lastCompleted.matchNumber}`
+                : `Dans les temps. Dernier match complété: #${lastCompleted.matchNumber}`,
+            hasResults: true,
+          };
+        }
+      }
+      // Cas 2: L'aire n'a pas encore de matchs terminés mais a des matchs prévus
+      else if (lastScheduled && competitionStartTime) {
+        // Calculer le retard basé sur l'heure de début prévue de la compétition
+        const timeSinceScheduledStart = now - competitionStartTime;
+        const delayInMinutes = Math.round(timeSinceScheduledStart / 60000);
+
+        // Ne compter comme retard que si l'heure actuelle est après l'heure prévue de début
+        const actualDelayInMinutes = delayInMinutes > 0 ? delayInMinutes : 0;
+
+        // Calculer la nouvelle heure de fin estimée
+        const originalScheduledEndTime = new Date(lastScheduled.endTime);
+        const newEstimatedEndTime = new Date(
+          originalScheduledEndTime.getTime() + actualDelayInMinutes * 60000
+        );
+
+        // Premier match prévu pour cette aire
+        const firstMatchForArea = sortedSchedule.find(
+          (item) => item.type === "match" && item.areaNumber === area
+        );
+        const firstMatchNumber = firstMatchForArea
+          ? firstMatchForArea.matchNumber
+          : "N/A";
+
+        result[area] = {
+          delayInMinutes: actualDelayInMinutes,
+          originalEndTime: originalScheduledEndTime,
+          estimatedEndTime: newEstimatedEndTime,
+          lastCompletedMatch: null,
+          message:
+            actualDelayInMinutes > 0
+              ? `Retard estimé de ${actualDelayInMinutes} min. La compétition aurait dû commencer à ${formatTime(
+                  competitionStartTime
+                )}`
+              : `Pas encore de résultats. Premier match prévu: #${firstMatchNumber}`,
+          hasResults: false,
+        };
+      }
+    });
+
+    return result;
+  };
+
   useEffect(() => {
-    if (matches && schedule) {
+    if (completedMatches.length > 0 && schedule && schedule.length > 0) {
+      const delayInfo = calculateAreasDelayInfo();
+      setAreasDelayInfo(delayInfo);
+    }
+  }, [completedMatches, schedule]);
+
+  useEffect(() => {
+    if (schedule) {
       setIsLoading(true);
 
       // Création de la liste des matchs avec les infos de planification
@@ -67,6 +325,51 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
       setIsLoading(false);
     }
   }, [matches, schedule, matchResults]);
+
+  // Fonction pour charger les matchs et les résultats depuis la base de données
+  const loadMatchesAndResults = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      // Vérifier si des résultats existent déjà
+      const existingResultsResponse = await checkExistingResults(competitionId);
+
+      if (existingResultsResponse.exists && existingResultsResponse.count > 0) {
+        console.log(
+          `${existingResultsResponse.count} résultats existants trouvés`
+        );
+        setDataSource("existing");
+      } else {
+        console.log("Aucun résultat existant trouvé");
+        setDataSource("new");
+      }
+
+      // Charger les matchs
+      const loadedMatches = await loadMatches(competitionId);
+
+      if (loadedMatches && loadedMatches.length > 0) {
+        setCurrentMatches(loadedMatches);
+
+        // Charger les résultats si existants
+        const loadedResults = await loadResults(competitionId);
+        if (loadedResults) {
+          setMatchResults(loadedResults);
+        }
+      } else {
+        setError("Aucun match trouvé pour cette compétition");
+      }
+
+      setIsLoading(false);
+    } catch (error) {
+      console.error(
+        "Erreur lors du chargement des matchs et résultats:",
+        error
+      );
+      setError(`Erreur: ${error.message}`);
+      setIsLoading(false);
+    }
+  };
 
   // Gestion de la saisie des scores
   const handleScoreChange = (matchId, roundIndex, fighter, value) => {
@@ -172,35 +475,249 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
       console.log("État complet de matchResults:", matchResults);
       console.log("Résultats du match à sauvegarder:", matchResult);
 
-      if (matchResult) {
-        // Sauvegarder dans la base de données
-        console.log("Tentative de sauvegarde avec les données:", {
-          matchId,
-          matchResult,
-        });
-        const saveResult = await saveMatchResult(matchId, matchResult);
-        console.log("Réponse de saveMatchResult:", saveResult);
+      // Récupérer le match depuis la liste des matchs actuels
+      const matchData = currentMatches.find((m) => m.id === matchId);
+      if (!matchData) {
+        throw new Error("Match non trouvé dans les données locales");
+      }
 
-        if (saveResult.success) {
-          // Recharger les combats terminés
-          await loadCompletedMatches();
-          console.log("Combats terminés rechargés avec succès");
+      // Récupérer le match par son numéro depuis l'API (pour obtenir l'ID correct)
+      console.log(
+        `Recherche du match par son numéro: ${
+          matchData.matchNumber || matchData.number
+        }`
+      );
+      const matchNumber = matchData.matchNumber || matchData.number;
 
-          // Retirer le match de la liste courante ou le marquer comme complété
-          setCurrentMatches((prev) =>
-            prev.map((m) =>
-              m.id === matchId ? { ...m, status: "completed" } : m
-            )
+      try {
+        // Utiliser la nouvelle fonction getMatchByNumber
+        const dbMatch = await getMatchByNumber(competitionId, matchNumber);
+        console.log(
+          `Match #${matchNumber} trouvé dans la DB avec l'ID: ${dbMatch.id}`
+        );
+
+        // Vérifier que les participants sont correctement mappés
+        console.log(
+          "Participants du match dans la base de données:",
+          dbMatch.matchParticipants
+        );
+        console.log("Participants locaux:", matchData.participants);
+
+        // Créer une copie du résultat du match pour éviter de modifier l'original
+        const resultToSave = { ...matchResult };
+
+        // Vérifier si les positions A et B correspondent entre l'interface et la base de données
+        if (
+          dbMatch.matchParticipants &&
+          dbMatch.matchParticipants.length >= 2
+        ) {
+          const dbParticipantA = dbMatch.matchParticipants.find(
+            (p) => p.position === "A"
+          )?.participant;
+          const dbParticipantB = dbMatch.matchParticipants.find(
+            (p) => p.position === "B"
+          )?.participant;
+
+          // Comparer avec les participants locaux pour voir s'il y a une inversion
+          const localParticipantA = matchData.participants
+            ? matchData.participants[0]
+            : null;
+          const localParticipantB = matchData.participants
+            ? matchData.participants[1]
+            : null;
+
+          if (
+            dbParticipantA &&
+            dbParticipantB &&
+            localParticipantA &&
+            localParticipantB
+          ) {
+            console.log(
+              "DB Participant A:",
+              dbParticipantA.prenom,
+              dbParticipantA.nom,
+              "ID:",
+              dbParticipantA.id
+            );
+            console.log(
+              "DB Participant B:",
+              dbParticipantB.prenom,
+              dbParticipantB.nom,
+              "ID:",
+              dbParticipantB.id
+            );
+            console.log(
+              "Local Participant A:",
+              localParticipantA.prenom,
+              localParticipantA.nom,
+              "ID:",
+              localParticipantA.id
+            );
+            console.log(
+              "Local Participant B:",
+              localParticipantB.prenom,
+              localParticipantB.nom,
+              "ID:",
+              localParticipantB.id
+            );
+
+            // Vérifier s'il y a une inversion des participants
+            const positionsInverted =
+              localParticipantA.id === dbParticipantB.id &&
+              localParticipantB.id === dbParticipantA.id;
+
+            if (positionsInverted) {
+              console.log(
+                "ATTENTION: Les positions des participants sont inversées entre l'interface et la base de données"
+              );
+
+              // Inverser les scores des rounds
+              resultToSave.rounds = resultToSave.rounds.map((round) => ({
+                fighterA: round.fighterB,
+                fighterB: round.fighterA,
+                winner:
+                  round.winner === "A"
+                    ? "B"
+                    : round.winner === "B"
+                    ? "A"
+                    : null,
+              }));
+
+              // Inverser le vainqueur global
+              if (resultToSave.winner === "A") {
+                resultToSave.winner = "B";
+              } else if (resultToSave.winner === "B") {
+                resultToSave.winner = "A";
+              }
+
+              console.log("Résultats corrigés après inversion:", resultToSave);
+            }
+          }
+        }
+
+        // Utiliser l'ID correct de la base de données
+        const correctMatchId = dbMatch.id;
+
+        if (resultToSave) {
+          // Sauvegarder dans la base de données en utilisant l'ID correct
+          console.log("Tentative de sauvegarde avec les données:", {
+            matchId: correctMatchId,
+            matchResult: resultToSave,
+          });
+          const saveResult = await saveMatchResult(
+            correctMatchId,
+            resultToSave
+          );
+          console.log("Réponse de saveMatchResult:", saveResult);
+
+          if (saveResult.success) {
+            // Recharger les combats terminés
+            await loadCompletedMatches();
+            console.log("Combats terminés rechargés avec succès");
+
+            // Marquer le match comme complété dans la liste locale
+            setCurrentMatches((prev) =>
+              prev.map((m) =>
+                m.id === matchId ? { ...m, status: "completed" } : m
+              )
+            );
+
+            // Mettre à jour l'état local des matchResults pour marquer ce match comme complété
+            // C'est cette partie qui assure la persistance des données
+            setMatchResults((prev) => {
+              const updatedResults = { ...prev };
+              if (updatedResults[matchId]) {
+                updatedResults[matchId] = {
+                  ...updatedResults[matchId],
+                  completed: true,
+                };
+              }
+
+              // Ajouter également une entrée avec l'ID correct de la base de données
+              if (correctMatchId !== matchId) {
+                updatedResults[correctMatchId] = {
+                  ...resultToSave,
+                  completed: true,
+                };
+              }
+
+              return updatedResults;
+            });
+
+            // Mettre à jour les résultats globaux
+            setResults((prevResults) => ({
+              ...prevResults,
+              [matchId]: resultToSave,
+              [correctMatchId]: resultToSave, // Ajouter également avec l'ID correct
+            }));
+
+            // Basculer vers l'onglet des combats terminés après un court délai
+            setTimeout(() => {
+              setShowCompleted(true);
+
+              // Recalculer les retards après la sauvegarde d'un match
+              const updatedDelayInfo = calculateAreasDelayInfo();
+              setAreasDelayInfo(updatedDelayInfo);
+
+              // Utiliser directement les données du participant vainqueur renvoyées par l'API
+              // au lieu de se baser sur winnerPosition
+              if (saveResult.winnerParticipant) {
+                const winnerName = `${saveResult.winnerParticipant.prenom} ${saveResult.winnerParticipant.nom}`;
+                alert(
+                  "Match terminé avec succès! Vainqueur: " +
+                    winnerName +
+                    " - 3 points attribués"
+                );
+              } else {
+                // Fallback au cas où winnerParticipant n'est pas disponible
+                let winnerName = "Pas de vainqueur";
+                if (resultToSave.winner === "A") {
+                  const participantA = dbMatch.matchParticipants.find(
+                    (p) => p.position === "A"
+                  )?.participant;
+                  if (participantA) {
+                    winnerName = `${participantA.prenom} ${participantA.nom}`;
+                  }
+                } else if (resultToSave.winner === "B") {
+                  const participantB = dbMatch.matchParticipants.find(
+                    (p) => p.position === "B"
+                  )?.participant;
+                  if (participantB) {
+                    winnerName = `${participantB.prenom} ${participantB.nom}`;
+                  }
+                }
+
+                alert(
+                  "Match terminé avec succès! Vainqueur: " +
+                    winnerName +
+                    " - 3 points attribués"
+                );
+              }
+            }, 500);
+          }
+        } else {
+          throw new Error("Match ou résultats non trouvés");
+        }
+      } catch (error) {
+        // Vérifier si c'est une erreur 404 (match non trouvé)
+        if (
+          error.message &&
+          (error.message.includes("404") ||
+            error.message.includes("non trouvé"))
+        ) {
+          console.warn(
+            "Match non trouvé dans la base de données (404):",
+            matchId
           );
 
-          // Mettre à jour les résultats globaux
-          setResults((prevResults) => ({
-            ...prevResults,
-            [matchId]: matchResult,
-          }));
+          // Message à l'utilisateur
+          alert(
+            `Erreur lors de la sauvegarde du match #${matchNumber}. La base de données et l'interface sont désynchronisées. Veuillez rafraîchir la page.`
+          );
+        } else {
+          // Autre type d'erreur
+          throw error;
         }
-      } else {
-        throw new Error("Match ou résultats non trouvés");
       }
     } catch (error) {
       console.error("Erreur détaillée lors de la sauvegarde du match:", error);
@@ -266,16 +783,76 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   // Fonction pour sauvegarder les modifications
   const saveEditedMatch = async () => {
     try {
+      const participantA = editingMatch.matchParticipants?.find(
+        (p) => p.position === "A"
+      )?.participant;
+
+      const participantB = editingMatch.matchParticipants?.find(
+        (p) => p.position === "B"
+      )?.participant;
+
+      if (!participantA || !participantB) {
+        throw new Error("Participants du match incomplets");
+      }
+
+      console.log("Édition du match:", editingMatch);
+      console.log("Scores édités:", editedScores);
+      console.log(
+        "Participant A:",
+        participantA.prenom,
+        participantA.nom,
+        "ID:",
+        participantA.id
+      );
+      console.log(
+        "Participant B:",
+        participantB.prenom,
+        participantB.nom,
+        "ID:",
+        participantB.id
+      );
+
+      // Déterminer l'ID du participant vainqueur
+      let winnerId = null;
+      if (editedScores.winner === "A") {
+        winnerId = participantA.id;
+      } else if (editedScores.winner === "B") {
+        winnerId = participantB.id;
+      }
+
+      // Créer des rounds avec les bons IDs de participants
+      const updatedRounds = editedScores.rounds.map((round) => {
+        let roundWinnerId = null;
+        if (round.winner === "A") {
+          roundWinnerId = participantA.id;
+        } else if (round.winner === "B") {
+          roundWinnerId = participantB.id;
+        }
+
+        return {
+          scoreA: round.scoreA,
+          scoreB: round.scoreB,
+          winner: roundWinnerId,
+          winnerPosition: round.winner,
+        };
+      });
+
       const updatedMatch = {
         ...editingMatch,
-        rounds: editedScores.rounds,
-        winner: editedScores.winner,
+        rounds: updatedRounds,
+        winner: winnerId, // Utiliser l'ID du participant au lieu de "A" ou "B"
         status: "completed",
         endTime: new Date(),
+        pointMatch: winnerId ? 3 : 0, // 3 points pour une victoire, 0 pour un match nul
       };
 
       await updateMatchResult(editingMatch.id, updatedMatch);
       await loadCompletedMatches(); // Recharger la liste des matchs
+
+      // Recalculer les retards après la modification d'un match
+      const updatedDelayInfo = calculateAreasDelayInfo();
+      setAreasDelayInfo(updatedDelayInfo);
+
       setEditingMatch(null);
       setEditedScores(null);
     } catch (error) {
@@ -288,14 +865,19 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   const getFilteredMatches = () => {
     return currentMatches
       .filter((match) => {
+        // Vérifier si le match est considéré comme terminé
+        const isCompleted =
+          matchResults[match.id]?.completed || // Vérifie dans l'état local
+          match.status === "completed" || // Vérifie le status dans les données du match
+          completedMatches.some(
+            (cm) => cm.id === match.id || cm.matchNumber === match.matchNumber
+          ); // Vérifie dans la liste des matchs terminés
+
         // Filtre par statut
-        if (currentFilter === "pending" && matchResults[match.id]?.completed) {
+        if (currentFilter === "pending" && isCompleted) {
           return false;
         }
-        if (
-          currentFilter === "completed" &&
-          !matchResults[match.id]?.completed
-        ) {
+        if (currentFilter === "completed" && !isCompleted) {
           return false;
         }
 
@@ -340,17 +922,85 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
     nextStep();
   };
 
-  // Récupérer le nom d'un participant
+  // Formatage du nom du participant
   const getParticipantName = (match, position) => {
-    if (!match || !match.participants || !match.participants[position]) {
+    try {
+      const participant = match?.participants?.[position];
+      if (!participant) return "Inconnu";
+
+      if (participant.athleteInfo) {
+        const nom = participant.athleteInfo.nom || "";
+        const prenom = participant.athleteInfo.prenom || "";
+        return `${prenom} ${nom}`.trim() || "Inconnu";
+      } else if (participant.nom || participant.prenom) {
+        return `${participant.prenom || ""} ${participant.nom || ""}`.trim();
+      } else if (participant.name) {
+        return participant.name;
+      }
+
+      return "Inconnu";
+    } catch (error) {
+      console.error("Erreur lors de l'obtention du nom du participant:", error);
       return "Inconnu";
     }
-
-    const participant = match.participants[position];
-    return `${participant.prenom} ${participant.nom}`;
   };
 
-  // Formater l'heure
+  // Obtenir les informations de seuil de puissance et de plastron pour un match
+  const getPowerThresholdInfo = (match) => {
+    try {
+      if (!match || !match.participants || match.participants.length === 0) {
+        return null;
+      }
+
+      // Récupérer le premier participant (ils devraient tous être dans la même catégorie)
+      const participant = match.participants[0];
+
+      if (!participant) {
+        return null;
+      }
+
+      // Récupérer le groupe (category) pour obtenir la catégorie d'âge
+      const category = match.category || match.group;
+      if (!category) {
+        return null;
+      }
+
+      const ageCategory =
+        category.ageCategoryName || category.ageCategory?.name;
+      const gender = category.gender;
+
+      if (!ageCategory || !gender) {
+        return null;
+      }
+
+      // Récupérer le poids soit depuis athleteInfo soit directement depuis le participant
+      let weight;
+      if (participant.athleteInfo && participant.athleteInfo.poids) {
+        weight = participant.athleteInfo.poids;
+      } else if (participant.poids) {
+        weight = participant.poids;
+      } else {
+        console.warn(
+          "Impossible de trouver le poids du participant:",
+          participant
+        );
+        return null;
+      }
+
+      // Utiliser la fonction findPowerThreshold pour obtenir les informations
+      const thresholdInfo = findPowerThreshold(ageCategory, gender, weight);
+
+      return thresholdInfo;
+    } catch (error) {
+      console.error(
+        "Erreur lors de l'accès aux informations de seuil de puissance:",
+        error
+      );
+      return null;
+    }
+  };
+
+  // Formatage de l'heure
   const formatTime = (dateString) => {
     if (!dateString) return "--:--";
     const date = new Date(dateString);
@@ -376,9 +1026,20 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   );
 
   const filteredMatches = getFilteredMatches();
-  const completedCount = currentMatches.filter(
-    (m) => matchResults[m.id]?.completed
-  ).length;
+
+  // Fonction helper pour vérifier si un match est terminé
+  const isMatchCompleted = (match) => {
+    return (
+      matchResults[match.id]?.completed ||
+      match.status === "completed" ||
+      completedMatches.some(
+        (cm) => cm.id === match.id || cm.matchNumber === match.matchNumber
+      )
+    );
+  };
+
+  // Calculer les statistiques de combats terminés/en attente
+  const completedCount = currentMatches.filter(isMatchCompleted).length;
   const pendingCount = currentMatches.length - completedCount;
 
   // Modifier le rendu des matchs terminés pour inclure l'édition
@@ -413,6 +1074,15 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
 
               if (!participantA || !participantB) return null;
 
+              // Déterminer le vainqueur en se basant sur l'ID stocké
+              const isWinnerA = match.winner === participantA.id;
+              const isWinnerB = match.winner === participantB.id;
+              const winnerName = isWinnerA
+                ? `${participantA.prenom} ${participantA.nom}`
+                : isWinnerB
+                ? `${participantB.prenom} ${participantB.nom}`
+                : "Match nul";
+
               if (editingMatch?.id === match.id) {
                 return (
                   <tr key={match.id} className="editing">
@@ -446,7 +1116,9 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                     <td>
                       {editedScores.winner === "A"
                         ? `${participantA.prenom} ${participantA.nom}`
-                        : `${participantB.prenom} ${participantB.nom}`}
+                        : editedScores.winner === "B"
+                        ? `${participantB.prenom} ${participantB.nom}`
+                        : "Pas de vainqueur"}
                     </td>
                     <td>{formatTime(match.endTime)}</td>
                     <td>
@@ -468,7 +1140,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                 <tr key={match.id}>
                   <td>{match.matchNumber}</td>
                   <td>{match.area.areaNumber}</td>
-                  <td className={match.winner === "A" ? "winner" : ""}>
+                  <td className={isWinnerA ? "winner" : ""}>
                     {`${participantA.prenom} ${participantA.nom}`}
                   </td>
                   <td>
@@ -478,14 +1150,10 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                       </div>
                     ))}
                   </td>
-                  <td className={match.winner === "B" ? "winner" : ""}>
+                  <td className={isWinnerB ? "winner" : ""}>
                     {`${participantB.prenom} ${participantB.nom}`}
                   </td>
-                  <td>
-                    {match.winner === "A"
-                      ? `${participantA.prenom} ${participantA.nom}`
-                      : `${participantB.prenom} ${participantB.nom}`}
-                  </td>
+                  <td>{winnerName}</td>
                   <td>{formatTime(match.endTime)}</td>
                   <td>
                     <button
@@ -504,9 +1172,303 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
     </div>
   );
 
+  // Fonction pour exporter les fiches de poules au format PDF pour les arbitres
+  const handleExportPoolSheetsPDF = () => {
+    try {
+      setExportingPdf(true);
+
+      // Créer un nouveau document PDF en format paysage pour plus d'espace
+      const doc = new jsPDF("landscape");
+
+      // Organiser les matchs par poule
+      const matchesByPool = {};
+
+      // Regrouper les matchs par groupe et par poule
+      currentMatches.forEach((match) => {
+        const key = `${match.groupId}-${match.poolIndex}`;
+        if (!matchesByPool[key]) {
+          matchesByPool[key] = {
+            groupId: match.groupId,
+            poolIndex: match.poolIndex,
+            matches: [],
+          };
+        }
+        matchesByPool[key].matches.push(match);
+      });
+
+      // Récupérer les informations des groupes nécessaires pour l'affichage
+      const groupInfoPromises = Object.values(matchesByPool).map(
+        async (pool) => {
+          try {
+            const response = await fetch(`${API_URL}/group/${pool.groupId}`);
+            if (response.ok) {
+              const group = await response.json();
+              return {
+                ...pool,
+                groupName: `${group.gender === "male" ? "H" : "F"} - ${
+                  group.ageCategoryName
+                } - ${group.weightCategoryName}`,
+              };
+            }
+            return pool;
+          } catch (error) {
+            console.error(
+              "Erreur lors de la récupération des informations du groupe:",
+              error
+            );
+            return pool;
+          }
+        }
+      );
+
+      // Attendre la récupération de toutes les informations des groupes
+      Promise.all(groupInfoPromises)
+        .then((poolsWithInfo) => {
+          // Pour chaque poule, créer un tableau sur une nouvelle page
+          poolsWithInfo.forEach((pool, index) => {
+            if (index > 0) {
+              doc.addPage();
+            }
+
+            // Titre principal de la compétition
+            doc.setFontSize(16);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(0, 0, 0);
+            doc.text(
+              "TAEKWONDO TOURNAMENT MANAGER",
+              doc.internal.pageSize.width / 2,
+              15,
+              { align: "center" }
+            );
+
+            // Titre de la poule
+            const title = pool.groupName
+              ? `${pool.groupName.toUpperCase()}`
+              : "POULE";
+
+            // Titre secondaire de la poule avec la lettre
+            const poolLetter = String.fromCharCode(65 + pool.poolIndex);
+
+            doc.setFontSize(18);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(
+              pool.groupName && pool.groupName.includes("F")
+                ? "#D32F2F"
+                : "#3F51B5"
+            );
+            doc.text(
+              `${poolLetter} - POULE ${poolLetter}`,
+              doc.internal.pageSize.width / 2,
+              30,
+              { align: "center" }
+            );
+
+            // Sous-titre avec le nom du groupe
+            doc.setFontSize(14);
+            doc.text(title, doc.internal.pageSize.width / 2, 40, {
+              align: "center",
+            });
+
+            // Organisation des participants pour le tableau en format matrice
+            const participants = [];
+            pool.matches.forEach((match) => {
+              if (match.participants && match.participants.length >= 2) {
+                // Vérifier que les deux participants ne sont pas déjà dans la liste
+                const participant1 = match.participants[0];
+                const participant2 = match.participants[1];
+
+                if (!participants.some((p) => p.id === participant1.id)) {
+                  participants.push(participant1);
+                }
+
+                if (!participants.some((p) => p.id === participant2.id)) {
+                  participants.push(participant2);
+                }
+              }
+            });
+
+            // Créer la matrice pour le tableau de la poule
+            const tableData = [];
+
+            // Première ligne avec les noms des participants (en colonnes)
+            const headerRow = [""];
+            participants.forEach((participant) => {
+              headerRow.push(`${participant.prenom} ${participant.nom}`);
+            });
+            headerRow.push("POINTS");
+            headerRow.push("CLASSEMENT");
+            tableData.push(headerRow);
+
+            // Lignes pour chaque participant
+            participants.forEach((participant, rowIndex) => {
+              const row = [`${participant.prenom} ${participant.nom}`];
+
+              // Pour chaque colonne (autres participants)
+              participants.forEach((opponent, colIndex) => {
+                if (rowIndex === colIndex) {
+                  // Même participant, mettre une diagonale
+                  row.push("");
+                } else {
+                  // Chercher le match entre ces deux participants
+                  const match = pool.matches.find(
+                    (m) =>
+                      (m.participants[0].id === participant.id &&
+                        m.participants[1].id === opponent.id) ||
+                      (m.participants[1].id === participant.id &&
+                        m.participants[0].id === opponent.id)
+                  );
+
+                  if (match) {
+                    // Inclure l'heure du match s'il existe
+                    const matchTime = match.startTime
+                      ? formatTime(match.startTime)
+                      : "";
+                    row.push(matchTime);
+                  } else {
+                    row.push("");
+                  }
+                }
+              });
+
+              // Colonnes pour les points et le classement
+              row.push(""); // Points
+              row.push(""); // Classement
+
+              tableData.push(row);
+            });
+
+            // Générer le tableau avec autoTable avec plus d'espace pour les scores
+            doc.autoTable({
+              startY: 50,
+              body: tableData,
+              theme: "grid",
+              styles: {
+                fontSize: 10,
+                cellPadding: { top: 10, right: 5, bottom: 10, left: 5 },
+                lineColor: [0, 0, 0],
+                lineWidth: 0.5,
+                halign: "center",
+                valign: "middle",
+              },
+              columnStyles: {
+                0: { fontStyle: "bold", cellWidth: 40, halign: "left" },
+                [participants.length + 1]: { cellWidth: 25 }, // Colonne Points
+                [participants.length + 2]: { cellWidth: 25 }, // Colonne Classement
+              },
+              headStyles: {
+                fillColor: [240, 240, 240],
+                textColor: [0, 0, 0],
+                fontStyle: "bold",
+              },
+              didDrawCell: function (data) {
+                // Tracer une diagonale dans les cellules où le même combattant se rencontre
+                if (
+                  data.section === "body" &&
+                  data.row.index > 0 &&
+                  data.column.index > 0 &&
+                  data.column.index <= participants.length &&
+                  data.row.index === data.column.index
+                ) {
+                  const x = data.cell.x;
+                  const y = data.cell.y;
+                  const w = data.cell.width;
+                  const h = data.cell.height;
+
+                  doc.setDrawColor(0);
+                  doc.setLineWidth(0.5);
+                  doc.line(x, y, x + w, y + h);
+                }
+              },
+            });
+
+            // Pied de page avec information sur la fiche
+            doc.setFontSize(8);
+            doc.setTextColor(0, 0, 0);
+            doc.text(
+              `Catégorie: ${title} - Poule ${poolLetter}`,
+              15,
+              doc.internal.pageSize.height - 10
+            );
+            doc.text(
+              `Généré le ${new Date().toLocaleString()}`,
+              doc.internal.pageSize.width - 15,
+              doc.internal.pageSize.height - 10,
+              { align: "right" }
+            );
+          });
+
+          // Sauvegarder le PDF
+          doc.save(
+            `fiches_poules_arbitres_${new Date()
+              .toLocaleDateString()
+              .replace(/\//g, "-")}.pdf`
+          );
+          setExportingPdf(false);
+        })
+        .catch((error) => {
+          console.error("Erreur lors du traitement des données:", error);
+          alert("Erreur lors de la génération du PDF. Veuillez réessayer.");
+          setExportingPdf(false);
+        });
+    } catch (error) {
+      console.error("Erreur lors de la génération du PDF:", error);
+      alert("Erreur lors de la génération du PDF. Veuillez réessayer.");
+      setExportingPdf(false);
+    }
+  };
+
   return (
     <div className="score-input-container">
       <h2>Étape 5: Saisie des scores</h2>
+
+      {/* Header fixe pour les informations de retard qui reste visible lors du défilement */}
+      {Object.keys(areasDelayInfo).length > 0 && (
+        <div className="fixed-header-delay-info">
+          <div className="header-content">
+            <div className="header-title">
+              <span className="header-icon">⏱️</span>
+              <span>Prévisions de fin par aire</span>
+            </div>
+            <div className="areas-delay-cards">
+              {Object.entries(areasDelayInfo).map(([areaNumber, info]) => (
+                <div
+                  key={areaNumber}
+                  className={`area-delay-card ${
+                    !info.hasResults
+                      ? "no-results"
+                      : info.delayInMinutes > 0
+                      ? "delayed"
+                      : "on-time"
+                  }`}
+                >
+                  <h4>Aire {areaNumber}</h4>
+                  <div className="card-content">
+                    <p className="estimated-end-time">
+                      {formatTime(info.estimatedEndTime)}
+                      {info.delayInMinutes !== 0 && (
+                        <span className="delay-indicator">
+                          {info.delayInMinutes > 0
+                            ? ` (+${info.delayInMinutes} min)`
+                            : ` (${info.delayInMinutes} min)`}
+                        </span>
+                      )}
+                    </p>
+                    <div className="last-match-indicator">
+                      {info.lastCompletedMatch
+                        ? `#${info.lastCompletedMatch}`
+                        : "—"}
+                    </div>
+                    <div className="tooltip-container">
+                      <button className="info-button">ℹ️</button>
+                      <div className="tooltip">{info.message}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="loading">
@@ -533,6 +1495,20 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                   <h3>En attente</h3>
                   <p>{pendingCount} combats</p>
                 </div>
+              </div>
+
+              <div className="action-buttons">
+                <button
+                  className="export-btn pdf-btn"
+                  onClick={handleExportPoolSheetsPDF}
+                  disabled={
+                    currentMatches.length === 0 || isLoading || exportingPdf
+                  }
+                >
+                  {exportingPdf
+                    ? "Génération en cours..."
+                    : "Exporter fiches arbitres"}
+                </button>
               </div>
 
               <div className="filters-container">
@@ -612,6 +1588,36 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                             </span>
                           </div>
                         </div>
+
+                        {/* Informations de seuil PSS */}
+                        {(() => {
+                          const powerInfo = getPowerThresholdInfo(match);
+                          return powerInfo ? (
+                            <div className="pss-info-container">
+                              <div className="pss-info">
+                                <span className="pss-title">Seuils PSS:</span>
+                                <div className="pss-details">
+                                  <span className="pss-body">
+                                    Plastron: <strong>{powerInfo.pss}</strong>
+                                  </span>
+                                  <span className="pss-level">
+                                    Niveau de frappe:{" "}
+                                    <strong>{powerInfo.hitLevel}</strong>
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="pss-info-container">
+                              <div className="pss-info">
+                                <span className="pss-title">Seuils PSS:</span>
+                                <div className="pss-details">
+                                  <span>Informations non disponibles</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
 
                         <div className="match-details">
                           <div className="fighters">
@@ -734,7 +1740,9 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
             <button
               className="next-btn"
               onClick={handleContinue}
-              disabled={pendingCount > 0 && !showCompleted}
+              disabled={
+                pendingCount > 0 && !showCompleted && dataSource !== "existing"
+              }
             >
               Finaliser et voir les résultats
             </button>

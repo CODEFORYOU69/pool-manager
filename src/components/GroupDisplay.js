@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useCompetition } from "../context/CompetitionContext";
 import {
   checkExistingGroupsAndPools,
+  deleteAllGroups,
   fetchFormattedGroupsAndPools,
   saveGroupsAndPools,
 } from "../services/dbService";
@@ -14,6 +15,7 @@ const GroupDisplay = ({
   setGroups,
   nextStep,
   prevStep,
+  groups,
 }) => {
   const { competitionId } = useCompetition();
   const [generatedGroups, setGeneratedGroups] = useState([]);
@@ -28,12 +30,27 @@ const GroupDisplay = ({
   const [savingGroups, setSavingGroups] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [dataSource, setDataSource] = useState(""); // 'new' ou 'existing'
+  const [deletingGroups, setDeletingGroups] = useState(false);
+  const [deleteSuccess, setDeleteSuccess] = useState(false);
 
   useEffect(() => {
     if (participants.length > 0 && tournamentConfig && competitionId) {
-      loadOrGenerateGroups();
+      // Si des groupes valides ont déjà été chargés dans les props, les utiliser directement
+      if (generatedGroups.length === 0 && groups && groups.length > 0) {
+        console.log(
+          "Utilisation des groupes fournis par les props:",
+          groups.length
+        );
+        setGeneratedGroups(groups);
+        updateStats(groups);
+        setIsLoading(false);
+        setDataSource("existing");
+      } else {
+        // Sinon, chercher dans la base de données ou générer
+        loadOrGenerateGroups();
+      }
     }
-  }, [participants, tournamentConfig, competitionId]);
+  }, [participants, tournamentConfig, competitionId, groups]);
 
   // Nouvelle fonction pour vérifier l'existence des groupes et charger ou générer selon le cas
   const loadOrGenerateGroups = async () => {
@@ -82,9 +99,18 @@ const GroupDisplay = ({
         `${loadedGroups.length} groupes chargés depuis la base de données`
       );
 
+      // Déduplication: S'assurer que chaque groupe est unique par combinaison de genre/âge/poids
+      const uniqueGroups = deduplicateGroups(loadedGroups);
+
+      console.log(
+        `Après déduplication: ${uniqueGroups.length} groupes uniques (${
+          loadedGroups.length - uniqueGroups.length
+        } doublons éliminés)`
+      );
+
       // Ajouter du débogage pour examiner la structure des groupes chargés
-      if (loadedGroups.length > 0) {
-        const firstGroup = loadedGroups[0];
+      if (uniqueGroups.length > 0) {
+        const firstGroup = uniqueGroups[0];
         console.log("Premier groupe chargé:", {
           id: firstGroup.id,
           gender: firstGroup.gender,
@@ -135,7 +161,7 @@ const GroupDisplay = ({
       // Charger les informations complètes des participants si elles manquent
       // Pour chaque groupe, pour chaque poule, s'assurer que les participants dans le groupe sont complets
       const groupsWithCompletedParticipants = await Promise.all(
-        loadedGroups.map(async (group) => {
+        uniqueGroups.map(async (group) => {
           // S'assurer que le groupe a des participants et qu'ils ont des informations complètes
           if (!group.participants || group.participants.length === 0) {
             console.log(
@@ -230,6 +256,39 @@ const GroupDisplay = ({
     }
   };
 
+  // Fonction pour dédupliquer les groupes basée sur genre/catégorie d'âge/catégorie de poids
+  const deduplicateGroups = (groups) => {
+    // Map pour stocker les groupes uniques, basée sur une clé composite
+    const uniqueGroupsMap = new Map();
+
+    groups.forEach((group) => {
+      // Créer une clé composite pour identifier les groupes similaires
+      const key = `${group.gender}-${group.ageCategory.name}-${group.weightCategory.name}`;
+
+      if (!uniqueGroupsMap.has(key)) {
+        // Premier groupe avec cette combinaison, on le garde
+        uniqueGroupsMap.set(key, group);
+      } else {
+        // Groupe en double, on compare les dates de création si possible
+        const existingGroup = uniqueGroupsMap.get(key);
+
+        // Si le groupe existant a moins de poules, on le remplace par le nouveau qui peut être plus complet
+        if (
+          !existingGroup.pools ||
+          (group.pools &&
+            group.pools.length > (existingGroup.pools?.length || 0))
+        ) {
+          uniqueGroupsMap.set(key, group);
+        }
+
+        console.log(`Groupe en double détecté et filtré: ${key}`);
+      }
+    });
+
+    // Convertir la Map en tableau
+    return Array.from(uniqueGroupsMap.values());
+  };
+
   // Fonction pour générer de nouveaux groupes
   const generateNewGroups = () => {
     try {
@@ -268,15 +327,121 @@ const GroupDisplay = ({
   const handleSaveGroups = async () => {
     setSavingGroups(true);
     try {
-      await saveGroupsAndPools(competitionId, generatedGroups);
-      setSaveSuccess(true);
-      // Masquer le message de succès après 3 secondes
-      setTimeout(() => setSaveSuccess(false), 3000);
+      // Vérifier d'abord si des groupes similaires existent déjà
+      const existingGroupsResult = await checkExistingGroupsAndPools(
+        competitionId
+      );
+
+      if (existingGroupsResult.exists && existingGroupsResult.count > 0) {
+        // Demander confirmation avant de continuer
+        const confirmResult = window.confirm(
+          `${existingGroupsResult.count} groupes existent déjà pour cette compétition. Voulez-vous vraiment sauvegarder à nouveau? Cela pourrait créer des doublons.`
+        );
+
+        if (!confirmResult) {
+          console.log("Sauvegarde annulée par l'utilisateur");
+          setSavingGroups(false);
+          return;
+        }
+
+        console.log("Sauvegarde confirmée malgré les groupes existants");
+      }
+
+      // Continuer avec la sauvegarde
+      const result = await saveGroupsAndPools(competitionId, generatedGroups);
+
+      if (result.success) {
+        console.log("Groupes sauvegardés avec succès");
+        setSaveSuccess(true);
+        // Mettre à jour la source de données pour indiquer que les groupes sont maintenant enregistrés
+        setDataSource("existing");
+        // Masquer le message de succès après 3 secondes
+        setTimeout(() => setSaveSuccess(false), 3000);
+      } else {
+        console.error(
+          "Erreurs lors de la sauvegarde des groupes:",
+          result.errors
+        );
+        alert(
+          `${result.errors.length} erreurs sont survenues lors de la sauvegarde. Consultez la console pour plus de détails.`
+        );
+      }
     } catch (error) {
       console.error("Erreur lors de la sauvegarde des groupes:", error);
       alert("Erreur lors de la sauvegarde des groupes. Veuillez réessayer.");
     } finally {
       setSavingGroups(false);
+    }
+  };
+
+  // Fonction pour mettre à jour les statistiques à partir des groupes
+  const updateStats = (groupsData) => {
+    if (!Array.isArray(groupsData) || groupsData.length === 0) return;
+
+    let totalPoolsCount = 0;
+    let usedParticipants = new Set();
+
+    groupsData.forEach((group) => {
+      // Compter les poules
+      if (group.pools && Array.isArray(group.pools)) {
+        totalPoolsCount += group.pools.length;
+      }
+
+      // Compter les participants utilisés
+      if (group.participants && Array.isArray(group.participants)) {
+        group.participants.forEach((p) => {
+          if (p && p.id) {
+            usedParticipants.add(p.id);
+          }
+        });
+      }
+    });
+
+    setGroupStats({
+      totalGroups: groupsData.length,
+      totalPools: totalPoolsCount,
+      totalParticipants: participants.length,
+      unusedParticipants: participants.length - usedParticipants.size,
+    });
+  };
+
+  // Fonction pour supprimer tous les groupes existants
+  const handleDeleteGroups = async () => {
+    // Demander confirmation
+    const confirmResult = window.confirm(
+      "Êtes-vous sûr de vouloir supprimer tous les groupes existants? Cette action est irréversible."
+    );
+
+    if (!confirmResult) {
+      console.log("Suppression annulée par l'utilisateur");
+      return;
+    }
+
+    setDeletingGroups(true);
+    try {
+      const result = await deleteAllGroups(competitionId);
+
+      if (result.success) {
+        console.log("Groupes supprimés avec succès:", result.message);
+        setDeleteSuccess(true);
+        // Mettre à jour la source de données
+        setDataSource("new");
+        // Générer de nouveaux groupes
+        generateNewGroups();
+        // Masquer le message de succès après 3 secondes
+        setTimeout(() => setDeleteSuccess(false), 3000);
+      } else {
+        console.error(
+          "Erreur lors de la suppression des groupes:",
+          result.message
+        );
+        alert(`Erreur lors de la suppression des groupes: ${result.message}`);
+      }
+    } catch (error) {
+      console.error("Erreur lors de la suppression des groupes:", error);
+      alert("Erreur lors de la suppression des groupes. Veuillez réessayer.");
+    } finally {
+      setDeletingGroups(false);
     }
   };
 
@@ -333,18 +498,36 @@ const GroupDisplay = ({
             </button>
 
             {dataSource === "existing" && (
-              <button
-                className="reload-btn"
-                onClick={() => loadOrGenerateGroups()}
-                disabled={isLoading}
-              >
-                {isLoading ? "Chargement..." : "Actualiser les données"}
-              </button>
+              <>
+                <button
+                  className="reload-btn"
+                  onClick={() => loadOrGenerateGroups()}
+                  disabled={isLoading}
+                >
+                  {isLoading ? "Chargement..." : "Actualiser les données"}
+                </button>
+
+                <button
+                  className="delete-btn"
+                  onClick={handleDeleteGroups}
+                  disabled={isLoading || deletingGroups}
+                >
+                  {deletingGroups
+                    ? "Suppression en cours..."
+                    : "Supprimer les groupes"}
+                </button>
+              </>
             )}
 
             {saveSuccess && (
               <div className="success-message">
                 Les groupes ont été sauvegardés avec succès !
+              </div>
+            )}
+
+            {deleteSuccess && (
+              <div className="success-message">
+                Les groupes ont été supprimés avec succès !
               </div>
             )}
           </div>
@@ -475,7 +658,10 @@ const GroupDisplay = ({
         <button
           className="next-btn"
           onClick={handleContinue}
-          disabled={isLoading || generatedGroups.length === 0}
+          disabled={
+            isLoading ||
+            (dataSource !== "existing" && generatedGroups.length === 0)
+          }
         >
           Suivant
         </button>

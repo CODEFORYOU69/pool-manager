@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useCompetition } from "../context/CompetitionContext";
 import {
-  checkExistingMatches,
+  API_URL,
+  checkExistingGroupsAndPools,
   fetchFormattedMatches,
   saveGeneratedMatches,
   saveGroupsAndPools,
@@ -10,8 +11,9 @@ import "../styles/MatchSchedule.css";
 import { generateMatches } from "../utils/matchGenerator";
 import { createSchedule } from "../utils/scheduleManager";
 // Correction de l'importation pour la génération PDF
-import { jsPDF } from "jspdf";
-import "jspdf-autotable";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import { findPowerThreshold } from "../utils/constants";
 
 const MatchSchedule = ({
   groups,
@@ -20,6 +22,8 @@ const MatchSchedule = ({
   setSchedule,
   nextStep,
   prevStep,
+  matches,
+  schedule,
 }) => {
   const { competitionId, competitionName } = useCompetition();
   const [generatedMatches, setGeneratedMatches] = useState([]);
@@ -32,101 +36,132 @@ const MatchSchedule = ({
     estimatedDuration: 0,
     estimatedEndTime: null,
   });
-  const [viewMode, setViewMode] = useState("byGroup"); // 'byGroup' ou 'bySchedule'
+  const [viewMode, setViewMode] = useState("byGroup"); // 'byGroup' ou 'byArea'
   const [exportLoading, setExportLoading] = useState({
     pdf: false,
     csv: false,
   });
   const [dataSource, setDataSource] = useState(""); // 'new' ou 'existing'
+  // Ajouter des états pour les filtres
+  const [areaFilter, setAreaFilter] = useState("all");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [ligueFilter, setLigueFilter] = useState("");
+  const [displayAllAreas, setDisplayAllAreas] = useState(true);
+  // Nouvel état pour stocker l'information si les matchs ont déjà été chargés
+  const [matchesAlreadyLoaded, setMatchesAlreadyLoaded] = useState(false);
+  const [info, setInfo] = useState(null);
 
   useEffect(() => {
     if (groups && groups.length > 0 && tournamentConfig && competitionId) {
-      loadOrGenerateMatchSchedule();
-    }
-  }, [groups, tournamentConfig, competitionId]);
-
-  // Nouvelle fonction pour vérifier l'existence des matchs et charger ou générer selon le cas
-  const loadOrGenerateMatchSchedule = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      // Vérifier si des matchs existent déjà pour cette compétition
-      const existingMatchesResult = await checkExistingMatches(competitionId);
-
-      if (existingMatchesResult.exists && existingMatchesResult.count > 0) {
+      // Vérifier si des matchs ont déjà été fournis en props
+      if (matches && matches.length > 0 && schedule && schedule.length > 0) {
         console.log(
-          `${existingMatchesResult.count} matchs existants trouvés, chargement des données...`
+          "Utilisation des matchs fournis par les props:",
+          matches.length
         );
+        setGeneratedMatches(matches);
+        setGeneratedSchedule(schedule);
+        calculateStats(matches, schedule);
+        setMatchesAlreadyLoaded(true);
+        setDataSource("existing");
+        setIsLoading(false);
+      }
+      // Si les matchs ont déjà été chargés dans le state, ne pas les recharger
+      else if (generatedMatches.length > 0 && matchesAlreadyLoaded) {
+        console.log("Matchs déjà chargés, utilisation des données en cache");
+        setIsLoading(false);
+      }
+      // Sinon, essayer de charger les matchs existants
+      else {
+        loadExistingMatches();
+      }
+    }
+  }, [groups, tournamentConfig, competitionId, matches, schedule]);
+
+  useEffect(() => {
+    if (!matchesAlreadyLoaded) {
+      // Afficher un message d'information sur les améliorations apportées
+      setInfo({
+        type: "info",
+        message:
+          "Le système de génération des matchs a été optimisé pour éviter les duplications. Les matchs ne seront générés qu'une seule fois pour chaque combinaison unique de participants.",
+      });
+    }
+  }, [matchesAlreadyLoaded]);
+
+  // Fonction pour charger les matchs existants sans les générer
+  const loadExistingMatches = async () => {
+    setIsLoading(true);
+    try {
+      console.log("Tentative de chargement des matchs existants...");
+
+      // Essayer de charger les matchs directement, sans passer par checkExistingMatches
+      const { matches: loadedMatches, schedule: loadedSchedule } =
+        await fetchFormattedMatches(competitionId);
+
+      if (loadedMatches && loadedMatches.length > 0) {
+        console.log(
+          `${loadedMatches.length} matchs chargés depuis la base de données`
+        );
+        console.log(`${loadedSchedule.length} éléments de planning chargés`);
+
+        setGeneratedMatches(loadedMatches);
+        setGeneratedSchedule(loadedSchedule);
         setDataSource("existing");
 
-        // Charger les matchs existants
-        await loadExistingMatches();
-      } else {
-        console.log(
-          "Aucun match existant trouvé, génération d'un nouveau planning..."
-        );
-        setDataSource("new");
+        // Calculer les statistiques
+        calculateStats(loadedMatches, loadedSchedule);
 
-        // Générer de nouveaux matchs
-        await handleGenerateSchedule();
+        // Marquer les matchs comme chargés
+        setMatchesAlreadyLoaded(true);
+        setError(null);
+      } else {
+        console.log("Aucun match existant trouvé dans la base de données");
+        // Simplement marquer comme chargé sans erreur, sans générer automatiquement
+        setIsLoading(false);
+        setMatchesAlreadyLoaded(true);
       }
     } catch (error) {
-      console.error(
-        "Erreur lors de la vérification/chargement des matchs:",
-        error
-      );
-      setError(`Erreur lors du chargement des données: ${error.message}`);
+      console.error("Erreur lors du chargement des matchs existants:", error);
+      setIsLoading(false);
+      // Ne pas lancer d'erreur, simplement noter qu'aucun match n'a été trouvé
+      setError(null);
+    } finally {
       setIsLoading(false);
     }
   };
 
-  // Nouvelle fonction pour charger les matchs existants
-  const loadExistingMatches = async () => {
-    try {
-      const { matches: loadedMatches, schedule: loadedSchedule } =
-        await fetchFormattedMatches(competitionId);
+  // Utilitaire pour calculer les statistiques
+  const calculateStats = (matches, schedule) => {
+    const totalDuration = schedule.reduce((total, item) => {
+      if (item.endTime && item.startTime) {
+        const start = new Date(item.startTime);
+        const end = new Date(item.endTime);
+        const durationInMinutes = (end - start) / 60000;
+        return total + durationInMinutes;
+      }
+      return total;
+    }, 0);
 
-      console.log(
-        `${loadedMatches.length} matchs chargés depuis la base de données`
-      );
-      console.log(`${loadedSchedule.length} éléments de planning chargés`);
+    const numAreas = tournamentConfig?.numAreas || 1;
+    const estimatedDuration = totalDuration / numAreas;
 
-      setGeneratedMatches(loadedMatches);
-      setGeneratedSchedule(loadedSchedule);
+    // Calculer l'heure de fin estimée
+    const now = new Date();
+    const endTime = new Date(now.getTime() + estimatedDuration * 60000);
 
-      // Calculer les statistiques
-      const totalDuration = loadedSchedule.reduce((total, item) => {
-        if (item.endTime && item.startTime) {
-          const start = new Date(item.startTime);
-          const end = new Date(item.endTime);
-          const durationInMinutes = (end - start) / 60000;
-          return total + durationInMinutes;
-        }
-        return total;
-      }, 0);
+    setScheduleStats({
+      totalMatches: matches.length,
+      totalAreas: numAreas,
+      estimatedDuration: estimatedDuration,
+      estimatedEndTime: endTime,
+    });
+  };
 
-      const numAreas = tournamentConfig?.numAreas || 1;
-      const estimatedDuration = totalDuration / numAreas;
-
-      // Calculer l'heure de fin estimée
-      const now = new Date();
-      const endTime = new Date(now.getTime() + estimatedDuration * 60000);
-
-      setScheduleStats({
-        totalMatches: loadedMatches.length,
-        totalAreas: numAreas,
-        estimatedDuration: estimatedDuration,
-        estimatedEndTime: endTime,
-      });
-
-      setError(null);
-      setIsLoading(false);
-    } catch (error) {
-      console.error("Erreur lors du chargement des matchs existants:", error);
-      setError(`Erreur lors du chargement des matchs: ${error.message}`);
-      setIsLoading(false);
-    }
+  // Nouvelle fonction pour vérifier l'existence des matchs et charger ou générer selon le cas
+  const loadOrGenerateMatchSchedule = async () => {
+    // Utiliser directement forceLoadExistingMatches pour éviter les problèmes
+    await loadExistingMatches();
   };
 
   // Fonction pour générer le planning et les matchs
@@ -135,16 +170,73 @@ const MatchSchedule = ({
       setIsLoading(true);
       setError(null);
 
+      // Vérifier d'abord s'il existe déjà des matchs pour cette compétition
+      try {
+        // Vérifier si les matchs existent déjà
+        const matchesResponse = await fetch(
+          `${API_URL}/competition/${competitionId}/matches`,
+          {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        if (matchesResponse.ok) {
+          const existingMatches = await matchesResponse.json();
+
+          if (existingMatches && existingMatches.length > 0) {
+            console.log(`${existingMatches.length} matchs existants trouvés.`);
+            // Des matchs existent déjà, charger ces matchs au lieu d'en générer de nouveaux
+            try {
+              const { matches: loadedMatches, schedule: loadedSchedule } =
+                await fetchFormattedMatches(competitionId);
+
+              if (loadedMatches && loadedMatches.length > 0) {
+                console.log(
+                  `${loadedMatches.length} matchs existants chargés avec succès.`
+                );
+                setGeneratedMatches(loadedMatches);
+                setGeneratedSchedule(loadedSchedule);
+                setDataSource("existing");
+                calculateStats(loadedMatches, loadedSchedule);
+                setMatchesAlreadyLoaded(true);
+                setIsLoading(false);
+                return; // Sortir de la fonction, pas besoin de générer de nouveaux matchs
+              }
+            } catch (loadError) {
+              console.error(
+                "Erreur lors du chargement des matchs existants:",
+                loadError
+              );
+              // Continuer avec la génération
+            }
+          } else {
+            console.log(
+              "Aucun match existant trouvé, génération de nouveaux matchs..."
+            );
+          }
+        }
+      } catch (checkError) {
+        console.warn(
+          "Erreur lors de la vérification des matchs existants:",
+          checkError
+        );
+        // Continuer avec la génération
+      }
+
       // Générer tous les combats pour toutes les poules
       const allMatches = generateMatches(groups);
       console.log("Matchs générés:", allMatches.length);
 
       // Créer le planning des combats
-      const { schedule, updatedMatches, stats } = createSchedule(
-        allMatches,
-        tournamentConfig
-      );
-      console.log("Planning créé:", schedule.length, "éléments");
+      const {
+        schedule: generatedSchedule,
+        updatedMatches,
+        stats,
+      } = createSchedule(allMatches, tournamentConfig);
+      console.log("Planning créé:", generatedSchedule.length, "éléments");
       console.log("Statistiques:", stats);
 
       // Utiliser les matchs mis à jour avec leurs numéros et aires attribués
@@ -153,7 +245,9 @@ const MatchSchedule = ({
 
       // Mettre à jour les matchs avec les numéros et horaires du planning
       const matchesWithNumbers = matchesWithSchedule.map((match) => {
-        const scheduledMatch = schedule.find((s) => s.matchId === match.id);
+        const scheduledMatch = generatedSchedule.find(
+          (s) => s.matchId === match.id
+        );
         if (scheduledMatch) {
           return {
             ...match,
@@ -172,158 +266,377 @@ const MatchSchedule = ({
         console.log("Exemple de match avec numéro:", matchesWithNumbers[0]);
       }
 
-      // S'assurer que les groupes sont sauvegardés avant les matchs
-      saveGroupsAndPools(competitionId, groups)
-        .then((savedGroupsResult) => {
-          console.log("Groupes sauvegardés avec succès:", savedGroupsResult);
-          const savedGroups = savedGroupsResult.savedGroups || [];
-
-          // Mettre à jour les IDs des groupes dans les matchs
-          const updatedMatches = matchesWithNumbers.map((match) => {
-            if (!match.groupId || !Array.isArray(groups)) {
-              console.error("Données de match invalides:", match);
-              return match;
-            }
-
-            const originalGroup = groups.find((g) => g.id === match.groupId);
-            if (!originalGroup) {
-              console.error("Groupe original non trouvé pour le match:", match);
-              return match;
-            }
-
-            const savedGroup = savedGroups.find(
-              (sg) =>
-                sg &&
-                sg.gender === originalGroup.gender &&
-                sg.ageCategoryName === originalGroup.ageCategory.name &&
-                sg.weightCategoryName === originalGroup.weightCategory.name
-            );
-
-            if (!savedGroup) {
-              console.error(
-                "Groupe sauvegardé non trouvé pour le match:",
-                match
-              );
-              return match;
-            }
-
-            return {
-              ...match,
-              groupId: savedGroup.id,
-            };
-          });
-
-          // Organiser les matchs par poule comme attendu par saveGeneratedMatches
-          const matchesByPool = [];
-
-          // Récupérer toutes les poules uniques
-          const uniquePools = new Set();
-          updatedMatches.forEach((match) => {
-            if (match.poolId) {
-              uniquePools.add(match.poolId);
-            }
-          });
-
+      // Au lieu de sauvegarder les groupes à chaque fois, vérifier d'abord s'ils existent déjà
+      checkExistingGroupsAndPools(competitionId)
+        .then((existingGroupsResult) => {
           console.log(
-            `Organisation des matchs pour ${uniquePools.size} poules uniques`
+            "Vérification des groupes existants:",
+            existingGroupsResult
           );
 
-          // Si nous n'avons pas directement des poolId, utiliser les combinaisons groupId et poolIndex
-          if (uniquePools.size === 0) {
-            // Grouper par combinaison groupId + poolIndex
-            const poolMap = new Map();
-            updatedMatches.forEach((match) => {
-              const key = `${match.groupId}-${match.poolIndex}`;
-              if (!poolMap.has(key)) {
-                poolMap.set(key, []);
+          if (
+            existingGroupsResult.exists &&
+            existingGroupsResult.groups &&
+            existingGroupsResult.groups.length > 0
+          ) {
+            console.log(
+              "Utilisation des groupes existants:",
+              existingGroupsResult.groups
+            );
+
+            // Utiliser directement les groupes existants
+            const savedGroups = existingGroupsResult.groups;
+
+            // Mettre à jour les IDs des groupes dans les matchs
+            const updatedMatches = matchesWithNumbers.map((match) => {
+              if (!match.groupId || !Array.isArray(groups)) {
+                console.error("Données de match invalides:", match);
+                return match;
               }
-              poolMap.get(key).push(match);
+
+              const originalGroup = groups.find((g) => g.id === match.groupId);
+              if (!originalGroup) {
+                console.error(
+                  "Groupe original non trouvé pour le match:",
+                  match
+                );
+                return match;
+              }
+
+              const savedGroup = savedGroups.find(
+                (sg) =>
+                  sg &&
+                  sg.gender === originalGroup.gender &&
+                  sg.ageCategoryName === originalGroup.ageCategory.name &&
+                  sg.weightCategoryName === originalGroup.weightCategory.name
+              );
+
+              if (!savedGroup) {
+                console.error(
+                  "Groupe sauvegardé non trouvé pour le match:",
+                  match
+                );
+                return match;
+              }
+
+              return {
+                ...match,
+                groupId: savedGroup.id,
+              };
+            });
+
+            // Organiser les matchs par poule comme attendu par saveGeneratedMatches
+            const matchesByPool = [];
+
+            // Récupérer toutes les poules uniques
+            const uniquePools = new Set();
+            updatedMatches.forEach((match) => {
+              if (match.poolId) {
+                uniquePools.add(match.poolId);
+              }
             });
 
             console.log(
-              `Organisé ${poolMap.size} groupes de matchs par groupe/index de poule`
+              `Organisation des matchs pour ${uniquePools.size} poules uniques`
             );
 
-            // Pour chaque savedGroup, trouver ses poules et les ajouter à matchesByPool
-            savedGroups.forEach((group) => {
-              const groupPools = group.poolIds || [];
-              groupPools.forEach((poolId, index) => {
-                const matches = poolMap.get(`${group.id}-${index}`);
-                if (matches && matches.length > 0) {
+            // Si nous n'avons pas directement des poolId, utiliser les combinaisons groupId et poolIndex
+            if (uniquePools.size === 0) {
+              // Grouper par combinaison groupId + poolIndex
+              const poolMap = new Map();
+              updatedMatches.forEach((match) => {
+                const key = `${match.groupId}-${match.poolIndex}`;
+                if (!poolMap.has(key)) {
+                  poolMap.set(key, []);
+                }
+                poolMap.get(key).push(match);
+              });
+
+              console.log(
+                `Organisé ${poolMap.size} groupes de matchs par groupe/index de poule`
+              );
+
+              // Récupérer les pools de chaque groupe
+              savedGroups.forEach((group) => {
+                // Récupérer toutes les pools pour ce groupe
+                fetch(`${API_URL}/group/${group.id}/pools`, {
+                  method: "GET",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                })
+                  .then((response) => response.json())
+                  .then((pools) => {
+                    pools.forEach((pool, index) => {
+                      const matches = poolMap.get(
+                        `${group.id}-${pool.poolIndex}`
+                      );
+                      if (matches && matches.length > 0) {
+                        matchesByPool.push({
+                          poolId: pool.id,
+                          matches: matches,
+                        });
+                        console.log(
+                          `Ajout de ${matches.length} matchs pour la poule ${pool.id} (groupe ${group.id}, index ${pool.poolIndex})`
+                        );
+                      }
+                    });
+
+                    // Sauvegarder les matchs une fois que toutes les pools sont traitées
+                    if (matchesByPool.length > 0) {
+                      saveGeneratedMatches(competitionId, matchesByPool)
+                        .then(handleSaveMatchesSuccess)
+                        .catch(handleSaveError);
+                    } else {
+                      setError(
+                        "Aucun match à sauvegarder. Vérifiez que les poules ont été correctement configurées."
+                      );
+                      setIsLoading(false);
+                    }
+                  })
+                  .catch((error) => {
+                    console.error(
+                      "Erreur lors de la récupération des pools:",
+                      error
+                    );
+                    setError(
+                      `Erreur lors de la récupération des pools: ${error.message}`
+                    );
+                    setIsLoading(false);
+                  });
+              });
+
+              return; // Sortir de la fonction ici car l'appel asynchrone ci-dessus continuera le traitement
+            } else {
+              // Si nous avons des poolId, nous pouvons les utiliser directement
+              uniquePools.forEach((poolId) => {
+                const poolMatches = updatedMatches.filter(
+                  (match) => match.poolId === poolId
+                );
+                if (poolMatches.length > 0) {
                   matchesByPool.push({
                     poolId: poolId,
-                    matches: matches,
+                    matches: poolMatches,
                   });
                   console.log(
-                    `Ajout de ${matches.length} matchs pour la poule ${poolId} (groupe ${group.id}, index ${index})`
+                    `Ajout de ${poolMatches.length} matchs pour la poule ${poolId}`
                   );
                 }
               });
-            });
-          } else {
-            // Si nous avons des poolId, nous pouvons les utiliser directement
-            uniquePools.forEach((poolId) => {
-              const poolMatches = updatedMatches.filter(
-                (match) => match.poolId === poolId
+            }
+
+            // Vérifier si nous avons des matchs à sauvegarder
+            if (matchesByPool.length === 0) {
+              throw new Error(
+                "Impossible d'organiser les matchs par poule. Vérifiez que les poules ont été correctement sauvegardées."
               );
-              if (poolMatches.length > 0) {
-                matchesByPool.push({
-                  poolId: poolId,
-                  matches: poolMatches,
-                });
-                console.log(
-                  `Ajout de ${poolMatches.length} matchs pour la poule ${poolId}`
-                );
-              }
-            });
-          }
+            }
 
-          // Vérifier si nous avons des matchs à sauvegarder
-          if (matchesByPool.length === 0) {
-            throw new Error(
-              "Impossible d'organiser les matchs par poule. Vérifiez que les poules ont été correctement sauvegardées."
+            console.log(
+              `Envoi de ${matchesByPool.length} poules avec leurs matchs pour sauvegarde`
             );
+
+            // Vérifier le contenu du premier groupe de matchs
+            if (
+              matchesByPool.length > 0 &&
+              matchesByPool[0].matches.length > 0
+            ) {
+              console.log("Exemple de match à sauvegarder:", {
+                poolId: matchesByPool[0].poolId,
+                matchExample: matchesByPool[0].matches[0],
+              });
+            }
+
+            // Sauvegarder les matchs avec le format attendu
+            return saveGeneratedMatches(competitionId, matchesByPool)
+              .then(handleSaveMatchesSuccess)
+              .catch(handleSaveError);
+          } else {
+            // Si les groupes n'existent pas, les sauvegarder d'abord
+            console.log(
+              "Aucun groupe existant trouvé, sauvegarde des nouveaux groupes"
+            );
+            return saveGroupsAndPools(competitionId, groups)
+              .then((savedGroupsResult) => {
+                console.log(
+                  "Groupes sauvegardés avec succès:",
+                  savedGroupsResult
+                );
+                const savedGroups = savedGroupsResult.savedGroups || [];
+
+                // Mettre à jour les IDs des groupes dans les matchs
+                const updatedMatches = matchesWithNumbers.map((match) => {
+                  if (!match.groupId || !Array.isArray(groups)) {
+                    console.error("Données de match invalides:", match);
+                    return match;
+                  }
+
+                  const originalGroup = groups.find(
+                    (g) => g.id === match.groupId
+                  );
+                  if (!originalGroup) {
+                    console.error(
+                      "Groupe original non trouvé pour le match:",
+                      match
+                    );
+                    return match;
+                  }
+
+                  const savedGroup = savedGroups.find(
+                    (sg) =>
+                      sg &&
+                      sg.gender === originalGroup.gender &&
+                      sg.ageCategoryName === originalGroup.ageCategory.name &&
+                      sg.weightCategoryName ===
+                        originalGroup.weightCategory.name
+                  );
+
+                  if (!savedGroup) {
+                    console.error(
+                      "Groupe sauvegardé non trouvé pour le match:",
+                      match
+                    );
+                    return match;
+                  }
+
+                  return {
+                    ...match,
+                    groupId: savedGroup.id,
+                  };
+                });
+
+                // Organiser les matchs par poule comme attendu par saveGeneratedMatches
+                const matchesByPool = [];
+
+                // Récupérer toutes les poules uniques
+                const uniquePools = new Set();
+                updatedMatches.forEach((match) => {
+                  if (match.poolId) {
+                    uniquePools.add(match.poolId);
+                  }
+                });
+
+                console.log(
+                  `Organisation des matchs pour ${uniquePools.size} poules uniques`
+                );
+
+                // Si nous n'avons pas directement des poolId, utiliser les combinaisons groupId et poolIndex
+                if (uniquePools.size === 0) {
+                  // Grouper par combinaison groupId + poolIndex
+                  const poolMap = new Map();
+                  updatedMatches.forEach((match) => {
+                    const key = `${match.groupId}-${match.poolIndex}`;
+                    if (!poolMap.has(key)) {
+                      poolMap.set(key, []);
+                    }
+                    poolMap.get(key).push(match);
+                  });
+
+                  console.log(
+                    `Organisé ${poolMap.size} groupes de matchs par groupe/index de poule`
+                  );
+
+                  // Pour chaque savedGroup, trouver ses poules et les ajouter à matchesByPool
+                  savedGroups.forEach((group) => {
+                    const groupPools = group.poolIds || [];
+                    groupPools.forEach((poolId, index) => {
+                      const matches = poolMap.get(`${group.id}-${index}`);
+                      if (matches && matches.length > 0) {
+                        matchesByPool.push({
+                          poolId: poolId,
+                          matches: matches,
+                        });
+                        console.log(
+                          `Ajout de ${matches.length} matchs pour la poule ${poolId} (groupe ${group.id}, index ${index})`
+                        );
+                      }
+                    });
+                  });
+                } else {
+                  // Si nous avons des poolId, nous pouvons les utiliser directement
+                  uniquePools.forEach((poolId) => {
+                    const poolMatches = updatedMatches.filter(
+                      (match) => match.poolId === poolId
+                    );
+                    if (poolMatches.length > 0) {
+                      matchesByPool.push({
+                        poolId: poolId,
+                        matches: poolMatches,
+                      });
+                      console.log(
+                        `Ajout de ${poolMatches.length} matchs pour la poule ${poolId}`
+                      );
+                    }
+                  });
+                }
+
+                // Vérifier si nous avons des matchs à sauvegarder
+                if (matchesByPool.length === 0) {
+                  throw new Error(
+                    "Impossible d'organiser les matchs par poule. Vérifiez que les poules ont été correctement sauvegardées."
+                  );
+                }
+
+                console.log(
+                  `Envoi de ${matchesByPool.length} poules avec leurs matchs pour sauvegarde`
+                );
+
+                // Vérifier le contenu du premier groupe de matchs
+                if (
+                  matchesByPool.length > 0 &&
+                  matchesByPool[0].matches.length > 0
+                ) {
+                  console.log("Exemple de match à sauvegarder:", {
+                    poolId: matchesByPool[0].poolId,
+                    matchExample: matchesByPool[0].matches[0],
+                  });
+                }
+
+                // Sauvegarder les matchs avec le format attendu
+                return saveGeneratedMatches(competitionId, matchesByPool);
+              })
+              .then(handleSaveMatchesSuccess)
+              .catch(handleSaveError);
           }
-
-          console.log(
-            `Envoi de ${matchesByPool.length} poules avec leurs matchs pour sauvegarde`
-          );
-
-          // Vérifier le contenu du premier groupe de matchs
-          if (matchesByPool.length > 0 && matchesByPool[0].matches.length > 0) {
-            console.log("Exemple de match à sauvegarder:", {
-              poolId: matchesByPool[0].poolId,
-              matchExample: matchesByPool[0].matches[0],
-            });
-          }
-
-          // Sauvegarder les matchs avec le format attendu
-          return saveGeneratedMatches(competitionId, matchesByPool);
-        })
-        .then((savedMatches) => {
-          console.log("Tous les matchs ont été sauvegardés:", savedMatches);
-          setGeneratedMatches(matchesWithSchedule);
-          setGeneratedSchedule(schedule);
-
-          // Calculer l'heure de fin estimée
-          const now = new Date();
-          const endTime = new Date(now.getTime() + stats.totalDuration * 60000);
-
-          setScheduleStats({
-            totalMatches: matchesWithSchedule.length,
-            totalAreas: tournamentConfig.numAreas,
-            estimatedDuration: stats.totalDuration,
-            estimatedEndTime: endTime,
-          });
-
-          setError(null);
-          setIsLoading(false);
         })
         .catch((error) => {
-          console.error("Erreur lors de la sauvegarde:", error);
-          setError(`Erreur lors de la sauvegarde: ${error.message}`);
+          console.error(
+            "Erreur lors de la vérification des groupes existants:",
+            error
+          );
+          setError(
+            `Erreur lors de la vérification des groupes existants: ${error.message}`
+          );
           setIsLoading(false);
         });
+
+      // Fonction de gestion du succès de la sauvegarde des matchs
+      const handleSaveMatchesSuccess = (savedMatches) => {
+        console.log("Tous les matchs ont été sauvegardés:", savedMatches);
+        setGeneratedMatches(matchesWithSchedule);
+        setGeneratedSchedule(generatedSchedule);
+
+        // Calculer l'heure de fin estimée
+        const now = new Date();
+        const endTime = new Date(now.getTime() + stats.totalDuration * 60000);
+
+        setScheduleStats({
+          totalMatches: matchesWithSchedule.length,
+          totalAreas: tournamentConfig.numAreas,
+          estimatedDuration: stats.totalDuration,
+          estimatedEndTime: endTime,
+        });
+
+        setError(null);
+        setIsLoading(false);
+      };
+
+      // Fonction de gestion des erreurs
+      const handleSaveError = (error) => {
+        console.error("Erreur lors de la sauvegarde:", error);
+        setError(`Erreur lors de la sauvegarde: ${error.message}`);
+        setIsLoading(false);
+      };
     } catch (err) {
       setError(`Erreur lors de la génération du planning: ${err.message}`);
       setIsLoading(false);
@@ -357,572 +670,704 @@ const MatchSchedule = ({
 
   // Obtenir le nom du participant
   const getParticipantName = (matchInfo, position) => {
-    if (
-      !matchInfo ||
-      !matchInfo.participants ||
-      !matchInfo.participants[position]
-    ) {
-      return "Inconnu";
-    }
+    try {
+      const participant = matchInfo?.participants?.[position];
+      if (!participant) {
+        return "-";
+      }
 
-    const participant = matchInfo.participants[position];
-    return `${participant.prenom} ${participant.nom}`;
+      // Si l'information est dans athleteInfo
+      if (participant.athleteInfo) {
+        const nom = participant.athleteInfo.nom || "";
+        const prenom = participant.athleteInfo.prenom || "";
+        return `${prenom} ${nom}`.trim() || "-";
+      }
+      // Si l'information est directement dans le participant
+      else if (participant.nom || participant.prenom) {
+        const nom = participant.nom || "";
+        const prenom = participant.prenom || "";
+        return `${prenom} ${nom}`.trim() || "-";
+      }
+      // Fallback sur un champ name générique
+      else if (participant.name) {
+        return participant.name;
+      }
+
+      return "-";
+    } catch (error) {
+      console.error("Erreur lors de l'accès aux informations de nom:", error);
+      return "-";
+    }
   };
 
   // Obtenir la ligue du participant
   const getParticipantLigue = (matchInfo, position) => {
-    if (
-      !matchInfo ||
-      !matchInfo.participants ||
-      !matchInfo.participants[position]
-    ) {
+    try {
+      const participant = matchInfo?.participants?.[position];
+      if (!participant) {
+        return "-";
+      }
+
+      // Si l'information est dans athleteInfo
+      if (participant.athleteInfo && participant.athleteInfo.ligue) {
+        return participant.athleteInfo.ligue;
+      }
+      // Si l'information est directement dans le participant
+      else if (participant.ligue) {
+        return participant.ligue;
+      }
+
+      return "-";
+    } catch (error) {
+      console.error("Erreur lors de l'accès aux informations de ligue:", error);
       return "-";
     }
+  };
 
-    const participant = matchInfo.participants[position];
-    return participant.ligue || "-";
+  // Obtenir les informations de seuil de puissance et de plastron pour un match
+  const getPowerThresholdInfo = (match) => {
+    try {
+      if (!match || !match.participants || match.participants.length === 0) {
+        return null;
+      }
+
+      // Récupérer le premier participant (ils devraient tous être dans la même catégorie)
+      const participant = match.participants[0];
+
+      if (!participant) {
+        return null;
+      }
+
+      // Récupérer le groupe pour obtenir la catégorie d'âge
+      const group = groups.find((g) => g.id === match.groupId);
+      if (!group) {
+        return null;
+      }
+
+      const ageCategory = group.ageCategory.name;
+      const gender = group.gender;
+
+      // Récupérer le poids soit depuis athleteInfo soit directement depuis le participant
+      let weight;
+      if (participant.athleteInfo && participant.athleteInfo.poids) {
+        weight = participant.athleteInfo.poids;
+      } else if (participant.poids) {
+        weight = participant.poids;
+      } else {
+        console.warn(
+          "Impossible de trouver le poids du participant:",
+          participant
+        );
+        return null;
+      }
+
+      // Utiliser la fonction findPowerThreshold pour obtenir les informations
+      const thresholdInfo = findPowerThreshold(ageCategory, gender, weight);
+
+      return thresholdInfo;
+    } catch (error) {
+      console.error(
+        "Erreur lors de l'accès aux informations de seuil de puissance:",
+        error
+      );
+      return null;
+    }
   };
 
   // Génération du fichier PDF
   const handleGeneratePDF = () => {
     try {
-      setExportLoading({ ...exportLoading, pdf: true });
+      setExportLoading((prev) => ({ ...prev, pdf: true }));
 
-      // Créer un nouveau document PDF - correction de l'instanciation
-      const doc = new jsPDF("landscape");
-      const title = `Planning des combats - ${
-        competitionName || "Compétition"
-      } - ${formatDate(new Date())}`;
+      // Créer un nouveau document PDF
+      const doc = new jsPDF("landscape", "mm", "a4");
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 10;
+      const usableWidth = pageWidth - margin * 2;
 
       // Ajouter un titre
       doc.setFontSize(18);
-      doc.text(title, 15, 15);
+      doc.text(competitionName || "Tournoi de Taekwondo", pageWidth / 2, 20, {
+        align: "center",
+      });
 
-      // Ajouter les informations générales
+      // Ajouter la date du jour
+      const today = new Date();
       doc.setFontSize(12);
-      doc.text(`Total des combats: ${scheduleStats.totalMatches}`, 15, 25);
-      doc.text(`Nombre d'aires: ${scheduleStats.totalAreas}`, 15, 30);
-      doc.text(
+      doc.text(`Planning généré le ${formatDate(today)}`, pageWidth / 2, 30, {
+        align: "center",
+      });
+
+      // Résumé du tournoi
+      doc.setFontSize(10);
+      const summaryText = [
+        `Total des combats: ${scheduleStats.totalMatches}`,
+        `Nombre d'aires: ${scheduleStats.totalAreas}`,
         `Durée estimée: ${formatDuration(scheduleStats.estimatedDuration)}`,
-        15,
-        35
-      );
-      doc.text(
-        `Heure de fin estimée: ${formatTime(scheduleStats.estimatedEndTime)}`,
-        15,
-        40
-      );
+        `Fin estimée: ${formatTime(
+          scheduleStats.estimatedEndTime
+        )} (si démarrage immédiat)`,
+      ];
+      doc.text(summaryText, pageWidth - margin, 40, { align: "right" });
 
-      // Préparer les données au format adapté pour autoTable
-      let tableData = [];
+      // En-tête de logo si disponible (à implémenter si nécessaire)
+      // doc.addImage('path/to/logo.png', 'PNG', margin, 10, 30, 15);
 
-      // Si nous sommes en vue par groupe
-      if (viewMode === "byGroup") {
-        groups.forEach((group) => {
-          // Ajouter un en-tête de groupe
-          tableData.push([
-            {
-              content: `Groupe: ${
-                group.gender === "male" ? "Hommes" : "Femmes"
-              } ${group.ageCategory.name} ${group.weightCategory.name}`,
-              colSpan: 7,
-              styles: { fontStyle: "bold", fillColor: [220, 220, 220] },
-            },
-          ]);
+      let yPosition = 50;
+      const chunkSize = 15; // Nombre de lignes par bloc d'affichage
 
-          group.pools.forEach((pool, poolIndex) => {
-            // En-tête de poule
-            tableData.push([
-              {
-                content: `Poule ${poolIndex + 1}`,
-                colSpan: 7,
-                styles: { fontStyle: "italic", fillColor: [240, 240, 240] },
-              },
-            ]);
+      // Organisation des données pour le PDF
+      let pdfData = [];
 
-            // En-tête de tableau
-            tableData.push([
-              "N°",
-              "Athlète A",
-              "Ligue",
-              "Athlète B",
-              "Ligue",
-              "Aire",
-              "Horaire",
-            ]);
-
-            // Combats de la poule
-            const poolMatches = generatedMatches.filter(
-              (match) =>
-                match.groupId === group.id && match.poolIndex === poolIndex
-            );
-
-            poolMatches.forEach((match) => {
-              const scheduledMatch = generatedSchedule.find(
-                (s) => s.matchId === match.id
-              );
-              tableData.push([
-                scheduledMatch ? scheduledMatch.matchNumber : "-",
-                getParticipantName(match, 0),
-                getParticipantLigue(match, 0),
-                getParticipantName(match, 1),
-                getParticipantLigue(match, 1),
-                scheduledMatch ? scheduledMatch.areaNumber : "-",
-                scheduledMatch
-                  ? formatTime(new Date(scheduledMatch.startTime))
-                  : "-",
-              ]);
-            });
-
-            // Ajouter une ligne vide pour séparer les poules
-            tableData.push([{ content: "", colSpan: 7 }]);
-          });
-        });
-      } else {
-        // Vue par horaire
-        [...Array(tournamentConfig.numAreas)].forEach((_, areaIndex) => {
-          const areaNumber = areaIndex + 1;
-
-          // En-tête de l'aire
-          tableData.push([
-            {
-              content: `Aire ${areaNumber}`,
-              colSpan: 7,
-              styles: { fontStyle: "bold", fillColor: [220, 220, 220] },
-            },
-          ]);
-
-          // En-tête de tableau
-          tableData.push([
-            "N°",
-            "Horaire",
-            "Groupe",
-            "Poule",
-            "Athlète A",
-            "Athlète B",
-            "Type",
-          ]);
-
-          // Trier les matchs par horaire
-          const areaMatches = generatedSchedule
-            .filter((scheduleItem) => scheduleItem.areaNumber === areaNumber)
+      // Si l'affichage est par aire
+      if (viewMode === "byArea" || true) {
+        // Par défaut, génération par aire car c'est le format le plus utile pour les arbitres
+        for (
+          let areaNumber = 1;
+          areaNumber <= tournamentConfig.numAreas;
+          areaNumber++
+        ) {
+          // Filtrer le planning pour cette aire
+          const areaItems = generatedSchedule
+            .filter((item) => item.areaNumber === areaNumber)
             .sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
 
-          areaMatches.forEach((scheduleItem) => {
-            const match = generatedMatches.find(
-              (m) => m.id === scheduleItem.matchId
-            );
+          if (areaItems.length === 0) continue;
 
-            if (!match && scheduleItem.type === "break") {
+          // Titre de l'aire
+          yPosition += 10;
+          doc.setFontSize(14);
+          doc.text(`Aire ${areaNumber}`, margin, yPosition);
+          yPosition += 5;
+
+          // Préparation des données du tableau
+          const tableData = [];
+          for (const item of areaItems) {
+            if (item.type === "break") {
               tableData.push([
-                {
-                  content: `Pause (${
-                    tournamentConfig.breakDuration
-                  } min) - ${formatTime(
-                    new Date(scheduleItem.startTime)
-                  )} à ${formatTime(new Date(scheduleItem.endTime))}`,
-                  colSpan: 7,
-                  styles: { fillColor: [255, 240, 240] },
-                },
+                "-",
+                formatTime(new Date(item.startTime)),
+                `PAUSE (${tournamentConfig.breakDuration} min)`,
+                "",
+                "",
+                "",
+                "",
+                "",
               ]);
-              return;
+              continue;
             }
 
-            if (!match) return;
+            // Trouver le match correspondant
+            const match = generatedMatches.find((m) => m.id === item.matchId);
+            if (!match) continue;
 
+            // Trouver le groupe correspondant
             const group = groups.find((g) => g.id === match.groupId);
+            if (!group) continue;
+
+            // Préparation des données du match
+            const groupText = `${group.gender === "male" ? "H" : "F"} ${
+              group.ageCategory?.name || ""
+            } ${group.weightCategory?.name || ""}`;
+
+            const poolText =
+              match.poolIndex !== undefined ? match.poolIndex + 1 : "-";
+
+            const blueAthlete = getParticipantName(match, 0);
+            const redAthlete = getParticipantName(match, 1);
+
+            // Récupérer les informations de seuil de puissance
+            const powerInfo = getPowerThresholdInfo(match);
+            const plastronText = powerInfo ? powerInfo.pss : "-";
+            const hitLevelText = powerInfo ? powerInfo.hitLevel : "-";
 
             tableData.push([
-              scheduleItem.matchNumber,
-              formatTime(new Date(scheduleItem.startTime)),
-              group
-                ? `${group.gender === "male" ? "H" : "F"} ${
-                    group.ageCategory.name
-                  } ${group.weightCategory.name}`
-                : "-",
-              match.poolIndex + 1,
-              getParticipantName(match, 0),
-              getParticipantName(match, 1),
+              item.matchNumber,
+              formatTime(new Date(item.startTime)),
+              groupText,
+              poolText,
+              blueAthlete,
+              redAthlete,
               "Combat",
+              plastronText,
+              hitLevelText,
             ]);
-          });
+          }
 
-          // Ajouter une ligne vide pour séparer les aires
-          tableData.push([{ content: "", colSpan: 7 }]);
+          // Diviser les données en chunks si nécessaire pour les grandes aires
+          const dataChunks = [];
+          for (let i = 0; i < tableData.length; i += chunkSize) {
+            dataChunks.push(tableData.slice(i, i + chunkSize));
+          }
+
+          for (
+            let chunkIndex = 0;
+            chunkIndex < dataChunks.length;
+            chunkIndex++
+          ) {
+            const chunk = dataChunks[chunkIndex];
+
+            if (yPosition > pageHeight - 50) {
+              // Nouvelle page
+              doc.addPage();
+              yPosition = 20;
+              doc.setFontSize(12);
+              doc.text(`Aire ${areaNumber} (suite)`, margin, yPosition);
+              yPosition += 10;
+            }
+
+            // Générer le tableau pour ce chunk
+            doc.setFontSize(9);
+            autoTable(doc, {
+              startY: yPosition,
+              head: [
+                [
+                  "N°",
+                  "Horaire",
+                  "Catégorie",
+                  "Poule",
+                  "Athlète BLEU",
+                  "Athlète ROUGE",
+                  "Type",
+                  "Plastron",
+                  "Niveau de Frappe",
+                ],
+              ],
+              body: chunk,
+              theme: "grid",
+              styles: {
+                fontSize: 8,
+                cellPadding: 2,
+              },
+              columnStyles: {
+                0: { cellWidth: 10 }, // N°
+                1: { cellWidth: 20 }, // Horaire
+                2: { cellWidth: 30 }, // Catégorie
+                3: { cellWidth: 15 }, // Poule
+                4: { cellWidth: 35 }, // Athlète BLEU
+                5: { cellWidth: 35 }, // Athlète ROUGE
+                6: { cellWidth: 20 }, // Type
+                7: { cellWidth: 25 }, // Plastron
+                8: { cellWidth: 25 }, // Niveau de Frappe
+              },
+              headStyles: {
+                fillColor: [66, 66, 66],
+              },
+            });
+
+            yPosition = (doc.lastAutoTable.finalY || yPosition) + 15;
+          }
+
+          // Espace entre les aires
+          yPosition += 10;
+        }
+      }
+
+      // Numéro de page
+      const pageCount = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.text(`Page ${i} sur ${pageCount}`, pageWidth / 2, pageHeight - 10, {
+          align: "center",
         });
       }
 
-      // Ajouter la table au document - correction de l'appel à autoTable
-      doc.autoTable({
-        head: [], // Nous gérons les en-têtes manuellement dans notre tableau de données
-        body: tableData,
-        startY: 45,
-        margin: { top: 45 },
-        styles: { overflow: "linebreak" },
-        columnStyles: {
-          0: { cellWidth: 20 }, // N° combat
-          5: { cellWidth: 20 }, // Aire
-          6: { cellWidth: 30 }, // Horaire
-        },
-        didDrawPage: (data) => {
-          // En-tête de page
-          doc.setFontSize(10);
-          doc.text(title, data.settings.margin.left, 10);
-
-          // Pied de page
-          doc.setFontSize(8);
-          doc.text(
-            `Généré le ${new Date().toLocaleString()}`,
-            data.settings.margin.left,
-            doc.internal.pageSize.height - 10
-          );
-          doc.text(
-            `Page ${
-              doc.internal.getCurrentPageInfo().pageNumber
-            }/${doc.internal.getNumberOfPages()}`,
-            doc.internal.pageSize.width - 40,
-            doc.internal.pageSize.height - 10
-          );
-        },
-      });
-
-      // Télécharger le fichier
+      // Télécharger le PDF
       doc.save(
-        `planning_combats_${
-          competitionName ? competitionName.replace(/\s+/g, "_") : "competition"
-        }_${formatDate(new Date()).replace(/\//g, "-")}.pdf`
+        `Planning_${competitionName || "Tournoi"}_${formatDate(today).replace(
+          /\//g,
+          "-"
+        )}.pdf`
       );
-
-      setExportLoading({ ...exportLoading, pdf: false });
     } catch (error) {
       console.error("Erreur lors de la génération du PDF:", error);
-      setError(`Erreur lors de la génération du PDF: ${error.message}`);
-      setExportLoading({ ...exportLoading, pdf: false });
+      alert(
+        "Une erreur est survenue lors de la génération du PDF. Veuillez réessayer."
+      );
+    } finally {
+      setExportLoading((prev) => ({ ...prev, pdf: false }));
     }
   };
 
   // Génération du fichier CSV
   const handleGenerateCSV = () => {
     try {
-      setExportLoading({ ...exportLoading, csv: true });
+      setExportLoading((prev) => ({ ...prev, csv: true }));
 
-      // En-têtes CSV
-      let csvContent =
-        "Type,Numéro,Groupe,Poule,Aire,Horaire,Athlète A,Ligue A,Athlète B,Ligue B\n";
+      // Préparation des en-têtes CSV
+      const headers = [
+        "N° Combat",
+        "Aire",
+        "Horaire",
+        "Catégorie",
+        "Poule",
+        "Athlète BLEU",
+        "Athlète ROUGE",
+        "Plastron",
+        "Niveau de Frappe",
+      ];
 
-      // Tableau pour stocker toutes les lignes de données
-      const csvData = [];
+      // Préparation des données
+      let csvContent = headers.join(",") + "\n";
 
-      // Préparation des données selon la vue actuelle
-      if (viewMode === "byGroup") {
-        // Organisation par groupe
-        groups.forEach((group) => {
-          const groupName = `${group.gender === "male" ? "Hommes" : "Femmes"} ${
-            group.ageCategory.name
-          } ${group.weightCategory.name}`;
-
-          group.pools.forEach((pool, poolIndex) => {
-            const poolMatches = generatedMatches.filter(
-              (match) =>
-                match.groupId === group.id && match.poolIndex === poolIndex
-            );
-
-            poolMatches.forEach((match) => {
-              const scheduledMatch = generatedSchedule.find(
-                (s) => s.matchId === match.id
-              );
-
-              if (scheduledMatch) {
-                csvData.push([
-                  "Combat",
-                  scheduledMatch.matchNumber,
-                  groupName,
-                  poolIndex + 1,
-                  scheduledMatch.areaNumber,
-                  formatTime(new Date(scheduledMatch.startTime)),
-                  getParticipantName(match, 0),
-                  getParticipantLigue(match, 0),
-                  getParticipantName(match, 1),
-                  getParticipantLigue(match, 1),
-                ]);
-              }
-            });
-          });
-        });
-      } else {
-        // Organisation par aire et par horaire
-        [...Array(tournamentConfig.numAreas)].forEach((_, areaIndex) => {
-          const areaNumber = areaIndex + 1;
-
-          const areaMatches = generatedSchedule
-            .filter((scheduleItem) => scheduleItem.areaNumber === areaNumber)
+      // Si la vue est par aire
+      if (viewMode === "byArea" || true) {
+        // Par défaut, génération par aire car c'est le format le plus utile
+        for (
+          let areaNumber = 1;
+          areaNumber <= tournamentConfig.numAreas;
+          areaNumber++
+        ) {
+          // Filtrer le planning pour cette aire
+          const areaItems = generatedSchedule
+            .filter((item) => item.areaNumber === areaNumber)
             .sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
 
-          areaMatches.forEach((scheduleItem) => {
-            if (scheduleItem.type === "break") {
-              csvData.push([
-                "Pause",
-                "-",
-                "-",
-                "-",
-                areaNumber,
-                `${formatTime(new Date(scheduleItem.startTime))} - ${formatTime(
-                  new Date(scheduleItem.endTime)
-                )}`,
-                "-",
-                "-",
-                "-",
-                "-",
-              ]);
-              return;
+          for (const item of areaItems) {
+            if (item.type === "break") {
+              csvContent += `"-",${areaNumber},"${formatTime(
+                new Date(item.startTime)
+              )}","PAUSE (${
+                tournamentConfig.breakDuration
+              } min)","","","","",""\n`;
+              continue;
             }
 
-            const match = generatedMatches.find(
-              (m) => m.id === scheduleItem.matchId
-            );
-            if (!match) return;
+            // Trouver le match correspondant
+            const match = generatedMatches.find((m) => m.id === item.matchId);
+            if (!match) continue;
 
+            // Trouver le groupe correspondant
             const group = groups.find((g) => g.id === match.groupId);
-            const groupName = group
-              ? `${group.gender === "male" ? "H" : "F"} ${
-                  group.ageCategory.name
-                } ${group.weightCategory.name}`
-              : "-";
+            if (!group) continue;
 
-            csvData.push([
-              "Combat",
-              scheduleItem.matchNumber,
-              groupName,
-              match.poolIndex + 1,
-              areaNumber,
-              formatTime(new Date(scheduleItem.startTime)),
-              getParticipantName(match, 0),
-              getParticipantLigue(match, 0),
-              getParticipantName(match, 1),
-              getParticipantLigue(match, 1),
-            ]);
-          });
-        });
+            // Préparation des données du match
+            const groupText = `${group.gender === "male" ? "H" : "F"} ${
+              group.ageCategory?.name || ""
+            } ${group.weightCategory?.name || ""}`;
+
+            const poolText =
+              match.poolIndex !== undefined ? match.poolIndex + 1 : "-";
+
+            const blueAthlete = getParticipantName(match, 0);
+            const redAthlete = getParticipantName(match, 1);
+
+            // Récupérer les informations de seuil de puissance
+            const powerInfo = getPowerThresholdInfo(match);
+            const plastronText = powerInfo ? powerInfo.pss : "-";
+            const hitLevelText = powerInfo ? powerInfo.hitLevel : "-";
+
+            // Échapper les virgules dans les textes
+            csvContent += `${item.matchNumber},${areaNumber},"${formatTime(
+              new Date(item.startTime)
+            )}","${groupText}","${poolText}","${blueAthlete.replace(
+              /"/g,
+              '""'
+            )}","${redAthlete.replace(
+              /"/g,
+              '""'
+            )}","${plastronText}","${hitLevelText}"\n`;
+          }
+        }
       }
 
-      // Trier les données par numéro de match pour une meilleure organisation
-      csvData.sort((a, b) => {
-        if (a[0] === "Pause") return 1;
-        if (b[0] === "Pause") return -1;
-        return parseInt(a[1]) - parseInt(b[1]);
-      });
-
-      // Ajouter les données au contenu CSV
-      csvData.forEach((row) => {
-        // Échapper les virgules et les guillemets
-        const escapedRow = row.map((cell) => {
-          const cellStr = String(cell);
-          if (cellStr.includes(",") || cellStr.includes('"')) {
-            return `"${cellStr.replace(/"/g, '""')}"`;
-          }
-          return cellStr;
-        });
-        csvContent += escapedRow.join(",") + "\n";
-      });
-
-      // Créer un objet Blob pour le téléchargement
+      // Création d'un objet Blob pour le téléchargement
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
-
-      // Créer un lien de téléchargement
       const link = document.createElement("a");
-      link.href = url;
+      link.setAttribute("href", url);
       link.setAttribute(
         "download",
-        `planning_combats_${
-          competitionName ? competitionName.replace(/\s+/g, "_") : "competition"
+        `Planning_${
+          competitionName ? competitionName.replace(/\s+/g, "_") : "Tournoi"
         }_${formatDate(new Date()).replace(/\//g, "-")}.csv`
       );
       document.body.appendChild(link);
-
-      // Simuler un clic sur le lien
       link.click();
-
-      // Nettoyer
       document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      setExportLoading({ ...exportLoading, csv: false });
     } catch (error) {
       console.error("Erreur lors de la génération du CSV:", error);
-      setError(`Erreur lors de la génération du CSV: ${error.message}`);
-      setExportLoading({ ...exportLoading, csv: false });
+      alert(
+        "Une erreur est survenue lors de la génération du CSV. Veuillez réessayer."
+      );
+    } finally {
+      setExportLoading((prev) => ({ ...prev, csv: false }));
     }
   };
 
-  return (
-    <div className="match-schedule-container">
-      <h2>Étape 4: Planning des combats</h2>
+  // Ajouter une fonction pour filtrer les matchs selon les critères
+  const filterMatches = (match, scheduleItem) => {
+    // Si nous n'avons pas de match valide, retourner false
+    if (!match) {
+      // Si c'est une pause, on l'accepte quand même
+      return scheduleItem.type === "break";
+    }
 
-      {isLoading ? (
-        <div className="loading">
-          <p>
-            {dataSource === "existing"
-              ? "Chargement des matchs existants..."
-              : "Génération du planning des combats en cours..."}
-          </p>
+    // Si l'aire est filtrée et ne correspond pas, ne pas afficher
+    if (
+      areaFilter !== "all" &&
+      scheduleItem.areaNumber !== parseInt(areaFilter)
+    ) {
+      return false;
+    }
+
+    // Recherche par nom d'athlète ou par ligue
+    if (searchTerm || ligueFilter) {
+      // S'assurer que les participants existent
+      if (!match.participants || match.participants.length === 0) {
+        return false;
+      }
+
+      // Filtrer par terme de recherche (nom ou prénom)
+      if (searchTerm) {
+        const searchTermLower = searchTerm.toLowerCase();
+        const participantMatch = match.participants.some(
+          (p) =>
+            (p.nom && p.nom.toLowerCase().includes(searchTermLower)) ||
+            (p.prenom && p.prenom.toLowerCase().includes(searchTermLower))
+        );
+        if (!participantMatch) {
+          return false;
+        }
+      }
+
+      // Filtrer par ligue
+      if (ligueFilter) {
+        const ligueFilterLower = ligueFilter.toLowerCase();
+        const ligueMatch = match.participants.some(
+          (p) => p.ligue && p.ligue.toLowerCase().includes(ligueFilterLower)
+        );
+        if (!ligueMatch) {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  };
+
+  // Ajouter la section de filtres avant le rendu de la vue
+  const renderFilters = () => {
+    // Déterminer le nombre réel d'aires utilisées dans le planning
+    const usedAreas = new Set();
+    generatedSchedule.forEach((item) => {
+      if (item.areaNumber) {
+        usedAreas.add(item.areaNumber);
+      }
+    });
+
+    // Convertir en array et trier numériquement
+    const usedAreasArray = Array.from(usedAreas).sort((a, b) => a - b);
+
+    // S'assurer que nous avons au moins le nombre d'aires configurées
+    const configuredAreas = tournamentConfig.numAreas || 0;
+    const maxAreaNumber = Math.max(...usedAreasArray, configuredAreas);
+
+    // Créer un tableau allant de 1 jusqu'au numéro d'aire maximal
+    const allAreas = Array.from({ length: maxAreaNumber }, (_, i) => i + 1);
+
+    console.log("Aires dans le planning:", usedAreasArray);
+    console.log("Nombre d'aires configurées:", configuredAreas);
+    console.log("Toutes les aires disponibles pour le filtre:", allAreas);
+
+    return (
+      <div className="filters-container">
+        <div className="filter-group">
+          <label htmlFor="areaFilter">Aire:</label>
+          <select
+            id="areaFilter"
+            value={areaFilter}
+            onChange={(e) => setAreaFilter(e.target.value)}
+          >
+            <option value="all">Toutes les aires</option>
+            {allAreas.map((areaNum) => (
+              <option key={areaNum} value={areaNum}>
+                Aire {areaNum}
+              </option>
+            ))}
+          </select>
         </div>
-      ) : error ? (
-        <div className="error-message">{error}</div>
-      ) : (
-        <>
-          <div className="schedule-stats">
-            <h3>Résumé du planning</h3>
-            <p>Nombre total de combats: {scheduleStats.totalMatches}</p>
-            <p>Nombre d'aires de combat: {scheduleStats.totalAreas}</p>
-            <p>
-              Durée estimée: {formatDuration(scheduleStats.estimatedDuration)}
-            </p>
-            <p>
-              Heure de fin estimée: {formatTime(scheduleStats.estimatedEndTime)}
-            </p>
-            {dataSource === "existing" && (
-              <p className="info">
-                Les matchs ont été chargés depuis la base de données.
-              </p>
-            )}
 
-            <div className="export-buttons">
-              <button
-                className="export-btn pdf-btn"
-                onClick={handleGeneratePDF}
-                disabled={exportLoading.pdf || generatedMatches.length === 0}
-              >
-                {exportLoading.pdf ? "Génération..." : "Générer PDF"}
-              </button>
-              <button
-                className="export-btn csv-btn"
-                onClick={handleGenerateCSV}
-                disabled={exportLoading.csv || generatedMatches.length === 0}
-              >
-                {exportLoading.csv ? "Génération..." : "Générer CSV"}
-              </button>
-            </div>
-          </div>
+        <div className="filter-group">
+          <label htmlFor="displayMode">Affichage:</label>
+          <select
+            id="displayMode"
+            value={displayAllAreas ? "all" : "filtered"}
+            onChange={(e) => setDisplayAllAreas(e.target.value === "all")}
+          >
+            <option value="all">Toutes les aires</option>
+            <option value="filtered">Aires filtrées uniquement</option>
+          </select>
+        </div>
 
-          <div className="view-selector">
-            <button
-              className={`view-btn ${viewMode === "byGroup" ? "active" : ""}`}
-              onClick={() => setViewMode("byGroup")}
-            >
-              Vue par groupe
-            </button>
-            <button
-              className={`view-btn ${
-                viewMode === "bySchedule" ? "active" : ""
-              }`}
-              onClick={() => setViewMode("bySchedule")}
-            >
-              Vue par horaire
-            </button>
-          </div>
+        <div className="filter-group">
+          <label htmlFor="searchTerm">Recherche par nom:</label>
+          <input
+            type="text"
+            id="searchTerm"
+            placeholder="Nom ou prénom de l'athlète..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
 
-          {viewMode === "byGroup" ? (
-            <div className="groups-matches">
-              <h3>Combats par groupe</h3>
+        <div className="filter-group">
+          <label htmlFor="ligueFilter">Recherche par ligue:</label>
+          <input
+            type="text"
+            id="ligueFilter"
+            placeholder="Nom de la ligue..."
+            value={ligueFilter}
+            onChange={(e) => setLigueFilter(e.target.value)}
+          />
+        </div>
+      </div>
+    );
+  };
 
-              {groups.map((group, groupIndex) => (
-                <div key={groupIndex} className="group-matches">
-                  <h4>
-                    Groupe: {group.gender === "male" ? "Hommes" : "Femmes"}{" "}
-                    {group.ageCategory.name} {group.weightCategory.name}
-                  </h4>
+  const renderScheduleView = () => {
+    // Logs de débogage pour comprendre la distribution des matchs par aire
+    const matchesByArea = {};
+    generatedSchedule.forEach((item) => {
+      if (!matchesByArea[item.areaNumber]) {
+        matchesByArea[item.areaNumber] = 0;
+      }
+      matchesByArea[item.areaNumber]++;
+    });
 
-                  {group.pools.map((pool, poolIndex) => (
-                    <div key={poolIndex} className="pool-matches">
-                      <h5>Poule {poolIndex + 1}</h5>
+    console.log("Distribution des matchs par aire:", matchesByArea);
+    console.log("Nombre total d'aires configurées:", tournamentConfig.numAreas);
+    console.log("Filtre actuel par aire:", areaFilter);
+    console.log("Afficher toutes les aires:", displayAllAreas);
 
-                      <table className="matches-table">
-                        <thead>
-                          <tr>
-                            <th>N° Combat</th>
-                            <th>Athlète A</th>
-                            <th>Athlète B</th>
-                            <th>Aire</th>
-                            <th>Horaire prévu</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {generatedMatches
-                            .filter(
-                              (match) =>
-                                match.groupId === group.id &&
-                                match.poolIndex === poolIndex
-                            )
-                            .map((match, matchIndex) => {
-                              // Trouver le combat dans le planning
-                              const scheduledMatch = generatedSchedule.find(
-                                (s) => s.matchId === match.id
-                              );
+    // Vérifier si nous avons des matchs valides
+    console.log("Nombre total de matchs générés:", generatedMatches.length);
+    console.log(
+      "Nombre total d'éléments de planning:",
+      generatedSchedule.length
+    );
 
-                              return (
-                                <tr key={matchIndex}>
-                                  <td>
-                                    {scheduledMatch
-                                      ? scheduledMatch.matchNumber
-                                      : "-"}
-                                  </td>
-                                  <td>{getParticipantName(match, 0)}</td>
-                                  <td>{getParticipantName(match, 1)}</td>
-                                  <td>
-                                    {scheduledMatch
-                                      ? scheduledMatch.areaNumber
-                                      : "-"}
-                                  </td>
-                                  <td>
-                                    {scheduledMatch
-                                      ? formatTime(
-                                          new Date(scheduledMatch.startTime)
-                                        )
-                                      : "-"}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                        </tbody>
-                      </table>
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          ) : (
-            // Dans la vue par horaire
-            <div className="schedule-view">
-              <h3>Planning par aires de combat</h3>
+    // Logs pour vérifier les premiers matchs et leur aire associée
+    if (generatedMatches.length > 0) {
+      console.log("Premier match:", generatedMatches[0]);
+      const matchAreas = generatedMatches.map((match) => {
+        const schedule = generatedSchedule.find((s) => s.matchId === match.id);
+        return {
+          matchId: match.id,
+          areaNumber: schedule ? schedule.areaNumber : "non attribué",
+          participantsCount: match.participants ? match.participants.length : 0,
+        };
+      });
+      console.log(
+        "Attribution des aires aux 5 premiers matchs:",
+        matchAreas.slice(0, 5)
+      );
+    }
 
-              {[...Array(tournamentConfig.numAreas)].map((_, areaIndex) => {
-                const areaNumber = areaIndex + 1;
-                const areaMatches = generatedSchedule
-                  .filter(
-                    (scheduleItem) => scheduleItem.areaNumber === areaNumber
-                  )
-                  .sort(
-                    (a, b) => new Date(a.startTime) - new Date(b.startTime)
-                  );
+    if (generatedSchedule.length > 0) {
+      console.log("Premier élément de planning:", generatedSchedule[0]);
+    }
 
-                return (
-                  <div key={areaIndex} className="area-schedule">
-                    <h4>Aire {areaNumber}</h4>
-                    <table className="matches-table">
-                      <thead>
-                        <tr>
-                          <th>N° Combat</th> {/* Ajout de l'en-tête */}
-                          <th>Horaire</th>
-                          <th>Groupe</th>
-                          <th>Poule</th>
-                          <th>Athlète A</th>
-                          <th>Athlète B</th>
-                          <th>Type</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {areaMatches.map((scheduleItem, scheduleIndex) => {
+    // CORRECTION: Debug complet de l'état
+    console.log("Voici les structures de données complètes:");
+    console.log("Groups:", groups);
+    console.log("TournamentConfig:", tournamentConfig);
+    console.log("Dataset:", dataSource);
+
+    // Vérifier la correspondance entre matches et planning
+    const matchesWithSchedule = generatedSchedule.map((scheduleItem) => {
+      const matchDetails = generatedMatches.find(
+        (m) => m.id === scheduleItem.matchId
+      );
+      return {
+        schedule: scheduleItem,
+        match: matchDetails,
+      };
+    });
+
+    console.log(
+      "Échantillon des matchs avec planning:",
+      matchesWithSchedule.slice(0, 3)
+    );
+
+    return (
+      <div className="schedule-view">
+        <h3>Planning par aires de combat</h3>
+
+        {/* Afficher un résumé des matchs par aire */}
+        <div className="area-summary">
+          {Object.entries(matchesByArea).map(([area, count]) => (
+            <span key={area} className="area-count">
+              Aire {area}: {count} matchs
+            </span>
+          ))}
+        </div>
+
+        {/* Modifions la façon dont nous itérons sur les aires pour s'assurer qu'elles sont toutes visibles */}
+        {Array.from({ length: tournamentConfig.numAreas }).map(
+          (_, areaIndex) => {
+            const areaNumber = areaIndex + 1;
+
+            // Si on n'affiche pas toutes les aires et que l'aire n'est pas celle filtrée, passer
+            if (
+              !displayAllAreas &&
+              areaFilter !== "all" &&
+              areaNumber !== parseInt(areaFilter)
+            ) {
+              return null;
+            }
+
+            // Récupérer tous les matchs pour cette aire
+            const areaScheduleItems = generatedSchedule.filter(
+              (item) => item.areaNumber === areaNumber
+            );
+
+            // Déterminer lesquels doivent être affichés selon les filtres
+            const filteredAreaScheduleItems = areaScheduleItems
+              .filter((scheduleItem) => {
+                const matchDetails = generatedMatches.find(
+                  (m) => m.id === scheduleItem.matchId
+                );
+                return filterMatches(matchDetails, scheduleItem);
+              })
+              .sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+
+            console.log(
+              `Aire ${areaNumber}: ${areaScheduleItems.length} matchs totaux, ${filteredAreaScheduleItems.length} après filtrage`
+            );
+
+            return (
+              <div key={areaIndex} className="area-schedule">
+                <h4>
+                  Aire {areaNumber} ({filteredAreaScheduleItems.length} matchs)
+                </h4>
+
+                {filteredAreaScheduleItems.length === 0 ? (
+                  <div className="no-matches-for-area">
+                    <p>
+                      Aucun match ne correspond aux critères de filtrage pour
+                      cette aire.
+                    </p>
+                  </div>
+                ) : (
+                  <table className="matches-table">
+                    <thead>
+                      <tr>
+                        <th>N° Combat</th>
+                        <th>Horaire</th>
+                        <th>Groupe</th>
+                        <th>Poule</th>
+                        <th>Athlète BLEU</th>
+                        <th>Athlète ROUGE</th>
+                        <th>Type</th>
+                        <th>Seuils PSS</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredAreaScheduleItems.map(
+                        (scheduleItem, scheduleIndex) => {
                           // Trouver le match correspondant
                           const match = generatedMatches.find(
                             (m) => m.id === scheduleItem.matchId
@@ -934,7 +1379,7 @@ const MatchSchedule = ({
                                 key={`break-${scheduleIndex}`}
                                 className="break-row"
                               >
-                                <td colSpan="7">
+                                <td colSpan="8">
                                   Pause ({tournamentConfig.breakDuration} min) -
                                   {formatTime(new Date(scheduleItem.startTime))}{" "}
                                   à {formatTime(new Date(scheduleItem.endTime))}
@@ -943,40 +1388,834 @@ const MatchSchedule = ({
                             );
                           }
 
-                          if (!match) return null;
+                          if (!match) {
+                            console.log(
+                              "Match non trouvé pour l'élément de planning:",
+                              scheduleItem
+                            );
+                            return null;
+                          }
 
                           // Trouver le groupe correspondant
                           const group = groups.find(
                             (g) => g.id === match.groupId
                           );
 
+                          // Récupérer les informations de seuil de puissance
+                          const powerInfo = getPowerThresholdInfo(match);
+
                           return (
                             <tr key={scheduleIndex}>
-                              <td>{scheduleItem.matchNumber}</td>{" "}
-                              {/* Afficher le numéro du combat */}
+                              <td>{scheduleItem.matchNumber}</td>
                               <td>
                                 {formatTime(new Date(scheduleItem.startTime))}
                               </td>
                               <td>
                                 {group
                                   ? `${group.gender === "male" ? "H" : "F"} ${
-                                      group.ageCategory.name
-                                    } ${group.weightCategory.name}`
+                                      group.ageCategory?.name || ""
+                                    } ${group.weightCategory?.name || ""}`
                                   : "-"}
                               </td>
-                              <td>{match.poolIndex + 1}</td>
-                              <td>{getParticipantName(match, 0)}</td>
-                              <td>{getParticipantName(match, 1)}</td>
+                              <td>
+                                {match.poolIndex !== undefined
+                                  ? match.poolIndex + 1
+                                  : "-"}
+                              </td>
+                              <td className="blue-athlete">
+                                {getParticipantName(match, 0)}
+                              </td>
+                              <td className="red-athlete">
+                                {getParticipantName(match, 1)}
+                              </td>
                               <td>Combat</td>
+                              <td className="pss-info">
+                                {powerInfo ? (
+                                  <>
+                                    <span className="pss-body">
+                                      {powerInfo.pss}
+                                    </span>
+                                    <span className="pss-level">
+                                      Niveau {powerInfo.hitLevel}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <span>-</span>
+                                )}
+                              </td>
                             </tr>
                           );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                );
-              })}
+                        }
+                      )}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            );
+          }
+        )}
+      </div>
+    );
+  };
+
+  // Ajouter un bouton pour forcer la régénération si nécessaire
+  const handleForceRegenerate = async () => {
+    if (
+      window.confirm(
+        "ATTENTION: Vous êtes sur le point de supprimer tous les matchs existants et d'en générer de nouveaux. Cette action est irréversible et supprimera tous les résultats de matchs déjà saisis. Voulez-vous vraiment continuer?"
+      )
+    ) {
+      setIsLoading(true);
+
+      try {
+        // Supprimer d'abord les matchs existants
+        console.log("Suppression des matchs existants...");
+        const deleteResponse = await fetch(
+          `${API_URL}/match/deleteByCompetition/${competitionId}`,
+          {
+            method: "DELETE",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        if (deleteResponse.ok) {
+          const result = await deleteResponse.json();
+          console.log(`${result.count || 0} matchs supprimés avec succès`);
+
+          setMatchesAlreadyLoaded(false);
+          setGeneratedMatches([]);
+          setGeneratedSchedule([]);
+
+          // Après avoir supprimé les matchs, générer de nouveaux matchs
+          const allMatches = generateMatches(groups);
+          console.log("Nouveaux matchs générés:", allMatches.length);
+
+          // Créer le planning des combats
+          const {
+            schedule: generatedSchedule,
+            updatedMatches,
+            stats,
+          } = createSchedule(allMatches, tournamentConfig);
+          console.log("Planning créé:", generatedSchedule.length, "éléments");
+
+          // Sauvegarder les nouveaux matchs
+          await handleSaveNewMatches(
+            allMatches,
+            updatedMatches,
+            generatedSchedule,
+            stats
+          );
+
+          setMatchesAlreadyLoaded(true);
+        } else {
+          console.error(
+            "Erreur lors de la suppression des matchs:",
+            deleteResponse.status
+          );
+          setError(
+            `Erreur lors de la suppression des matchs: ${deleteResponse.statusText}`
+          );
+          setIsLoading(false);
+        }
+      } catch (error) {
+        console.error("Erreur lors de la régénération des matchs:", error);
+        setError(`Erreur lors de la régénération des matchs: ${error.message}`);
+        setIsLoading(false);
+      }
+    }
+  };
+
+  // Fonction pour sauvegarder de nouveaux matchs générés
+  const handleSaveNewMatches = async (
+    allMatches,
+    updatedMatches,
+    schedule,
+    stats
+  ) => {
+    try {
+      // Au lieu de sauvegarder les groupes à chaque fois, vérifier d'abord s'ils existent déjà
+      const existingGroupsResult = await checkExistingGroupsAndPools(
+        competitionId
+      );
+      console.log("Vérification des groupes existants:", existingGroupsResult);
+
+      let savedGroups = [];
+      if (
+        existingGroupsResult.exists &&
+        existingGroupsResult.groups &&
+        existingGroupsResult.groups.length > 0
+      ) {
+        console.log(
+          "Utilisation des groupes existants:",
+          existingGroupsResult.groups
+        );
+        savedGroups = existingGroupsResult.groups;
+      } else {
+        // Si les groupes n'existent pas, les sauvegarder d'abord
+        console.log("Sauvegarde des nouveaux groupes");
+        const savedGroupsResult = await saveGroupsAndPools(
+          competitionId,
+          groups
+        );
+        savedGroups = savedGroupsResult.savedGroups || [];
+      }
+
+      // Mettre à jour les IDs des groupes dans les matchs
+      const matchesWithNumbers = updatedMatches.map((match) => {
+        const scheduledMatch = schedule.find((s) => s.matchId === match.id);
+        if (scheduledMatch) {
+          return {
+            ...match,
+            number: scheduledMatch.matchNumber,
+            areaNumber: scheduledMatch.areaNumber,
+            startTime: scheduledMatch.startTime,
+          };
+        }
+        return match;
+      });
+
+      // Organiser les matchs par poule
+      const poolMap = new Map();
+      matchesWithNumbers.forEach((match) => {
+        if (!match.groupId || !Array.isArray(groups)) {
+          console.error("Données de match invalides:", match);
+          return;
+        }
+
+        const originalGroup = groups.find((g) => g.id === match.groupId);
+        if (!originalGroup) {
+          console.error("Groupe original non trouvé pour le match:", match);
+          return;
+        }
+
+        const savedGroup = savedGroups.find(
+          (sg) =>
+            sg &&
+            sg.gender === originalGroup.gender &&
+            sg.ageCategoryName === originalGroup.ageCategory.name &&
+            sg.weightCategoryName === originalGroup.weightCategory.name
+        );
+
+        if (!savedGroup) {
+          console.error("Groupe sauvegardé non trouvé pour le match:", match);
+          return;
+        }
+
+        const key = `${savedGroup.id}-${match.poolIndex}`;
+        if (!poolMap.has(key)) {
+          poolMap.set(key, []);
+        }
+
+        // Mettre à jour l'ID du groupe
+        poolMap.get(key).push({
+          ...match,
+          groupId: savedGroup.id,
+        });
+      });
+
+      // Récupérer les pools pour chaque groupe
+      const matchesByPool = [];
+      for (const group of savedGroups) {
+        try {
+          const poolsResponse = await fetch(
+            `${API_URL}/group/${group.id}/pools`,
+            {
+              method: "GET",
+              headers: {
+                "Content-Type": "application/json",
+              },
+            }
+          );
+
+          if (poolsResponse.ok) {
+            const pools = await poolsResponse.json();
+
+            pools.forEach((pool) => {
+              const matches = poolMap.get(`${group.id}-${pool.poolIndex}`);
+              if (matches && matches.length > 0) {
+                matchesByPool.push({
+                  poolId: pool.id,
+                  matches: matches,
+                });
+              }
+            });
+          }
+        } catch (error) {
+          console.error(
+            `Erreur lors de la récupération des pools pour le groupe ${group.id}:`,
+            error
+          );
+        }
+      }
+
+      // Sauvegarder les matchs
+      if (matchesByPool.length > 0) {
+        const savedMatches = await saveGeneratedMatches(
+          competitionId,
+          matchesByPool
+        );
+        console.log("Tous les matchs ont été sauvegardés:", savedMatches);
+
+        setGeneratedMatches(updatedMatches);
+        setGeneratedSchedule(schedule);
+
+        // Calculer l'heure de fin estimée
+        const now = new Date();
+        const endTime = new Date(now.getTime() + stats.totalDuration * 60000);
+
+        setScheduleStats({
+          totalMatches: updatedMatches.length,
+          totalAreas: tournamentConfig.numAreas,
+          estimatedDuration: stats.totalDuration,
+          estimatedEndTime: endTime,
+        });
+
+        setError(null);
+      } else {
+        setError(
+          "Aucun match à sauvegarder. Vérifiez que les poules ont été correctement configurées."
+        );
+      }
+
+      setIsLoading(false);
+    } catch (error) {
+      console.error("Erreur lors de la sauvegarde des nouveaux matchs:", error);
+      setError(
+        `Erreur lors de la sauvegarde des nouveaux matchs: ${error.message}`
+      );
+      setIsLoading(false);
+    }
+  };
+
+  const styles = `
+    .match-schedule-container {
+      padding: 20px;
+      max-width: 100%;
+      overflow-x: auto;
+    }
+
+    .alert {
+      padding: 12px 20px;
+      margin-bottom: 20px;
+      border-radius: 4px;
+      position: relative;
+    }
+
+    .alert-info {
+      background-color: #d1ecf1;
+      color: #0c5460;
+      border: 1px solid #bee5eb;
+    }
+
+    .alert-warning {
+      background-color: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffeeba;
+    }
+
+    .alert-success {
+      background-color: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+
+    .alert-error {
+      background-color: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+
+    .close-btn {
+      position: absolute;
+      top: 10px;
+      right: 15px;
+      cursor: pointer;
+      background: none;
+      border: none;
+      font-size: 18px;
+      font-weight: bold;
+      color: inherit;
+    }
+
+    .tabs {
+      display: flex;
+      margin-bottom: 10px;
+    }
+  `;
+
+  return (
+    <div className="match-schedule-container">
+      <style>{styles}</style>
+      <h2>Étape 4: Planning des combats</h2>
+
+      {/* Afficher le message d'information s'il existe */}
+      {info && (
+        <div className={`alert alert-${info.type}`}>
+          <p>{info.message}</p>
+          <button className="close-btn" onClick={() => setInfo(null)}>
+            ×
+          </button>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="loading">
+          <p>
+            {dataSource === "existing"
+              ? "Chargement des matchs existants..."
+              : "Génération du planning des combats en cours..."}
+          </p>
+        </div>
+      ) : error ? (
+        <div className="error-message">
+          <p>{error}</p>
+          <button onClick={loadOrGenerateMatchSchedule} className="retry-btn">
+            Réessayer
+          </button>
+        </div>
+      ) : (
+        <>
+          {generatedMatches.length === 0 ? (
+            <div className="no-matches-container">
+              <div className="info-message">
+                <p>Aucun match n'a encore été généré pour cette compétition.</p>
+                <p>
+                  Vous devez d'abord générer les matchs pour pouvoir les
+                  visualiser et les planifier.
+                </p>
+              </div>
+              <button
+                onClick={handleGenerateSchedule}
+                className="generate-btn primary-btn"
+              >
+                Générer les matchs
+              </button>
             </div>
+          ) : (
+            <>
+              <div className="schedule-stats">
+                <h3>Résumé du planning</h3>
+                <p>Nombre total de combats: {scheduleStats.totalMatches}</p>
+                <p>Nombre d'aires de combat: {scheduleStats.totalAreas}</p>
+                <p>
+                  Durée estimée:{" "}
+                  {formatDuration(scheduleStats.estimatedDuration)}
+                </p>
+                <p>
+                  Heure de fin estimée:{" "}
+                  {formatTime(scheduleStats.estimatedEndTime)}
+                </p>
+                {dataSource === "existing" && (
+                  <p className="info">
+                    Les matchs ont été chargés depuis la base de données.
+                  </p>
+                )}
+
+                <div className="export-buttons">
+                  <button
+                    className="export-btn pdf-btn"
+                    onClick={handleGeneratePDF}
+                    disabled={
+                      exportLoading.pdf || generatedMatches.length === 0
+                    }
+                  >
+                    {exportLoading.pdf ? "Génération..." : "Générer PDF"}
+                  </button>
+                  <button
+                    className="export-btn csv-btn"
+                    onClick={handleGenerateCSV}
+                    disabled={
+                      exportLoading.csv || generatedMatches.length === 0
+                    }
+                  >
+                    {exportLoading.csv ? "Génération..." : "Générer CSV"}
+                  </button>
+                  {dataSource === "existing" && (
+                    <button
+                      className="danger-btn"
+                      onClick={handleForceRegenerate}
+                    >
+                      Régénérer les matchs
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="view-selector">
+                <button
+                  className={`view-btn ${
+                    viewMode === "byGroup" ? "active" : ""
+                  }`}
+                  onClick={() => setViewMode("byGroup")}
+                >
+                  Vue par groupe
+                </button>
+                <button
+                  className={`view-btn ${
+                    viewMode === "byArea" ? "active" : ""
+                  }`}
+                  onClick={() => setViewMode("byArea")}
+                >
+                  Vue par aire
+                </button>
+              </div>
+
+              {viewMode === "byArea" && renderFilters()}
+
+              {viewMode === "byGroup" ? (
+                <div className="groups-matches">
+                  <h3>Combats par groupe</h3>
+
+                  {groups.map((group, groupIndex) => (
+                    <div key={groupIndex} className="group-matches">
+                      <h4>
+                        Groupe: {group.gender === "male" ? "Hommes" : "Femmes"}{" "}
+                        {group.ageCategory.name} {group.weightCategory.name}
+                      </h4>
+
+                      {group.pools.map((pool, poolIndex) => (
+                        <div key={poolIndex} className="pool-matches">
+                          <h5>Poule {poolIndex + 1}</h5>
+
+                          <table className="matches-table">
+                            <thead>
+                              <tr>
+                                <th>N° Combat</th>
+                                <th>Athlète BLEU</th>
+                                <th>Athlète ROUGE</th>
+                                <th>Aire</th>
+                                <th>Horaire prévu</th>
+                                <th>Seuils PSS</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {generatedMatches
+                                .filter(
+                                  (match) =>
+                                    match.groupId === group.id &&
+                                    match.poolIndex === poolIndex
+                                )
+                                .map((match, matchIndex) => {
+                                  // Trouver le combat dans le planning
+                                  const scheduledMatch = generatedSchedule.find(
+                                    (s) => s.matchId === match.id
+                                  );
+
+                                  // Récupérer les informations de seuil de puissance
+                                  const powerInfo =
+                                    getPowerThresholdInfo(match);
+
+                                  return (
+                                    <tr key={matchIndex}>
+                                      <td>
+                                        {scheduledMatch
+                                          ? scheduledMatch.matchNumber
+                                          : "-"}
+                                      </td>
+                                      <td className="blue-athlete">
+                                        {getParticipantName(match, 0)}
+                                      </td>
+                                      <td className="red-athlete">
+                                        {getParticipantName(match, 1)}
+                                      </td>
+                                      <td>
+                                        {scheduledMatch
+                                          ? scheduledMatch.areaNumber
+                                          : "-"}
+                                      </td>
+                                      <td>
+                                        {scheduledMatch
+                                          ? formatTime(
+                                              new Date(scheduledMatch.startTime)
+                                            )
+                                          : "-"}
+                                      </td>
+                                      <td className="pss-info">
+                                        {powerInfo ? (
+                                          <>
+                                            <span className="pss-body">
+                                              {powerInfo.pss}
+                                            </span>
+                                            <span className="pss-level">
+                                              Niveau {powerInfo.hitLevel}
+                                            </span>
+                                          </>
+                                        ) : (
+                                          <span>-</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                            </tbody>
+                          </table>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="areas-view">
+                  <h3>Planning par aires de combat</h3>
+
+                  {/* Afficher un résumé des matchs par aire */}
+                  <div className="area-summary">
+                    {Object.entries(
+                      generatedSchedule.reduce((acc, item) => {
+                        if (!acc[item.areaNumber]) acc[item.areaNumber] = 0;
+                        acc[item.areaNumber]++;
+                        return acc;
+                      }, {})
+                    ).map(([area, count]) => (
+                      <span key={area} className="area-count">
+                        Aire {area}: {count} matchs
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* CORRECTION: Affichage de débogage supplémentaire */}
+                  {generatedSchedule.length === 0 && (
+                    <div className="debug-info">
+                      <p>
+                        Aucun élément de planning trouvé. Ceci peut indiquer un
+                        problème de chargement des données.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* CORRECTION: Vérifier si nous avons des données valides avant de filtrer */}
+                  {generatedMatches.length === 0 && (
+                    <div className="debug-info">
+                      <p>
+                        Aucun match trouvé. Ceci peut indiquer un problème de
+                        génération ou de chargement des matchs.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* NOUVELLE APPROCHE: Afficher tous les matchs par aire, sans filtrage complexe pour déboguer */}
+                  {(dataSource === "existing" || generatedMatches.length > 0) &&
+                    Array.from({
+                      length: Math.max(tournamentConfig.numAreas, 1),
+                    }).map((_, areaIndex) => {
+                      const areaNumber = areaIndex + 1;
+
+                      // Si on n'affiche pas toutes les aires et que l'aire n'est pas celle filtrée, passer
+                      if (
+                        !displayAllAreas &&
+                        areaFilter !== "all" &&
+                        areaNumber !== parseInt(areaFilter)
+                      ) {
+                        return null;
+                      }
+
+                      // CORRECTION: Trouver d'abord les éléments de planning pour cette aire spécifique
+                      const areaScheduleItems = generatedSchedule.filter(
+                        (item) => item.areaNumber === areaNumber
+                      );
+                      console.log(
+                        `Aire ${areaNumber}: ${areaScheduleItems.length} matchs trouvés`
+                      );
+
+                      // CORRECTION: Ensuite, pour chaque élément de planning, trouver le match correspondant
+                      const matchesForArea = areaScheduleItems
+                        .map((scheduleItem) => {
+                          const match = generatedMatches.find(
+                            (m) => m.id === scheduleItem.matchId
+                          );
+                          return {
+                            scheduleItem,
+                            match,
+                          };
+                        })
+                        .filter((item) => {
+                          // Filtrage de base: ne garder que les matchs valides ou les pauses
+                          if (!item.match)
+                            return item.scheduleItem.type === "break";
+
+                          // Filtrage par nom si nécessaire
+                          if (searchTerm) {
+                            const searchTermLower = searchTerm.toLowerCase();
+                            if (
+                              !item.match.participants ||
+                              !item.match.participants.some(
+                                (p) =>
+                                  (p.nom &&
+                                    p.nom
+                                      .toLowerCase()
+                                      .includes(searchTermLower)) ||
+                                  (p.prenom &&
+                                    p.prenom
+                                      .toLowerCase()
+                                      .includes(searchTermLower))
+                              )
+                            ) {
+                              return false;
+                            }
+                          }
+
+                          // Filtrage par ligue si nécessaire
+                          if (ligueFilter) {
+                            const ligueFilterLower = ligueFilter.toLowerCase();
+                            if (
+                              !item.match.participants ||
+                              !item.match.participants.some(
+                                (p) =>
+                                  p.ligue &&
+                                  p.ligue
+                                    .toLowerCase()
+                                    .includes(ligueFilterLower)
+                              )
+                            ) {
+                              return false;
+                            }
+                          }
+
+                          return true;
+                        });
+
+                      console.log(
+                        `Aire ${areaNumber}: ${matchesForArea.length} matchs après filtrage`
+                      );
+
+                      // Si aucun match après filtrage et pas en mode affichage de toutes les aires, passer
+                      if (matchesForArea.length === 0 && !displayAllAreas) {
+                        return null;
+                      }
+
+                      return (
+                        <div key={areaIndex} className="area-schedule">
+                          <h4>
+                            Aire {areaNumber} ({matchesForArea.length} matchs)
+                          </h4>
+
+                          {matchesForArea.length === 0 ? (
+                            <div className="no-matches-for-area">
+                              <p>
+                                Aucun match ne correspond aux critères de
+                                filtrage pour cette aire.
+                              </p>
+                            </div>
+                          ) : (
+                            <table className="matches-table">
+                              <thead>
+                                <tr>
+                                  <th>N° Combat</th>
+                                  <th>Horaire</th>
+                                  <th>Groupe</th>
+                                  <th>Poule</th>
+                                  <th>Athlète BLEU</th>
+                                  <th>Athlète ROUGE</th>
+                                  <th>Type</th>
+                                  <th>Seuils PSS</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {matchesForArea.map(
+                                  ({ scheduleItem, match }, index) => {
+                                    // Traitement des pauses
+                                    if (
+                                      !match &&
+                                      scheduleItem.type === "break"
+                                    ) {
+                                      return (
+                                        <tr
+                                          key={`break-${index}`}
+                                          className="break-row"
+                                        >
+                                          <td colSpan="8">
+                                            Pause (
+                                            {tournamentConfig.breakDuration}{" "}
+                                            min) -
+                                            {formatTime(
+                                              new Date(scheduleItem.startTime)
+                                            )}{" "}
+                                            à{" "}
+                                            {formatTime(
+                                              new Date(scheduleItem.endTime)
+                                            )}
+                                          </td>
+                                        </tr>
+                                      );
+                                    }
+
+                                    // Si pas de match valide malgré le filtrage, passer (ne devrait pas arriver)
+                                    if (!match) return null;
+
+                                    // Trouver le groupe correspondant
+                                    const group = groups.find(
+                                      (g) => g.id === match.groupId
+                                    );
+
+                                    // Récupérer les informations de seuil de puissance
+                                    const powerInfo =
+                                      getPowerThresholdInfo(match);
+
+                                    return (
+                                      <tr key={index}>
+                                        <td>
+                                          {scheduleItem.matchNumber ||
+                                            index + 1}
+                                        </td>
+                                        <td>
+                                          {formatTime(
+                                            new Date(scheduleItem.startTime)
+                                          )}
+                                        </td>
+                                        <td>
+                                          {group
+                                            ? `${
+                                                group.gender === "male"
+                                                  ? "H"
+                                                  : "F"
+                                              } ${
+                                                group.ageCategory?.name || ""
+                                              } ${
+                                                group.weightCategory?.name || ""
+                                              }`
+                                            : "-"}
+                                        </td>
+                                        <td>
+                                          {match.poolIndex !== undefined
+                                            ? match.poolIndex + 1
+                                            : "-"}
+                                        </td>
+                                        <td className="blue-athlete">
+                                          {getParticipantName(match, 0)}
+                                        </td>
+                                        <td className="red-athlete">
+                                          {getParticipantName(match, 1)}
+                                        </td>
+                                        <td>Combat</td>
+                                        <td className="pss-info">
+                                          {powerInfo ? (
+                                            <>
+                                              <span className="pss-body">
+                                                {powerInfo.pss}
+                                              </span>
+                                              <span className="pss-level">
+                                                Niveau {powerInfo.hitLevel}
+                                              </span>
+                                            </>
+                                          ) : (
+                                            <span>-</span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    );
+                                  }
+                                )}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </>
           )}
         </>
       )}
@@ -988,7 +2227,10 @@ const MatchSchedule = ({
         <button
           className="next-btn"
           onClick={handleContinue}
-          disabled={isLoading || generatedMatches.length === 0}
+          disabled={
+            isLoading ||
+            (dataSource !== "existing" && generatedMatches.length === 0)
+          }
         >
           Suivant
         </button>

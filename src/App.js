@@ -45,10 +45,80 @@ function App() {
   };
 
   // Gérer la sélection d'une compétition existante
-  const handleSelectCompetition = (competition) => {
-    setSelectedCompetition(competition);
-    // Commencer à l'étape 1 (import CSV) lors de la sélection d'une compétition
-    setCurrentStep(1);
+  const handleSelectCompetition = async (competition) => {
+    try {
+      console.log("Chargement de la compétition:", competition.id);
+      setSelectedCompetition(competition);
+
+      // Charger les données pour tous les composants
+      await loadCompetitionData(competition.id);
+
+      // Commencer à l'étape 1 (import CSV) lors de la sélection d'une compétition
+      setCurrentStep(1);
+    } catch (error) {
+      console.error("Erreur lors du chargement de la compétition:", error);
+      alert(`Erreur lors du chargement de la compétition: ${error.message}`);
+    }
+  };
+
+  // Fonction pour charger toutes les données d'une compétition
+  const loadCompetitionData = async (competitionId) => {
+    try {
+      // Indiquer que nous sommes en train de charger
+      const {
+        fetchCompetitionDetails,
+        fetchFormattedGroupsAndPools,
+        fetchFormattedMatches,
+      } = await import("./services/dbService");
+
+      // 1. Charger les détails de la compétition (y compris les participants)
+      const competitionDetails = await fetchCompetitionDetails(competitionId);
+      if (
+        competitionDetails.participants &&
+        competitionDetails.participants.length > 0
+      ) {
+        console.log(
+          `${competitionDetails.participants.length} participants chargés`
+        );
+        setParticipants(competitionDetails.participants);
+      }
+
+      // 2. Charger les groupes et poules existants
+      const groupsData = await fetchFormattedGroupsAndPools(competitionId);
+      if (groupsData && groupsData.length > 0) {
+        console.log(`${groupsData.length} groupes chargés`);
+        setGroups(groupsData);
+      }
+
+      // 3. Charger les matchs et le planning
+      const { matches: matchesData, schedule: scheduleData } =
+        await fetchFormattedMatches(competitionId);
+      if (matchesData && matchesData.length > 0) {
+        console.log(`${matchesData.length} matchs chargés`);
+        setMatches(matchesData);
+        setSchedule(scheduleData);
+      }
+
+      // 4. Extraire la configuration du tournoi depuis les données de la compétition
+      setTournamentConfig({
+        numAreas: competitionDetails.areas?.length || 1,
+        roundDuration: competitionDetails.roundDuration || 90,
+        breakDuration: competitionDetails.breakDuration || 300,
+        breakFrequency: competitionDetails.breakFrequency || 10,
+        startTime: new Date(competitionDetails.startTime),
+        poolSize: competitionDetails.poolSize || 4,
+      });
+
+      console.log(
+        "Toutes les données de la compétition ont été chargées avec succès"
+      );
+    } catch (error) {
+      console.error(
+        "Erreur lors du chargement des données de la compétition:",
+        error
+      );
+      throw error;
+    }
   };
 
   // Gérer la création d'une nouvelle compétition

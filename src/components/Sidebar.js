@@ -6,9 +6,9 @@ const Sidebar = ({ currentStep, setCurrentStep, steps, competitionName }) => {
     // L'étape 0 (liste des compétitions) est toujours accessible
     if (stepIndex === 0) return true;
 
-    // Pour les autres étapes, elles ne sont accessibles que si
-    // l'utilisateur a déjà atteint cette étape ou une étape ultérieure
-    return stepIndex <= currentStep;
+    // Toutes les étapes sont accessibles une fois qu'on est dans l'application
+    // Cela permet de naviguer librement entre les onglets pour les compétitions existantes
+    return true;
   };
 
   // Gérer le clic sur une étape

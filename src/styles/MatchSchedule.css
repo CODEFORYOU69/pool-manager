@@ -102,3 +102,329 @@
 .csv-btn::before {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20M10,19H8V18H10V19M10,17H8V16H10V17M10,15H8V14H10V15M14,19H12V18H14V19M14,17H12V16H14V17M14,15H12V14H14V15Z'/%3E%3C/svg%3E");
 }
+
+/* Styles pour les couleurs des athlètes */
+.blue-athlete {
+  color: #0000ff;
+  font-weight: bold;
+}
+
+.red-athlete {
+  color: #ff0000;
+  font-weight: bold;
+}
+
+/* Styles pour les en-têtes dans la vue par groupe */
+.groups-matches thead tr th:nth-child(2) {
+  color: #0000ff;
+  font-weight: bold;
+}
+
+.groups-matches thead tr th:nth-child(3) {
+  color: #ff0000;
+  font-weight: bold;
+}
+
+/* Styles pour les en-têtes dans la vue par horaire */
+.schedule-view thead tr th:nth-child(5) {
+  color: #0000ff;
+  font-weight: bold;
+}
+
+.schedule-view thead tr th:nth-child(6) {
+  color: #ff0000;
+  font-weight: bold;
+}
+
+/* Styles pour les tableaux avec vue par groupe - ajuster les colonnes colorées */
+.groups-matches th:nth-child(2) {
+  color: #0000ff;
+}
+
+.groups-matches th:nth-child(3) {
+  color: #ff0000;
+}
+
+/* Styles pour les filtres */
+.filters-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+  margin-bottom: 20px;
+  padding: 15px;
+  background-color: #f5f5f5;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+}
+
+.filter-group label {
+  font-weight: 600;
+  margin-bottom: 5px;
+  color: #555;
+  font-size: 0.9rem;
+}
+
+.filter-group select,
+.filter-group input {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.filter-group select:focus,
+.filter-group input:focus {
+  border-color: #4e7eec;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(78, 126, 236, 0.2);
+}
+
+.no-matches-message {
+  text-align: center;
+  padding: 30px;
+  background-color: #f8f8f8;
+  border-radius: 8px;
+  margin-top: 20px;
+  color: #666;
+  font-style: italic;
+}
+
+@media (max-width: 768px) {
+  .filters-container {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .filter-group {
+    width: 100%;
+  }
+}
+
+/* Styles pour le résumé des matchs par aire */
+.area-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding: 12px;
+  background-color: #f0f8ff;
+  border-radius: 8px;
+  border: 1px solid #d1e9ff;
+}
+
+.area-count {
+  display: inline-block;
+  padding: 6px 12px;
+  background-color: #4e7eec;
+  color: white;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s;
+}
+
+.area-count:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.15);
+}
+
+/* Styles pour l'affichage des aires sans matchs */
+.no-matches-for-area {
+  padding: 15px;
+  background-color: #f8f8f8;
+  border-radius: 6px;
+  margin-bottom: 20px;
+  color: #777;
+  font-style: italic;
+  text-align: center;
+}
+
+/* Amélioration des styles pour les aires */
+.area-schedule {
+  margin-bottom: 30px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.area-schedule h4 {
+  margin: 0;
+  padding: 10px 15px;
+  background-color: #f0f0f0;
+  border-bottom: 1px solid #ddd;
+  color: #333;
+}
+
+/* Styles pour les informations de débogage */
+.debug-info {
+  padding: 10px 15px;
+  margin: 10px 0 20px;
+  background-color: #fff8e1;
+  border-left: 4px solid #ffc107;
+  border-radius: 4px;
+  color: #856404;
+}
+
+.debug-info p {
+  margin: 5px 0;
+  font-size: 0.9rem;
+}
+
+.no-matches-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  margin: 30px 0;
+  background-color: #f5f5f5;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.info-message {
+  margin-bottom: 25px;
+}
+
+.info-message p {
+  margin: 10px 0;
+  font-size: 16px;
+  color: #616161;
+}
+
+.generate-btn {
+  padding: 12px 24px;
+  background-color: #2196f3;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+.generate-btn:hover {
+  background-color: #1976d2;
+}
+
+.primary-btn {
+  background-color: #2196f3;
+  color: white;
+}
+
+/* Styles pour les informations PSS */
+.pss-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  padding: 3px 0;
+}
+
+.pss-body {
+  font-weight: bold;
+  color: #0055a4;
+  margin-bottom: 3px;
+}
+
+.pss-level {
+  color: #d80073;
+  font-weight: 500;
+}
+
+/* Style supplémentaire pour le tableau avec les seuils PSS */
+.matches-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.matches-table th,
+.matches-table td {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  text-align: center;
+}
+
+.matches-table th {
+  background-color: #f0f0f0;
+  font-weight: 600;
+}
+
+.matches-table tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+.matches-table tr:hover {
+  background-color: #f0f8ff;
+}
+
+.break-row {
+  background-color: #fff3cd !important;
+  color: #856404;
+  font-style: italic;
+  text-align: center;
+}
+
+.matches-table th:nth-child(8),
+.matches-table td:nth-child(8) {
+  background-color: #f0f8ff;
+  color: #0055a4;
+  font-weight: 600;
+}
+
+.matches-table th:nth-child(9),
+.matches-table td:nth-child(9) {
+  background-color: #fff0f5;
+  color: #d80073;
+  font-weight: 600;
+}
+
+.matches-table th:nth-child(6),
+.matches-table td:nth-child(6) {
+  background-color: #f0f8ff;
+  min-width: 100px;
+}
+
+/* Styles spécifiques pour la colonne PSS dans la vue par groupe */
+.matches-table th:nth-last-child(1),
+.matches-table td:nth-last-child(1) {
+  background-color: #f0f8ff;
+  min-width: 120px;
+  border: 1px solid #d1e5f9;
+}
+
+/* Ajouter du padding et augmenter la taille dans la colonne PSS */
+td.pss-info {
+  padding: 8px 10px !important;
+}
+
+/* Ajouter plus d'espace entre les éléments PSS */
+td.pss-info .pss-body,
+td.pss-info .pss-level {
+  display: block;
+  margin: 3px 0;
+  text-align: center;
+}
+
+/* Accentuer le texte du PSS */
+td.pss-info .pss-body {
+  font-weight: bold;
+  color: #0055a4;
+  font-size: 0.95rem;
+}
+
+td.pss-info .pss-level {
+  color: #d80073;
+  font-weight: 500;
+  font-size: 0.95rem;
+}

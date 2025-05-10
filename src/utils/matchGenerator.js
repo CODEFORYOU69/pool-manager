@@ -22,6 +22,9 @@ export const generateMatches = (groups) => {
     const allMatches = [];
     const errors = [];
 
+    // Créer un registre pour suivre les combinaisons de participants déjà traitées
+    const processedCombinations = new Set();
+
     // Pour chaque groupe
     groups.forEach((group, groupIndex) => {
       try {
@@ -66,6 +69,21 @@ export const generateMatches = (groups) => {
               return;
             }
 
+            // Créer un identifiant unique pour cette poule basé sur ses participants
+            // Ceci nous permettra d'éviter de créer les mêmes matchs plusieurs fois
+            const poolParticipantIds = [...pool].sort().join("|");
+
+            // Si cette combinaison de participants a déjà été traitée, ne pas générer à nouveau
+            if (processedCombinations.has(poolParticipantIds)) {
+              console.log(
+                `Poule avec participants ${poolParticipantIds} déjà traitée, évitement de la duplication`
+              );
+              return;
+            }
+
+            // Marquer cette combinaison comme traitée
+            processedCombinations.add(poolParticipantIds);
+
             // Générer les combats pour cette poule
             const poolMatches = generatePoolMatches(
               pool,
@@ -107,7 +125,9 @@ export const generateMatches = (groups) => {
       );
     }
 
-    console.log(`Génération terminée: ${allMatches.length} matchs générés`);
+    console.log(
+      `Génération terminée: ${allMatches.length} matchs générés (sans doublons)`
+    );
     return allMatches;
   } catch (error) {
     console.error("Erreur lors de la génération des matchs:", error);

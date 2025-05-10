@@ -1,238 +1,286 @@
 .results-container {
-  background-color: white;
-  border-radius: 8px;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
   padding: 20px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.tournament-summary {
-  display: flex;
-  justify-content: space-around;
+.results-container h2 {
+  color: #333;
   margin-bottom: 20px;
-}
-
-.summary-card {
-  background-color: #e8eaf6;
-  border-radius: 4px;
-  padding: 15px;
   text-align: center;
-  min-width: 150px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.summary-card h3 {
-  margin: 0 0 10px 0;
-  font-size: 1.1rem;
-  color: #3f51b5;
-}
-
-.summary-card p {
-  margin: 0;
-  font-size: 1.5rem;
-  font-weight: 500;
-}
-
-.export-actions {
+.actions-container {
   display: flex;
-  justify-content: center;
-  gap: 15px;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 15px;
 }
 
-.export-btn {
-  padding: 10px 20px;
+.export-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.refresh-btn {
+  background-color: #2196f3;
+  color: white;
   border: none;
   border-radius: 4px;
+  padding: 10px 20px;
+  font-size: 14px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 500;
+  transition: background-color 0.3s;
 }
 
-.csv-btn {
+.refresh-btn:hover {
+  background-color: #0d8aee;
+}
+
+.refresh-btn:disabled {
+  background-color: #90caf9;
+  cursor: not-allowed;
+}
+
+/* Styles pour les boutons d'exportation */
+.export-btn {
   background-color: #4caf50;
   color: white;
-}
-
-.csv-btn:hover {
-  background-color: #388e3c;
-}
-
-.print-btn {
-  background-color: #3f51b5;
-  color: white;
-}
-
-.print-btn:hover {
-  background-color: #303f9f;
-}
-
-.results-navigation {
-  margin-bottom: 20px;
-  background-color: #f9f9f9;
-  padding: 15px;
+  border: none;
   border-radius: 4px;
-}
-
-.group-selector {
+  padding: 10px 15px;
+  font-size: 14px;
+  cursor: pointer;
   display: flex;
   align-items: center;
+  justify-content: center;
+  transition: background-color 0.3s;
 }
 
-.group-selector label {
-  margin-right: 10px;
+.export-btn:hover {
+  background-color: #3e8e41;
+}
+
+.export-btn:disabled {
+  background-color: #a5d6a7;
+  cursor: not-allowed;
+}
+
+.export-btn.qualified-btn {
+  background-color: #ff9800;
+}
+
+.export-btn.qualified-btn:hover {
+  background-color: #e68a00;
+}
+
+.export-btn.qualified-btn:disabled {
+  background-color: #ffcc80;
+}
+
+.group-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 20px;
+  justify-content: center;
+}
+
+.group-tab {
+  background-color: #f0f0f0;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 8px 15px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.group-tab:hover {
+  background-color: #e0e0e0;
+}
+
+.group-tab.active {
+  background-color: #2196f3;
+  color: white;
+  border-color: #2196f3;
+}
+
+.pools-container {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.pool-results {
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+
+.pool-results h3 {
+  background-color: #f5f5f5;
+  color: #333;
+  margin: 0;
+  padding: 15px;
+  border-bottom: 1px solid #ddd;
+}
+
+.results-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.results-table th,
+.results-table td {
+  padding: 12px 8px;
+  text-align: center;
+  border-bottom: 1px solid #eee;
+}
+
+.results-table th {
+  background-color: #f8f8f8;
+  font-weight: 600;
+  color: #555;
+}
+
+.results-table tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+.results-table tr:hover {
+  background-color: #f0f7fd;
+}
+
+.results-table td:nth-child(2) {
+  text-align: left;
   font-weight: 500;
 }
 
-.group-selector select {
-  padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  min-width: 250px;
+.results-table td:nth-child(3) {
+  text-align: left;
+  font-style: italic;
+  font-size: 0.9em;
 }
 
-.results-display {
+.points {
+  font-weight: bold;
+  font-size: 1.1em;
+  color: #0d47a1;
+}
+
+.diff.positive {
+  color: #4caf50;
+  font-weight: bold;
+}
+
+.diff.negative {
+  color: #f44336;
+  font-weight: bold;
+}
+
+/* Styles pour les messages d'erreur et de chargement */
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  text-align: center;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid rgba(0, 0, 0, 0.1);
+  border-left-color: #2196f3;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.error-message {
+  background-color: #ffebee;
+  color: #c62828;
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.error-message h3 {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.no-data-message {
+  background-color: #fff8e1;
+  color: #ff8f00;
+  padding: 20px;
+  border-radius: 8px;
+  text-align: center;
+  margin: 30px auto;
+  max-width: 600px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.no-data-message h3 {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.no-data-message p {
   margin-bottom: 20px;
 }
 
-.pool-result {
-  margin-bottom: 30px;
-  background-color: #f9f9f9;
-  padding: 15px;
-  border-radius: 4px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-.pool-result h3 {
-  margin-top: 0;
-  border-bottom: 1px solid #e0e0e0;
-  padding-bottom: 10px;
-  color: #3f51b5;
-}
-
-.rankings-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 15px 0;
-  background-color: white;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-.rankings-table th,
-.rankings-table td {
-  padding: 12px 15px;
-  text-align: left;
-  border-bottom: 1px solid #ddd;
-}
-
-.rankings-table th {
-  background-color: #e8eaf6;
-  font-weight: bold;
-}
-
-.rankings-table tr.rank-1 {
-  background-color: #fff8e1;
-}
-
-.rankings-table tr.rank-2 {
-  background-color: #f5f5f5;
-}
-
-.rankings-table tr.rank-3 {
-  background-color: #fbe9e7;
-}
-
-.matches-summary {
-  margin-top: 20px;
-}
-
-.matches-summary h4 {
-  margin-bottom: 10px;
-  color: #3f51b5;
-}
-
-.matches-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 15px 0;
-  background-color: white;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-.matches-table th,
-.matches-table td {
-  padding: 12px 15px;
-  text-align: left;
-  border-bottom: 1px solid #ddd;
-}
-
-.matches-table th {
-  background-color: #e8eaf6;
-  font-weight: bold;
-}
-
-.matches-table td.winner {
-  font-weight: bold;
-  color: #2e7d32;
-}
-
-.round-score {
-  margin-bottom: 5px;
-  font-family: monospace;
-  white-space: nowrap;
-}
-
-@media print {
-  .export-actions,
-  .navigation-buttons,
-  .results-navigation {
-    display: none;
-  }
-
-  .results-container {
-    box-shadow: none;
-    padding: 0;
-  }
-
-  .pool-result {
-    page-break-inside: avoid;
-    box-shadow: none;
-  }
-}
-
-/* Pour les écrans mobiles */
+/* Styles responsive */
 @media (max-width: 768px) {
-  .tournament-summary {
-    flex-wrap: wrap;
-    gap: 10px;
+  .results-table {
+    font-size: 0.9em;
   }
 
-  .summary-card {
-    min-width: calc(50% - 20px);
+  .results-table th,
+  .results-table td {
+    padding: 8px 4px;
   }
 
-  .export-actions {
+  .group-tab {
+    padding: 6px 10px;
+    font-size: 0.9em;
+  }
+}
+
+@media (max-width: 480px) {
+  .results-container {
+    padding: 10px;
+  }
+
+  .results-table {
+    font-size: 0.8em;
+  }
+
+  .group-tabs {
     flex-direction: column;
-    align-items: stretch;
+    gap: 5px;
   }
 
-  .group-selector {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .group-selector label {
-    margin-bottom: 5px;
-  }
-
-  .group-selector select {
+  .group-tab {
     width: 100%;
-  }
-
-  .rankings-table,
-  .matches-table {
-    display: block;
-    overflow-x: auto;
   }
 }

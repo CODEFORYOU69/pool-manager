@@ -131,6 +131,7 @@ model Match {
   endTime            DateTime?
   winner             String?  // "A", "B" ou null
   poolIndex          Int      // Ajout du champ poolIndex
+  pointMatch         Int      @default(0) // Points attribués pour ce match (3 pour une victoire)
   
   // Relations
   groupId            String
@@ -167,7 +168,8 @@ model Round {
   roundNumber        Int      // 1, 2 ou 3
   scoreA             Int      @default(0)
   scoreB             Int      @default(0)
-  winner             String?  // "A", "B" ou null
+  winner             String?  // ID du participant gagnant ou null
+  winnerPosition     String?  // "A", "B" ou null - identifie le côté gagnant
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
   

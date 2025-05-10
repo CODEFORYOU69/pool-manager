@@ -4,7 +4,8 @@ import { deleteCompetition, fetchCompetitions } from "../services/dbService";
 import "../styles/CompetitionList.css";
 
 const CompetitionList = ({ onNewCompetition, onSelectCompetition }) => {
-  const { setCompetitionId, setCompetitionName } = useCompetition();
+  const { setCompetitionId, setCompetitionName, competitionId } =
+    useCompetition();
   const [competitions, setCompetitions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -41,6 +42,13 @@ const CompetitionList = ({ onNewCompetition, onSelectCompetition }) => {
     ) {
       try {
         await deleteCompetition(id);
+
+        // Si l'ID supprimé est l'ID actuellement sélectionné, le réinitialiser
+        if (id === competitionId) {
+          setCompetitionId(null);
+          setCompetitionName("Compétition de Taekwondo");
+        }
+
         // Recharger la liste après suppression
         loadCompetitions();
       } catch (error) {

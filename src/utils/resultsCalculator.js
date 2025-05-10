@@ -16,106 +16,202 @@ export const calculateResults = (
     throw new Error("Données manquantes pour le calcul des résultats");
   }
 
+  console.log("Début du calcul des résultats avec:", {
+    participantsCount: participants.length,
+    groupsCount: groups.length,
+    matchesCount: matches.length,
+    matchResultsCount: Object.keys(matchResults).length,
+  });
+
+  // Logs détaillés pour diagnostiquer les problèmes
+  const completedMatches = matches.filter(
+    (m) => m.status === "completed" || matchResults[m.id]?.completed
+  );
+  console.log(`Matchs complétés trouvés: ${completedMatches.length}`);
+
+  if (completedMatches.length > 0) {
+    console.log("Exemple de match complété:", completedMatches[0]);
+  }
+
+  // Création d'une map pour accéder rapidement aux données des participants
+  const participantsMap = {};
+  participants.forEach((participant) => {
+    participantsMap[participant.id] = participant;
+  });
+
   const poolResults = [];
 
-  // Pour chaque groupe
   groups.forEach((group) => {
-    // Pour chaque poule dans le groupe
-    group.pools.forEach((pool, poolIndex) => {
-      // Récupérer tous les matchs de cette poule
-      const poolMatches = matches.filter(
-        (match) => match.groupId === group.id && match.poolIndex === poolIndex
+    // Pour chaque groupe (catégorie de poids et âge)
+    if (!group.pools || !Array.isArray(group.pools)) {
+      console.log(`Groupe sans poules valides: ${group.id}`);
+      return;
+    }
+
+    console.log(
+      `Traitement du groupe: ${group.id} - ${group.pools.length} poules`
+    );
+
+    group.pools.forEach((pool) => {
+      // Pour chaque poule à l'intérieur du groupe
+      if (!pool.poolParticipants || !Array.isArray(pool.poolParticipants)) {
+        console.log(`Poule sans participants valides: ${pool.id}`);
+        return;
+      }
+
+      console.log(
+        `Traitement de la poule: ${pool.id} - ${pool.poolParticipants.length} participants`
       );
 
-      // Récupérer les détails des participants de cette poule
-      const poolParticipants = pool
-        .map((participantId) => {
-          return participants.find((p) => p.id === participantId);
-        })
-        .filter(Boolean); // Filtrer les éventuels participants non trouvés
+      const poolParticipantsResults = [];
 
-      // Initialiser les statistiques pour chaque participant
-      const participantStats = initializeParticipantStats(poolParticipants);
+      // Pour chaque participant de la poule
+      pool.poolParticipants.forEach((poolParticipant) => {
+        const participantId = poolParticipant.participantId;
+        const participant = participantsMap[participantId];
 
-      // Traiter chaque match pour mettre à jour les statistiques
-      poolMatches.forEach((match) => {
-        const result = matchResults[match.id];
-
-        // Si le match a été complété
-        if (result && result.completed && result.winner) {
-          // Identifier les participants
-          const winnerIndex = result.winner === "A" ? 0 : 1;
-          const loserIndex = result.winner === "A" ? 1 : 0;
-
-          const winnerId = match.participants[winnerIndex].id;
-          const loserId = match.participants[loserIndex].id;
-
-          // Mettre à jour les points du vainqueur (3 points par victoire)
-          if (participantStats[winnerId]) {
-            participantStats[winnerId].points += 3;
-            participantStats[winnerId].matches.push({
-              opponentId: loserId,
-              result: "win",
-            });
-          }
-
-          // Le perdant ne reçoit pas de points mais on enregistre le match
-          if (participantStats[loserId]) {
-            participantStats[loserId].matches.push({
-              opponentId: winnerId,
-              result: "loss",
-            });
-          }
-
-          // Mettre à jour les rounds gagnés et les points marqués
-          result.rounds.forEach((round) => {
-            if (round.winner === "A") {
-              if (participantStats[match.participants[0].id]) {
-                participantStats[match.participants[0].id].roundsWon += 1;
-              }
-            } else if (round.winner === "B") {
-              if (participantStats[match.participants[1].id]) {
-                participantStats[match.participants[1].id].roundsWon += 1;
-              }
-            }
-
-            // Ajouter les points marqués
-            if (participantStats[match.participants[0].id]) {
-              participantStats[match.participants[0].id].scoreTotal +=
-                round.fighterA;
-            }
-            if (participantStats[match.participants[1].id]) {
-              participantStats[match.participants[1].id].scoreTotal +=
-                round.fighterB;
-            }
-          });
+        if (!participant) {
+          console.log(`Participant introuvable: ${participantId}`);
+          return;
         }
 
-        // Enrichir l'objet match avec les résultats
-        match.rounds = result?.rounds || match.rounds;
-        match.winner = result?.winner;
-        match.completed = result?.completed || false;
+        // Initialiser les statistiques du participant
+        const participantResult = {
+          participantId: participantId,
+          nom: participant.nom,
+          prenom: participant.prenom,
+          ligue: participant.ligue,
+          matches: 0,
+          wins: 0,
+          points: 0,
+          roundsWon: 0,
+          roundsLost: 0,
+          pointsGained: 0,
+          pointsLost: 0,
+        };
+
+        // Trouver tous les matchs de ce participant dans cette poule
+        const participantMatches = matches.filter((match) => {
+          // Vérifier que le match est dans la bonne poule
+          if (match.poolId !== pool.id) return false;
+
+          // Vérifier que le participant est dans ce match
+          const isInMatch = match.matchParticipants?.some(
+            (mp) => mp.participantId === participantId
+          );
+
+          return isInMatch;
+        });
+
+        console.log(
+          `Participant ${participant.prenom} ${participant.nom} - ${participantMatches.length} matchs trouvés`
+        );
+
+        // Pour chaque match du participant
+        participantMatches.forEach((match) => {
+          const isCompleted =
+            match.status === "completed" || matchResults[match.id]?.completed;
+
+          if (!isCompleted) {
+            return; // Ignorer les matchs non terminés
+          }
+
+          console.log(
+            `Match complété pour ${participant.prenom} ${participant.nom} - ID: ${match.id}`
+          );
+
+          participantResult.matches++;
+
+          // Déterminer si le participant est le vainqueur
+          const isWinner =
+            match.winner === participantId ||
+            matchResults[match.id]?.winner === participantId;
+
+          if (isWinner) {
+            participantResult.wins++;
+            participantResult.points += 3; // 3 points par victoire
+          }
+
+          // Traiter les rounds
+          const matchRounds = match.rounds || [];
+          if (matchRounds.length > 0) {
+            console.log(`Match ${match.id} a ${matchRounds.length} rounds`);
+          }
+
+          matchRounds.forEach((round) => {
+            // Trouver la position du participant (A ou B)
+            const participantPosition = match.matchParticipants.find(
+              (mp) => mp.participantId === participantId
+            )?.position;
+
+            if (!participantPosition) {
+              console.log(
+                `Position introuvable pour le participant ${participantId} dans le match ${match.id}`
+              );
+              return;
+            }
+
+            // Déterminer si le participant a gagné ce round
+            let isRoundWinner = false;
+
+            // Vérifier les différentes façons de déterminer le gagnant d'un round
+            if (round.winner === participantId) {
+              // 1. Si winner contient directement l'ID du participant
+              isRoundWinner = true;
+            } else if (round.winnerPosition === participantPosition) {
+              // 2. Si winnerPosition correspond à la position du participant (A ou B)
+              isRoundWinner = true;
+            } else if (round.winner === participantPosition) {
+              // 3. Ancien format: si winner contient la position (A ou B)
+              isRoundWinner = true;
+            }
+
+            if (isRoundWinner) {
+              participantResult.roundsWon++;
+            } else {
+              participantResult.roundsLost++;
+            }
+
+            // Ajouter les points marqués/perdus
+            if (participantPosition === "A") {
+              participantResult.pointsGained += round.scoreA || 0;
+              participantResult.pointsLost += round.scoreB || 0;
+            } else {
+              participantResult.pointsGained += round.scoreB || 0;
+              participantResult.pointsLost += round.scoreA || 0;
+            }
+          });
+        });
+
+        // Calculer la différence de points
+        participantResult.pointsDiff =
+          participantResult.pointsGained - participantResult.pointsLost;
+
+        poolParticipantsResults.push(participantResult);
       });
 
-      // Calculer le classement final
-      const rankings = calculateRankings(
-        participantStats,
-        poolMatches,
-        matchResults
-      );
-
-      // Ajouter les résultats de cette poule
-      poolResults.push({
-        groupId: group.id,
-        poolIndex,
-        participants: poolParticipants,
-        matches: poolMatches,
-        rankings,
+      // Trier les résultats par points, puis par différence de points, puis par points marqués
+      poolParticipantsResults.sort((a, b) => {
+        if (a.points !== b.points) return b.points - a.points;
+        if (a.pointsDiff !== b.pointsDiff) return b.pointsDiff - a.pointsDiff;
+        return b.pointsGained - a.pointsGained;
       });
+
+      // Ajouter les résultats de cette poule aux résultats globaux
+      if (poolParticipantsResults.length > 0) {
+        poolResults.push({
+          groupId: group.id,
+          poolId: pool.id,
+          groupName: `${group.ageCategoryName} ${group.gender} ${group.weightCategoryName}`,
+          poolIndex: pool.poolIndex,
+          participants: poolParticipantsResults,
+        });
+      }
     });
   });
 
-  return { poolResults };
+  console.log(`Résultats calculés pour ${poolResults.length} poules`);
+  return poolResults;
 };
 
 /**
@@ -150,6 +246,28 @@ const calculateRankings = (participantStats, matches, matchResults) => {
   // Convertir l'objet en tableau pour le tri
   const participants = Object.values(participantStats);
 
+  // Créer une fonction pour vérifier la confrontation directe entre deux participants
+  const getDirectMatchWinner = (participantA, participantB) => {
+    const directMatch = findDirectMatch(
+      participantA.id,
+      participantB.id,
+      matches
+    );
+    if (
+      directMatch &&
+      (directMatch.status === "completed" || directMatch.completed) &&
+      directMatch.winner
+    ) {
+      // Le winner contient maintenant l'ID du participant vainqueur
+      return directMatch.winner === participantA.id
+        ? participantA.id
+        : directMatch.winner === participantB.id
+        ? participantB.id
+        : null;
+    }
+    return null;
+  };
+
   // Trier les participants selon les critères
   participants.sort((a, b) => {
     // 1. Nombre de points (3 points par victoire)
@@ -157,27 +275,19 @@ const calculateRankings = (participantStats, matches, matchResults) => {
       return b.points - a.points;
     }
 
-    // 2. Nombre de rounds gagnés
+    // 2. Confrontation directe (le gagnant du match direct est placé devant)
+    const directMatchWinnerId = getDirectMatchWinner(a, b);
+    if (directMatchWinnerId === a.id) return -1;
+    if (directMatchWinnerId === b.id) return 1;
+
+    // 3. Nombre de rounds gagnés
     if (a.roundsWon !== b.roundsWon) {
       return b.roundsWon - a.roundsWon;
     }
 
-    // 3. Nombre total de points marqués
+    // 4. Nombre total de points marqués
     if (a.scoreTotal !== b.scoreTotal) {
       return b.scoreTotal - a.scoreTotal;
-    }
-
-    // 4. Confrontation directe
-    const directMatch = findDirectMatch(a.id, b.id, matches);
-    if (directMatch) {
-      const result = matchResults[directMatch.id];
-      if (result && result.completed && result.winner) {
-        const winnerIndex = result.winner === "A" ? 0 : 1;
-        const winnerId = directMatch.participants[winnerIndex].id;
-
-        if (winnerId === a.id) return -1;
-        if (winnerId === b.id) return 1;
-      }
     }
 
     // Par défaut, garder l'ordre original
@@ -202,6 +312,7 @@ const calculateRankings = (participantStats, matches, matchResults) => {
 const findDirectMatch = (participantA, participantB, matches) => {
   return (
     matches.find((match) => {
+      if (!match.participants || match.participants.length < 2) return false;
       const ids = match.participants.map((p) => p.id);
       return ids.includes(participantA) && ids.includes(participantB);
     }) || null

@@ -32,15 +32,49 @@ export const CompetitionProvider = ({ children }) => {
       const operation = competitionId ? "mise à jour" : "création";
       console.log(`Opération: ${operation} de la compétition`);
 
-      const savedCompetition = await saveCompetitionState(competitionData);
-      console.log(`Compétition ${operation} avec succès:`, savedCompetition);
+      try {
+        const savedCompetition = await saveCompetitionState(competitionData);
+        console.log(`Compétition ${operation} avec succès:`, savedCompetition);
 
-      // Ne mettre à jour l'ID que s'il n'existe pas déjà
-      if (!competitionId) {
-        setCompetitionId(savedCompetition.id);
+        // Ne mettre à jour l'ID que s'il n'existe pas déjà
+        if (!competitionId) {
+          setCompetitionId(savedCompetition.id);
+        }
+
+        return savedCompetition.id;
+      } catch (error) {
+        // Si l'erreur est 404 (Not Found) et qu'on essayait de mettre à jour
+        // Cela signifie que la compétition n'existe plus dans la base de données
+        if (competitionId && error.statusCode === 404) {
+          console.log(
+            "La compétition n'existe plus dans la base de données. Création d'une nouvelle compétition."
+          );
+
+          // Réinitialiser l'ID pour créer une nouvelle compétition
+          setCompetitionId(null);
+
+          // Recréer sans ID
+          const newCompetitionData = {
+            ...competitionData,
+            id: null, // Forcer la création d'une nouvelle compétition
+          };
+
+          // Nouvelle tentative avec création plutôt que mise à jour
+          const savedCompetition = await saveCompetitionState(
+            newCompetitionData
+          );
+          console.log(
+            "Nouvelle compétition créée avec succès:",
+            savedCompetition
+          );
+
+          setCompetitionId(savedCompetition.id);
+          return savedCompetition.id;
+        } else {
+          // Pour les autres types d'erreurs, propager l'erreur
+          throw error;
+        }
       }
-
-      return savedCompetition.id;
     } catch (error) {
       console.error("Erreur détaillée lors de l'initialisation:", error);
 
