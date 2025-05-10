@@ -9,17 +9,26 @@ const isElectron = () => {
   );
 };
 
-// URLs de l'API - utilise localhost sur votre machine, adresse IP sur le réseau
+// URLs de l'API - utilise localhost sur votre machine, adresse IP sur le réseau, ou variable d'environnement
 const LOCAL_API_URL = "http://localhost:3001/api";
 const NETWORK_API_URL = "http://192.168.1.18:3001/api";
 
-// Utilise l'URL appropriée selon le contexte d'exécution
-const API_URL = isElectron() ? LOCAL_API_URL : NETWORK_API_URL;
+// Utiliser DATABASE_URL si disponible (déploiement Vercel), sinon utiliser l'URL selon le contexte
+const API_URL = process.env.DATABASE_URL
+  ? process.env.DATABASE_URL
+  : isElectron()
+  ? LOCAL_API_URL
+  : NETWORK_API_URL;
+
 export { API_URL }; // Exporter API_URL pour l'utiliser dans d'autres fichiers
 
 console.log(
   "Mode d'exécution:",
-  isElectron() ? "Electron (localhost)" : "Navigateur (réseau)"
+  process.env.DATABASE_URL
+    ? "Déploiement avec DATABASE_URL"
+    : isElectron()
+    ? "Electron (localhost)"
+    : "Navigateur (réseau)"
 );
 console.log("URL de l'API utilisée:", API_URL);
 
@@ -815,8 +824,28 @@ export const saveMatchResult = async (matchId, results) => {
       let roundsWonByB = 0;
 
       results.rounds.forEach((round) => {
-        if (round.winner === "A") roundsWonByA++;
-        if (round.winner === "B") roundsWonByB++;
+        console.log(
+          `Analyse round: A ${round.fighterA || 0} - B ${
+            round.fighterB || 0
+          }, winner: ${round.winner}`
+        );
+
+        // Gérer le cas où winner est null mais qu'on peut déterminer un vainqueur à partir des scores
+        if (round.winner === null) {
+          if ((round.fighterA || 0) > (round.fighterB || 0)) {
+            console.log("Détermination du vainqueur à partir des scores: A");
+            roundsWonByA++;
+          } else if ((round.fighterB || 0) > (round.fighterA || 0)) {
+            console.log("Détermination du vainqueur à partir des scores: B");
+            roundsWonByB++;
+          } else {
+            console.log("Round nul (0-0 ou égalité)");
+          }
+        } else {
+          // Utiliser le vainqueur déjà déterminé
+          if (round.winner === "A") roundsWonByA++;
+          if (round.winner === "B") roundsWonByB++;
+        }
       });
 
       console.log(`Rounds gagnés - A: ${roundsWonByA}, B: ${roundsWonByB}`);
@@ -828,12 +857,41 @@ export const saveMatchResult = async (matchId, results) => {
       } else if (roundsWonByB > roundsWonByA) {
         winnerId = participantB.participantId;
         winnerPosition = "B";
+      } else {
+        // En cas d'égalité, on vérifie les scores globaux
+        console.log(
+          "Égalité des rounds gagnés, vérification des scores globaux..."
+        );
+        const totalScoreA = results.rounds.reduce(
+          (sum, round) => sum + (round.fighterA || 0),
+          0
+        );
+        const totalScoreB = results.rounds.reduce(
+          (sum, round) => sum + (round.fighterB || 0),
+          0
+        );
+
+        console.log(`Score total - A: ${totalScoreA}, B: ${totalScoreB}`);
+
+        if (totalScoreA > totalScoreB) {
+          winnerId = participantA.participantId;
+          winnerPosition = "A";
+          console.log("Vainqueur déterminé par les scores globaux: A");
+        } else if (totalScoreB > totalScoreA) {
+          winnerId = participantB.participantId;
+          winnerPosition = "B";
+          console.log("Vainqueur déterminé par les scores globaux: B");
+        } else {
+          console.log("Égalité parfaite, pas de vainqueur déterminé");
+        }
       }
 
       console.log(
-        `Vainqueur calculé: ${winnerPosition} (A: ${roundsWonByA} rounds, B: ${roundsWonByB} rounds)`
+        `Vainqueur calculé: ${
+          winnerPosition || "aucun"
+        } (A: ${roundsWonByA} rounds, B: ${roundsWonByB} rounds)`
       );
-      console.log(`ID du vainqueur: ${winnerId}`);
+      console.log(`ID du vainqueur: ${winnerId || "aucun"}`);
     }
 
     // Préparer les données de mise à jour

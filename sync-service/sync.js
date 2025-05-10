@@ -31,11 +31,13 @@ const syncInterval = process.env.SYNC_INTERVAL || 5;
 
 // Tables à synchroniser - Ordonner correctement pour respecter les contraintes de clé étrangère
 const TABLES_TO_SYNC = [
-  "Competition", // Table principale
+  "Competition", // Table principale - DOIT être en premier
   "Area", // Référencée par Match
-  "Group", // Référencée par Match
-  "Pool", // Référencée par Match
-  "Participant", // Référencée par MatchParticipant
+  "Group", // Référencée par Match et ParticipantGroup
+  "Pool", // Référencée par Match et PoolParticipant
+  "Participant", // Référencée par MatchParticipant, ParticipantGroup, PoolParticipant
+  "ParticipantGroup", // Relation entre Participant et Group
+  "PoolParticipant", // Relation entre Participant et Pool
   "Match", // Dépend des tables ci-dessus, référencée par Round et MatchParticipant
   "MatchParticipant", // Dépend de Match et Participant
   "Round", // Dépend de Match
@@ -107,6 +109,82 @@ async function processEvent(event) {
 
   try {
     const { table_name, record_id, operation, data } = event;
+
+    // Vérification préalable: pour les opérations INSERT/UPDATE, s'assurer que les tables de référence sont synchronisées
+    if (operation === "INSERT" || operation === "UPDATE") {
+      // Vérification pour Participant (doit avoir la Competition correspondante)
+      if (table_name === "Participant" && data.competitionId) {
+        const competitionExists = await checkReferenceExists(
+          "Competition",
+          data.competitionId,
+          remoteDb
+        );
+        if (!competitionExists) {
+          console.warn(
+            `Impossible de synchroniser Participant: Competition ${data.competitionId} inexistante dans la base distante`
+          );
+
+          // Ajouter un délai avant de réessayer
+          await markEventAsProcessed(event.id);
+          console.log(
+            `Événement ${event.id} marqué comme traité mais sera retentée ultérieurement`
+          );
+
+          // Forcer la synchronisation de la Competition
+          await syncSpecificEntity("Competition", data.competitionId);
+          return false;
+        }
+      }
+
+      // Vérification pour Match
+      if (table_name === "Match") {
+        if (data.areaId) {
+          const areaExists = await checkReferenceExists(
+            "Area",
+            data.areaId,
+            remoteDb
+          );
+          if (!areaExists) {
+            console.warn(
+              `Impossible de synchroniser Match: Area ${data.areaId} inexistante dans la base distante`
+            );
+            await markEventAsProcessed(event.id);
+            await syncSpecificEntity("Area", data.areaId);
+            return false;
+          }
+        }
+        if (data.groupId) {
+          const groupExists = await checkReferenceExists(
+            "Group",
+            data.groupId,
+            remoteDb
+          );
+          if (!groupExists) {
+            console.warn(
+              `Impossible de synchroniser Match: Group ${data.groupId} inexistante dans la base distante`
+            );
+            await markEventAsProcessed(event.id);
+            await syncSpecificEntity("Group", data.groupId);
+            return false;
+          }
+        }
+        if (data.poolId) {
+          const poolExists = await checkReferenceExists(
+            "Pool",
+            data.poolId,
+            remoteDb
+          );
+          if (!poolExists) {
+            console.warn(
+              `Impossible de synchroniser Match: Pool ${data.poolId} inexistante dans la base distante`
+            );
+            await markEventAsProcessed(event.id);
+            await syncSpecificEntity("Pool", data.poolId);
+            return false;
+          }
+        }
+      }
+    }
 
     // Traiter selon le type d'opération
     if (operation === "DELETE") {
@@ -413,15 +491,183 @@ async function start() {
     process.exit(1);
   }
 
-  // Lancer une synchronisation manuelle initiale de toutes les tables
-  console.log("Lancement d'une synchronisation initiale complète...");
-  await manualSyncAllTables();
+  // Vérifier si la base distante contient déjà des données
+  const remoteDataCheck = await checkRemoteDataExists();
+
+  // Si la base distante est vide ou contient très peu de données, effectuer une synchronisation initiale complète
+  if (!remoteDataCheck.hasData) {
+    console.log(
+      "Base de données distante vide ou presque vide. Exécution d'une synchronisation initiale complète..."
+    );
+    await performFullInitialSync();
+  } else {
+    console.log(
+      "Base de données distante contient déjà des données. Passage en mode synchronisation incrémentale."
+    );
+  }
 
   // Planifier la tâche de synchronisation des changements
   cron.schedule(`*/${syncInterval} * * * * *`, synchronize);
   console.log(
     `Service de synchronisation démarré. Synchronisation toutes les ${syncInterval} secondes.`
   );
+}
+
+// Fonction pour vérifier si la base distante contient déjà des données
+async function checkRemoteDataExists() {
+  try {
+    // Vérifier le nombre d'enregistrements dans les tables principales
+    const competitionCount = await getTableCount("Competition", remoteDb);
+    const participantCount = await getTableCount("Participant", remoteDb);
+    const matchCount = await getTableCount("Match", remoteDb);
+
+    console.log(
+      `Données dans la base distante: ${competitionCount} compétitions, ${participantCount} participants, ${matchCount} matchs`
+    );
+
+    // Considérer la base comme non vide si elle contient au moins une compétition et quelques participants
+    const hasData = competitionCount > 0 && participantCount > 10;
+
+    return {
+      hasData,
+      counts: {
+        competition: competitionCount,
+        participant: participantCount,
+        match: matchCount,
+      },
+    };
+  } catch (error) {
+    console.error(
+      "Erreur lors de la vérification des données distantes:",
+      error
+    );
+    return { hasData: false, counts: {} };
+  }
+}
+
+// Fonction pour compter les enregistrements dans une table
+async function getTableCount(tableName, db) {
+  try {
+    const result = await db.query(`SELECT COUNT(*) FROM "${tableName}"`);
+    return parseInt(result.rows[0].count);
+  } catch (error) {
+    console.error(
+      `Erreur lors du comptage des enregistrements dans ${tableName}:`,
+      error
+    );
+    return 0;
+  }
+}
+
+// Fonction pour effectuer une synchronisation initiale complète
+async function performFullInitialSync() {
+  console.log("Démarrage de la synchronisation initiale complète...");
+
+  // Synchroniser les tables dans l'ordre défini par TABLES_TO_SYNC
+  for (const tableName of TABLES_TO_SYNC) {
+    console.log(`Synchronisation de la table ${tableName}...`);
+
+    try {
+      // Récupérer tous les enregistrements de la table
+      const result = await localDb.query(`SELECT * FROM "${tableName}"`);
+      const records = result.rows;
+
+      console.log(
+        `${records.length} enregistrements trouvés dans ${tableName}`
+      );
+
+      // S'il n'y a pas d'enregistrements, passer à la table suivante
+      if (records.length === 0) {
+        console.log(`Aucun enregistrement à synchroniser pour ${tableName}`);
+        continue;
+      }
+
+      // Synchroniser chaque enregistrement
+      for (const record of records) {
+        // Normaliser les clés
+        const normalizedData = {};
+        for (const key in record) {
+          if (key.toLowerCase() === "areaid") {
+            normalizedData["areaId"] = record[key];
+          } else if (key.toLowerCase() === "poolid") {
+            normalizedData["poolId"] = record[key];
+          } else if (key.toLowerCase() === "groupid") {
+            normalizedData["groupId"] = record[key];
+          } else if (key.toLowerCase() === "matchid") {
+            normalizedData["matchId"] = record[key];
+          } else if (key.toLowerCase() === "participantid") {
+            normalizedData["participantId"] = record[key];
+          } else if (key.toLowerCase() === "poolindex") {
+            normalizedData["poolIndex"] = record[key];
+          } else if (key.toLowerCase() === "pointmatch") {
+            normalizedData["pointMatch"] = record[key];
+          } else if (key.toLowerCase() === "matchnumber") {
+            normalizedData["matchNumber"] = record[key];
+          } else if (key.toLowerCase() === "starttime") {
+            normalizedData["startTime"] = record[key];
+          } else if (key.toLowerCase() === "endtime") {
+            normalizedData["endTime"] = record[key];
+          } else {
+            normalizedData[key] = record[key];
+          }
+        }
+
+        // Pour certaines tables, vérifier que les références existent déjà
+        if (tableName === "Participant") {
+          // Vérifier que la compétition existe
+          const competitionExists = await checkReferenceExists(
+            "Competition",
+            normalizedData.competitionId,
+            remoteDb
+          );
+          if (!competitionExists) {
+            console.warn(
+              `Impossible de synchroniser Participant ${normalizedData.id}: Competition ${normalizedData.competitionId} inexistante dans la base distante`
+            );
+            continue;
+          }
+        }
+
+        // Construire la requête d'upsert
+        const columns = Object.keys(normalizedData);
+        const values = columns.map((col) => normalizedData[col]);
+        const placeholders = columns.map((_, idx) => `$${idx + 1}`).join(", ");
+        const updatePlaceholders = columns
+          .map((col, idx) => `"${col}" = $${idx + 1}`)
+          .join(", ");
+
+        const upsertQuery = `
+          INSERT INTO "${tableName}" ("${columns.join('", "')}")
+          VALUES (${placeholders})
+          ON CONFLICT (id) 
+          DO UPDATE SET ${updatePlaceholders}
+        `;
+
+        try {
+          await remoteDb.query(upsertQuery, values);
+          console.log(
+            `Enregistrement ${normalizedData.id} synchronisé dans ${tableName}`
+          );
+        } catch (error) {
+          console.error(
+            `Erreur lors de la synchronisation de l'enregistrement ${normalizedData.id} dans ${tableName}:`,
+            error
+          );
+          // Continuer avec l'enregistrement suivant
+        }
+      }
+
+      console.log(`Synchronisation de la table ${tableName} terminée`);
+    } catch (error) {
+      console.error(
+        `Erreur lors de la synchronisation de la table ${tableName}:`,
+        error
+      );
+      // Continuer avec la table suivante
+    }
+  }
+
+  console.log("Synchronisation initiale complète terminée.");
 }
 
 // Gestion des signaux pour une fermeture propre
@@ -442,3 +688,95 @@ start().catch((error) => {
   console.error("Erreur lors du démarrage du service:", error);
   process.exit(1);
 });
+
+// Fonction pour vérifier si une entité référencée existe dans la base distante
+async function checkReferenceExists(tableName, id, db) {
+  try {
+    const result = await db.query(
+      `SELECT EXISTS(SELECT 1 FROM "${tableName}" WHERE id = $1)`,
+      [id]
+    );
+    return result.rows[0].exists;
+  } catch (error) {
+    console.error(
+      `Erreur lors de la vérification de l'existence de ${tableName} ${id}:`,
+      error
+    );
+    return false;
+  }
+}
+
+// Fonction pour synchroniser une entité spécifique immédiatement
+async function syncSpecificEntity(tableName, id) {
+  try {
+    console.log(`Synchronisation forcée de ${tableName} avec ID ${id}`);
+
+    // Récupérer l'entité depuis la base locale
+    const result = await localDb.query(
+      `SELECT * FROM "${tableName}" WHERE id = $1`,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      console.warn(
+        `Entité ${tableName} avec ID ${id} introuvable dans la base locale`
+      );
+      return false;
+    }
+
+    const data = result.rows[0];
+
+    // Normalisation des clés
+    const normalizedData = {};
+    for (const key in data) {
+      if (key.toLowerCase() === "areaid") {
+        normalizedData["areaId"] = data[key];
+      } else if (key.toLowerCase() === "poolid") {
+        normalizedData["poolId"] = data[key];
+      } else if (key.toLowerCase() === "groupid") {
+        normalizedData["groupId"] = data[key];
+      } else if (key.toLowerCase() === "matchid") {
+        normalizedData["matchId"] = data[key];
+      } else if (key.toLowerCase() === "participantid") {
+        normalizedData["participantId"] = data[key];
+      } else if (key.toLowerCase() === "poolindex") {
+        normalizedData["poolIndex"] = data[key];
+      } else if (key.toLowerCase() === "pointmatch") {
+        normalizedData["pointMatch"] = data[key];
+      } else if (key.toLowerCase() === "matchnumber") {
+        normalizedData["matchNumber"] = data[key];
+      } else if (key.toLowerCase() === "starttime") {
+        normalizedData["startTime"] = data[key];
+      } else if (key.toLowerCase() === "endtime") {
+        normalizedData["endTime"] = data[key];
+      } else {
+        normalizedData[key] = data[key];
+      }
+    }
+
+    // Construire la requête d'upsert
+    const columns = Object.keys(normalizedData);
+    const values = columns.map((col) => normalizedData[col]);
+    const placeholders = columns.map((_, idx) => `$${idx + 1}`).join(", ");
+    const updatePlaceholders = columns
+      .map((col, idx) => `"${col}" = $${idx + 1}`)
+      .join(", ");
+
+    const upsertQuery = `
+      INSERT INTO "${tableName}" ("${columns.join('", "')}")
+      VALUES (${placeholders})
+      ON CONFLICT (id) 
+      DO UPDATE SET ${updatePlaceholders}
+    `;
+
+    await remoteDb.query(upsertQuery, values);
+    console.log(`Entité ${tableName} avec ID ${id} synchronisée avec succès`);
+    return true;
+  } catch (error) {
+    console.error(
+      `Erreur lors de la synchronisation forcée de ${tableName} ${id}:`,
+      error
+    );
+    return false;
+  }
+}
