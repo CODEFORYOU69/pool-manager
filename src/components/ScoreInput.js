@@ -3,7 +3,7 @@ import "jspdf-autotable";
 import React, { useEffect, useState } from "react";
 import { useCompetition } from "../context/CompetitionContext";
 import {
-  checkExistingResults,
+  API_URL,
   getCompletedMatches,
   getMatchByNumber,
   loadMatches,
@@ -12,10 +12,11 @@ import {
   updateMatchResult,
 } from "../services/dbService";
 import "../styles/ScoreInput.css";
+import { findPssInfo } from "../utils/categories";
 import { findPowerThreshold } from "../utils/constants";
 
 // Définition de l'URL de l'API
-const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3001/api";
+// const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3001/api";
 
 const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   const { competitionId } = useCompetition();
@@ -36,6 +37,10 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   const [exportingPdf, setExportingPdf] = useState(false);
   // Nouvel état pour suivre les retards par aire et les heures de fin estimées
   const [areasDelayInfo, setAreasDelayInfo] = useState({});
+  const [groups, setGroups] = useState([]);
+  const [matchesWithPssInfo, setMatchesWithPssInfo] = useState({});
+  const [pendingPssRequests, setPendingPssRequests] = useState(new Set());
+  const [isThrottling, setIsThrottling] = useState(false);
 
   // Charger les combats terminés depuis la base de données au chargement
   useEffect(() => {
@@ -59,6 +64,42 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
       setIsLoading(false);
     }
   }, [matches, competitionId]);
+
+  // Charger les matchs et les résultats
+  const loadMatchesAndResults = async () => {
+    try {
+      setIsLoading(true);
+      // Charger les matchs
+      const matchesRes = await loadMatches(competitionId);
+      if (matchesRes && matchesRes.data) {
+        const allMatches = matchesRes.data.matches || [];
+        setCurrentMatches(allMatches);
+        setAreasCount(Math.max(...allMatches.map((m) => m.areaNumber || 1)));
+
+        // Récupérer les groupes pour les informations PSS
+        if (matchesRes.data.groups) {
+          setGroups(matchesRes.data.groups);
+        }
+      }
+
+      // Charger les résultats
+      const res = await loadResults(competitionId);
+      if (res && res.data) {
+        setResults(res.data);
+      }
+
+      // Charger les matchs terminés
+      await loadCompletedMatches();
+
+      setIsLoading(false);
+    } catch (error) {
+      console.error(
+        "Erreur lors du chargement des matchs et résultats:",
+        error
+      );
+      setIsLoading(false);
+    }
+  };
 
   // Charger les combats terminés depuis la base de données
   const loadCompletedMatches = async () => {
@@ -325,51 +366,6 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
       setIsLoading(false);
     }
   }, [matches, schedule, matchResults]);
-
-  // Fonction pour charger les matchs et les résultats depuis la base de données
-  const loadMatchesAndResults = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      // Vérifier si des résultats existent déjà
-      const existingResultsResponse = await checkExistingResults(competitionId);
-
-      if (existingResultsResponse.exists && existingResultsResponse.count > 0) {
-        console.log(
-          `${existingResultsResponse.count} résultats existants trouvés`
-        );
-        setDataSource("existing");
-      } else {
-        console.log("Aucun résultat existant trouvé");
-        setDataSource("new");
-      }
-
-      // Charger les matchs
-      const loadedMatches = await loadMatches(competitionId);
-
-      if (loadedMatches && loadedMatches.length > 0) {
-        setCurrentMatches(loadedMatches);
-
-        // Charger les résultats si existants
-        const loadedResults = await loadResults(competitionId);
-        if (loadedResults) {
-          setMatchResults(loadedResults);
-        }
-      } else {
-        setError("Aucun match trouvé pour cette compétition");
-      }
-
-      setIsLoading(false);
-    } catch (error) {
-      console.error(
-        "Erreur lors du chargement des matchs et résultats:",
-        error
-      );
-      setError(`Erreur: ${error.message}`);
-      setIsLoading(false);
-    }
-  };
 
   // Gestion de la saisie des scores
   const handleScoreChange = (matchId, roundIndex, fighter, value) => {
@@ -948,55 +944,71 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   // Obtenir les informations de seuil de puissance et de plastron pour un match
   const getPowerThresholdInfo = (match) => {
     try {
-      if (!match || !match.participants || match.participants.length === 0) {
-        return null;
+      if (!match) return null;
+
+      const matchNumber = match.matchNumber;
+
+      // Si nous avons déjà récupéré les infos pour ce match, les utiliser
+      if (matchesWithPssInfo[matchNumber]) {
+        return matchesWithPssInfo[matchNumber];
       }
 
-      // Récupérer le premier participant (ils devraient tous être dans la même catégorie)
-      const participant = match.participants[0];
+      // Sinon, lancer une requête asynchrone pour les récupérer
+      // Cette fonction ne retournera rien immédiatement, mais mettra à jour l'état quand les données seront disponibles
+      fetchPssInfoForMatch(matchNumber);
 
-      if (!participant) {
-        return null;
-      }
-
-      // Récupérer le groupe (category) pour obtenir la catégorie d'âge
-      const category = match.category || match.group;
-      if (!category) {
-        return null;
-      }
-
-      const ageCategory =
-        category.ageCategoryName || category.ageCategory?.name;
-      const gender = category.gender;
-
-      if (!ageCategory || !gender) {
-        return null;
-      }
-
-      // Récupérer le poids soit depuis athleteInfo soit directement depuis le participant
-      let weight;
-      if (participant.athleteInfo && participant.athleteInfo.poids) {
-        weight = participant.athleteInfo.poids;
-      } else if (participant.poids) {
-        weight = participant.poids;
-      } else {
-        console.warn(
-          "Impossible de trouver le poids du participant:",
-          participant
-        );
-        return null;
-      }
-
-      // Utiliser la fonction findPowerThreshold pour obtenir les informations
-      const thresholdInfo = findPowerThreshold(ageCategory, gender, weight);
-
-      return thresholdInfo;
+      return null;
     } catch (error) {
       console.error(
-        "Erreur lors de l'accès aux informations de seuil de puissance:",
+        "Erreur lors de l'obtention des informations de seuil PSS:",
         error
       );
       return null;
+    }
+  };
+
+  // Fonction pour récupérer et stocker les informations PSS d'un match
+  const fetchPssInfoForMatch = async (matchNumber) => {
+    try {
+      // Vérifier si nous avons déjà ces infos ou si une requête est déjà en cours
+      if (
+        matchesWithPssInfo[matchNumber] ||
+        pendingPssRequests.has(matchNumber)
+      )
+        return;
+
+      // Ajouter à la liste des requêtes en cours
+      setPendingPssRequests((prev) => new Set(prev).add(matchNumber));
+
+      // Récupérer les infos
+      const pssInfo = await fetchPssInfoByMatchNumber(matchNumber);
+
+      if (pssInfo) {
+        // Mettre à jour l'état avec les nouvelles infos
+        setMatchesWithPssInfo((prev) => ({
+          ...prev,
+          [matchNumber]: pssInfo,
+        }));
+      }
+
+      // Retirer de la liste des requêtes en cours
+      setPendingPssRequests((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(matchNumber);
+        return newSet;
+      });
+    } catch (error) {
+      console.error(
+        `Erreur lors de la récupération des infos PSS pour le match #${matchNumber}:`,
+        error
+      );
+
+      // Également retirer en cas d'erreur
+      setPendingPssRequests((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(matchNumber);
+        return newSet;
+      });
     }
   };
 
@@ -1416,6 +1428,178 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
       setExportingPdf(false);
     }
   };
+
+  // Fonction pour récupérer directement les informations PSS d'un match par son numéro
+  const fetchPssInfoByMatchNumber = async (matchNumber) => {
+    try {
+      console.log(
+        `Récupération des informations PSS pour le match #${matchNumber}`
+      );
+
+      // Ajout d'un délai aléatoire pour éviter la synchronisation des requêtes
+      await new Promise((resolve) => setTimeout(resolve, Math.random() * 100));
+
+      // Récupérer d'abord le match par son numéro
+      const matchData = await getMatchByNumber(competitionId, matchNumber);
+
+      if (!matchData) {
+        console.log(`Match #${matchNumber} non trouvé`);
+        return null;
+      }
+
+      console.log(
+        `Match #${matchNumber} trouvé, ID: ${matchData.id}, groupId: ${matchData.groupId}`
+      );
+
+      // Vérifier d'abord si cette information n'a pas déjà été mise en cache par une autre requête
+      if (matchesWithPssInfo[matchNumber]) {
+        return matchesWithPssInfo[matchNumber];
+      }
+
+      // Essayer d'abord de récupérer des données PSS à partir des informations du match
+      // sans faire de requête supplémentaire
+      if (matchData.groupId) {
+        // Si nous avons les groupes en mémoire, essayons de les utiliser
+        const cachedGroup = groups.find((g) => g.id === matchData.groupId);
+        if (cachedGroup) {
+          const ageCategory = cachedGroup.ageCategoryName;
+          const gender = cachedGroup.gender;
+          const weightCategory = cachedGroup.weightCategoryName;
+
+          // Essayer d'abord avec findPssInfo
+          const pssInfo = findPssInfo(ageCategory, gender, weightCategory);
+
+          if (pssInfo) {
+            console.log(
+              `Informations PSS trouvées via cache/findPssInfo pour le match #${matchNumber}:`,
+              pssInfo
+            );
+            return pssInfo;
+          }
+
+          // Fallback à findPowerThreshold
+          const powerThreshold = findPowerThreshold(
+            ageCategory,
+            gender,
+            weightCategory
+          );
+
+          if (powerThreshold) {
+            console.log(
+              `Informations PSS trouvées via cache/findPowerThreshold pour le match #${matchNumber}:`,
+              powerThreshold
+            );
+            return powerThreshold;
+          }
+        }
+      }
+
+      // Si nous n'avons pas pu récupérer les informations à partir du cache,
+      // faire une requête pour obtenir les informations du groupe
+      const response = await fetch(`${API_URL}/group/${matchData.groupId}`);
+      if (!response.ok) {
+        console.log(
+          `Erreur lors de la récupération du groupe pour le match #${matchNumber}`
+        );
+        return null;
+      }
+
+      const group = await response.json();
+      console.log(`Informations du groupe récupérées:`, group);
+
+      // Maintenant utiliser les informations du groupe pour trouver les seuils PSS
+      const ageCategory = group.ageCategoryName;
+      const gender = group.gender;
+      const weightCategory = group.weightCategoryName;
+
+      // Essayer d'abord avec findPssInfo
+      const pssInfo = findPssInfo(ageCategory, gender, weightCategory);
+
+      if (pssInfo) {
+        console.log(
+          `Informations PSS trouvées via findPssInfo pour le match #${matchNumber}:`,
+          pssInfo
+        );
+        return pssInfo;
+      }
+
+      // Fallback à findPowerThreshold
+      const powerThreshold = findPowerThreshold(
+        ageCategory,
+        gender,
+        weightCategory
+      );
+      if (powerThreshold) {
+        console.log(
+          `Informations PSS trouvées via findPowerThreshold pour le match #${matchNumber}:`,
+          powerThreshold
+        );
+        return powerThreshold;
+      }
+
+      console.log(
+        `Aucune information PSS trouvée pour le match #${matchNumber}`
+      );
+      return null;
+    } catch (error) {
+      console.error(
+        `Erreur lors de la récupération des informations PSS pour le match #${matchNumber}:`,
+        error
+      );
+      return null;
+    }
+  };
+
+  // Précharger les informations PSS pour tous les matchs
+  useEffect(() => {
+    if (currentMatches && currentMatches.length > 0) {
+      console.log("Préchargement des informations PSS pour les matchs");
+
+      // Fonction qui va traiter le chargement des informations PSS de manière séquentielle
+      const processQueue = async () => {
+        if (isThrottling) return;
+
+        setIsThrottling(true);
+
+        // Limiter à 3 requêtes en cours maximum
+        if (pendingPssRequests.size < 3) {
+          // Trouver les 5 premiers matchs qui n'ont pas encore d'informations PSS et qui ne sont pas déjà en train d'être chargés
+          const matchesToFetch = currentMatches
+            .filter(
+              (match) =>
+                match.matchNumber &&
+                !matchesWithPssInfo[match.matchNumber] &&
+                !pendingPssRequests.has(match.matchNumber)
+            )
+            .slice(0, 5);
+
+          // Lancer les requêtes avec un délai entre chacune
+          if (matchesToFetch.length > 0) {
+            const match = matchesToFetch[0];
+            fetchPssInfoForMatch(match.matchNumber);
+
+            // Attendre 200ms avant de permettre la prochaine requête
+            setTimeout(() => {
+              setIsThrottling(false);
+            }, 200);
+          } else {
+            setIsThrottling(false);
+          }
+        } else {
+          // Si trop de requêtes en cours, attendons un peu plus longtemps
+          setTimeout(() => {
+            setIsThrottling(false);
+          }, 500);
+        }
+      };
+
+      // Lancer le traitement et le répéter toutes les 500ms
+      const intervalId = setInterval(processQueue, 500);
+
+      // Nettoyer l'intervalle quand le composant est démonté
+      return () => clearInterval(intervalId);
+    }
+  }, [currentMatches, matchesWithPssInfo, pendingPssRequests, isThrottling]);
 
   return (
     <div className="score-input-container">

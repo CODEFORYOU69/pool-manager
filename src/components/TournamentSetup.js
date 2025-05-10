@@ -38,9 +38,22 @@ const TournamentSetup = ({
     ];
   };
 
-  // Convertir les catégories de poids du format "-58kg" en objet avec max
+  // Convertir les catégories de poids du format "-58kg" ou du format objet avec propriété name
   const convertWeightCategories = (categoriesArray) => {
     return categoriesArray.map((category) => {
+      // Si category est déjà un objet avec une propriété 'name'
+      if (typeof category === "object" && category.name) {
+        return {
+          max: category.name.startsWith("+")
+            ? 999
+            : parseInt(category.name.replace(/[^0-9]/g, ""), 10),
+          name: category.name,
+          pss: category.pss || null,
+          hitLevel: category.hitLevel || null,
+        };
+      }
+
+      // Sinon, c'est une chaîne (ancien format)
       const isPlus = category.startsWith("+");
       const weight = parseInt(category.replace(/[^0-9]/g, ""), 10);
 

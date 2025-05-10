@@ -199,41 +199,136 @@ export const POWER_THRESHOLDS = {
   },
 };
 
-/**
- * Fonction utilitaire pour trouver les informations de seuil de puissance et taille de plastron
- * @param {string} ageCategory - Catégorie d'âge (benjamins, minimes, cadets, etc.)
- * @param {string} gender - Genre (male/female)
- * @param {number} weight - Poids en kg
- * @returns {Object|null} - Informations de seuil ou null si non trouvé
- */
-export const findPowerThreshold = (ageCategory, gender, weight) => {
-  // Normaliser la catégorie d'âge (enlever les accents, mettre en minuscules)
-  const normalizedCategory = ageCategory
+// Fonction pour normaliser un nom de catégorie (pour la comparaison)
+function normalizeString(str) {
+  if (!str) return "";
+  return str
+    .trim()
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, "");
+}
 
-  // Normaliser le genre
-  const normalizedGender =
-    gender.toLowerCase() === "female" ? "female" : "male";
+// Fonction pour trouver le seuil de puissance d'une catégorie
+export const findPowerThreshold = (ageCategory, gender, weightCategory) => {
+  try {
+    console.log("findPowerThreshold appelée avec:", {
+      ageCategory,
+      gender,
+      weightCategory,
+    });
 
-  // Vérifier si la catégorie existe
-  if (!POWER_THRESHOLDS[normalizedCategory]) {
-    return null;
-  }
-
-  // Vérifier si le genre existe pour cette catégorie
-  if (!POWER_THRESHOLDS[normalizedCategory][normalizedGender]) {
-    return null;
-  }
-
-  // Chercher le seuil de poids correspondant
-  const thresholds = POWER_THRESHOLDS[normalizedCategory][normalizedGender];
-  for (const threshold of thresholds) {
-    if (weight >= threshold.min && weight <= threshold.max) {
-      return threshold;
+    if (!ageCategory || !gender || !weightCategory) {
+      console.log("Paramètres manquants pour findPowerThreshold");
+      return null;
     }
-  }
 
-  return null;
+    // Normaliser la catégorie d'âge pour la recherche
+    const normalizedAgeCategory = normalizeString(ageCategory);
+
+    // Trouver dans quelle catégorie d'âge nous sommes
+    let ageCatKey = null;
+    for (const key in POWER_THRESHOLDS) {
+      if (normalizeString(key) === normalizedAgeCategory) {
+        ageCatKey = key;
+        break;
+      }
+    }
+
+    if (!ageCatKey) {
+      console.log("Catégorie d'âge non trouvée:", ageCategory);
+      return null;
+    }
+
+    console.log("Clé de catégorie d'âge trouvée:", ageCatKey);
+
+    // Déterminer le genre (male ou female)
+    const normalizedGender = normalizeString(gender);
+    const genderKey = normalizedGender.includes("f") ? "female" : "male";
+
+    // Obtenir les données de seuil pour cette catégorie d'âge
+    const thresholdData = POWER_THRESHOLDS[ageCatKey];
+    if (!thresholdData) {
+      console.log(
+        "Pas de données de seuil pour cette catégorie d'âge:",
+        ageCatKey
+      );
+      return null;
+    }
+
+    // Obtenir les catégories de poids pour ce genre
+    const weightCategories = thresholdData[genderKey];
+    if (!weightCategories) {
+      console.log("Pas de catégories de poids pour ce genre:", genderKey);
+      return null;
+    }
+
+    // Normaliser la catégorie de poids recherchée
+    let weightName;
+    if (typeof weightCategory === "string") {
+      weightName = weightCategory;
+    } else if (typeof weightCategory === "object") {
+      if (weightCategory.name) {
+        weightName = weightCategory.name;
+      } else if (weightCategory.weightCategoryName) {
+        weightName = weightCategory.weightCategoryName;
+      }
+    }
+
+    if (!weightName) {
+      console.log(
+        "Nom de catégorie de poids non trouvé dans l'objet:",
+        weightCategory
+      );
+      return null;
+    }
+
+    const normalizedWeightCategory = normalizeString(weightName);
+    console.log("Catégorie de poids normalisée:", normalizedWeightCategory);
+
+    // Chercher la correspondance dans les catégories de poids
+    for (const weightRange in weightCategories) {
+      const normalizedWeightRange = normalizeString(weightRange);
+      if (normalizedWeightRange === normalizedWeightCategory) {
+        const result = {
+          pss: weightCategories[weightRange].pss,
+          hitLevel: weightCategories[weightRange].hitLevel,
+        };
+        console.log("Seuil trouvé:", result);
+        return result;
+      }
+    }
+
+    console.log(
+      "Aucune correspondance exacte trouvée pour la catégorie de poids:",
+      weightName
+    );
+
+    // Si pas de correspondance exacte, essayer de faire correspondre le format numérique
+    // Par exemple, "-58kg" avec "-58 kg"
+    for (const weightRange in weightCategories) {
+      // Extraire uniquement les chiffres et le signe + ou -
+      const currentPattern = weightRange.replace(/[^0-9+-]/g, "");
+      const searchPattern = normalizedWeightCategory.replace(/[^0-9+-]/g, "");
+
+      if (currentPattern === searchPattern) {
+        const result = {
+          pss: weightCategories[weightRange].pss,
+          hitLevel: weightCategories[weightRange].hitLevel,
+        };
+        console.log("Seuil trouvé par correspondance numérique:", result);
+        return result;
+      }
+    }
+
+    console.log(
+      "Aucune correspondance trouvée pour la catégorie de poids:",
+      weightName
+    );
+    return null;
+  } catch (error) {
+    console.error("Erreur lors de la recherche du seuil de puissance:", error);
+    return null;
+  }
 };

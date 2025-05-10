@@ -13,6 +13,7 @@ import { createSchedule } from "../utils/scheduleManager";
 // Correction de l'importation pour la génération PDF
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { findPssInfo } from "../utils/categories";
 import { findPowerThreshold } from "../utils/constants";
 
 const MatchSchedule = ({
@@ -50,6 +51,8 @@ const MatchSchedule = ({
   // Nouvel état pour stocker l'information si les matchs ont déjà été chargés
   const [matchesAlreadyLoaded, setMatchesAlreadyLoaded] = useState(false);
   const [info, setInfo] = useState(null);
+  // État pour stocker les informations PSS par match
+  const [matchesPssInfo, setMatchesPssInfo] = useState({});
 
   useEffect(() => {
     if (groups && groups.length > 0 && tournamentConfig && competitionId) {
@@ -724,50 +727,130 @@ const MatchSchedule = ({
     }
   };
 
+  // Fonction pour récupérer directement les informations PSS d'un match par son numéro
+  const fetchPssInfoByMatchNumber = async (matchNumber) => {
+    try {
+      console.log(
+        `Récupération des informations PSS pour le match #${matchNumber}`
+      );
+
+      // Vérifier d'abord si nous avons déjà ces informations en cache
+      if (matchesPssInfo[matchNumber]) {
+        return matchesPssInfo[matchNumber];
+      }
+
+      // Rechercher le match dans le planning généré
+      const scheduleItem = generatedSchedule.find(
+        (item) => item.matchNumber === matchNumber
+      );
+      if (!scheduleItem || !scheduleItem.matchId) {
+        console.log(`Match #${matchNumber} non trouvé dans le planning`);
+        return null;
+      }
+
+      // Trouver le match correspondant
+      const match = generatedMatches.find((m) => m.id === scheduleItem.matchId);
+      if (!match) {
+        console.log(`Match avec ID ${scheduleItem.matchId} non trouvé`);
+        return null;
+      }
+
+      // Trouver le groupe correspondant
+      const group = groups.find((g) => g.id === match.groupId);
+      if (!group) {
+        console.log(`Groupe avec ID ${match.groupId} non trouvé`);
+        return null;
+      }
+
+      // Extraire les informations nécessaires
+      const ageCategory = group.ageCategory?.name || group.ageCategoryName;
+      const gender = group.gender;
+      const weightCategory =
+        group.weightCategory?.name || group.weightCategoryName;
+
+      // Vérifier que nous avons toutes les informations nécessaires
+      if (!ageCategory || !gender || !weightCategory) {
+        console.log(`Informations manquantes pour le match #${matchNumber}:`, {
+          ageCategory,
+          gender,
+          weightCategory,
+        });
+        return null;
+      }
+
+      // Essayer d'abord avec findPssInfo
+      const pssInfo = findPssInfo(ageCategory, gender, weightCategory);
+
+      // Stocker les informations en cache
+      if (pssInfo) {
+        setMatchesPssInfo((prev) => ({
+          ...prev,
+          [matchNumber]: pssInfo,
+        }));
+        console.log(
+          `Informations PSS trouvées pour le match #${matchNumber}:`,
+          pssInfo
+        );
+        return pssInfo;
+      }
+
+      // Fallback à findPowerThreshold
+      const powerThreshold = findPowerThreshold(
+        ageCategory,
+        gender,
+        weightCategory
+      );
+      if (powerThreshold) {
+        setMatchesPssInfo((prev) => ({
+          ...prev,
+          [matchNumber]: powerThreshold,
+        }));
+        console.log(
+          `Informations PSS trouvées via fallback pour le match #${matchNumber}:`,
+          powerThreshold
+        );
+        return powerThreshold;
+      }
+
+      console.log(
+        `Aucune information PSS trouvée pour le match #${matchNumber}`
+      );
+      return null;
+    } catch (error) {
+      console.error(
+        `Erreur lors de la récupération des informations PSS pour le match #${matchNumber}:`,
+        error
+      );
+      return null;
+    }
+  };
+
   // Obtenir les informations de seuil de puissance et de plastron pour un match
   const getPowerThresholdInfo = (match) => {
     try {
-      if (!match || !match.participants || match.participants.length === 0) {
-        return null;
+      if (!match) return null;
+
+      // Trouver le numéro du match dans le planning
+      const scheduleItem = generatedSchedule.find(
+        (item) => item.matchId === match.id
+      );
+      if (!scheduleItem) return null;
+
+      const matchNumber = scheduleItem.matchNumber;
+
+      // Si nous avons déjà les informations en cache, les utiliser
+      if (matchesPssInfo[matchNumber]) {
+        return matchesPssInfo[matchNumber];
       }
 
-      // Récupérer le premier participant (ils devraient tous être dans la même catégorie)
-      const participant = match.participants[0];
+      // Sinon, lancer une requête asynchrone pour les récupérer
+      // Cette fonction ne retournera rien immédiatement, mais mettra à jour l'état quand les données seront disponibles
+      fetchPssInfoByMatchNumber(matchNumber);
 
-      if (!participant) {
-        return null;
-      }
-
-      // Récupérer le groupe pour obtenir la catégorie d'âge
-      const group = groups.find((g) => g.id === match.groupId);
-      if (!group) {
-        return null;
-      }
-
-      const ageCategory = group.ageCategory.name;
-      const gender = group.gender;
-
-      // Récupérer le poids soit depuis athleteInfo soit directement depuis le participant
-      let weight;
-      if (participant.athleteInfo && participant.athleteInfo.poids) {
-        weight = participant.athleteInfo.poids;
-      } else if (participant.poids) {
-        weight = participant.poids;
-      } else {
-        console.warn(
-          "Impossible de trouver le poids du participant:",
-          participant
-        );
-        return null;
-      }
-
-      // Utiliser la fonction findPowerThreshold pour obtenir les informations
-      const thresholdInfo = findPowerThreshold(ageCategory, gender, weight);
-
-      return thresholdInfo;
+      return null;
     } catch (error) {
       console.error(
-        "Erreur lors de l'accès aux informations de seuil de puissance:",
+        "Erreur lors de l'obtention des informations de seuil PSS:",
         error
       );
       return null;
@@ -1688,6 +1771,30 @@ const MatchSchedule = ({
       setIsLoading(false);
     }
   };
+
+  // Précharger les informations PSS pour les matchs visibles
+  useEffect(() => {
+    if (generatedSchedule.length > 0 && generatedMatches.length > 0) {
+      console.log("Préchargement des informations PSS pour les matchs");
+      // Limiter à un nombre raisonnable pour éviter trop de requêtes
+      const matchesToPreload = 20;
+      let count = 0;
+
+      // Traiter d'abord les matchs qui seront affichés en premier
+      for (const scheduleItem of generatedSchedule) {
+        if (
+          scheduleItem.type === "match" &&
+          scheduleItem.matchNumber &&
+          count < matchesToPreload
+        ) {
+          fetchPssInfoByMatchNumber(scheduleItem.matchNumber);
+          count++;
+        }
+
+        if (count >= matchesToPreload) break;
+      }
+    }
+  }, [generatedSchedule, generatedMatches]);
 
   const styles = `
     .match-schedule-container {
