@@ -13,9 +13,9 @@ const isElectron = () => {
 const LOCAL_API_URL = "http://localhost:3001/api";
 const NETWORK_API_URL = "http://192.168.1.18:3001/api";
 
-// Utiliser DATABASE_URL si disponible (déploiement Vercel), sinon utiliser l'URL selon le contexte
-const API_URL = process.env.DATABASE_URL
-  ? process.env.DATABASE_URL
+// Utiliser NEXT_PUBLIC_API_URL si disponible (déploiement Vercel), sinon utiliser l'URL selon le contexte
+const API_URL = process.env.NEXT_PUBLIC_API_URL
+  ? process.env.NEXT_PUBLIC_API_URL
   : isElectron()
   ? LOCAL_API_URL
   : NETWORK_API_URL;
@@ -24,8 +24,8 @@ export { API_URL }; // Exporter API_URL pour l'utiliser dans d'autres fichiers
 
 console.log(
   "Mode d'exécution:",
-  process.env.DATABASE_URL
-    ? "Déploiement avec DATABASE_URL"
+  process.env.NEXT_PUBLIC_API_URL
+    ? "Déploiement avec NEXT_PUBLIC_API_URL"
     : isElectron()
     ? "Electron (localhost)"
     : "Navigateur (réseau)"
