@@ -118,6 +118,12 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
 
         // Synchroniser les matchs terminés avec l'état local
         syncCompletedMatchesWithState(completedMatchesData);
+
+        // Recalculer les retards immédiatement après le chargement des matchs terminés
+        if (schedule && schedule.length > 0) {
+          const delayInfo = calculateAreasDelayInfo(completedMatchesData);
+          setAreasDelayInfo(delayInfo);
+        }
       } else {
         console.log("Aucun match terminé trouvé");
         setCompletedMatches([]);
@@ -171,11 +177,14 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   };
 
   // Calculer les retards et les temps de fin estimés pour chaque aire
-  const calculateAreasDelayInfo = () => {
+  const calculateAreasDelayInfo = (completedMatchesOverride = null) => {
     // Si pas de matchs ou pas d'horaire, on ne peut pas calculer
     if (!currentMatches.length || !schedule || !schedule.length) {
       return {};
     }
+
+    // Utiliser les matchs complétés fournis ou ceux de l'état
+    const matchesToUse = completedMatchesOverride || completedMatches;
 
     // Récupérer l'heure actuelle
     const now = new Date();
@@ -228,7 +237,8 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
     });
 
     // Trouver le dernier match terminé pour chaque aire
-    completedMatches.forEach((match) => {
+    // Nous utilisons maintenant la liste des matchs terminés la plus à jour (potentiellement fournie en paramètre)
+    matchesToUse.forEach((match) => {
       const areaNumber = match.area?.areaNumber || 1;
       if (
         !lastCompletedMatchByArea[areaNumber] ||
@@ -607,7 +617,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
           console.log("Réponse de saveMatchResult:", saveResult);
 
           if (saveResult.success) {
-            // Recharger les combats terminés
+            // Recharger les combats terminés pour avoir la liste la plus à jour
             await loadCompletedMatches();
             console.log("Combats terminés rechargés avec succès");
 
@@ -651,44 +661,62 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
             setTimeout(() => {
               setShowCompleted(true);
 
-              // Recalculer les retards après la sauvegarde d'un match
-              const updatedDelayInfo = calculateAreasDelayInfo();
-              setAreasDelayInfo(updatedDelayInfo);
+              // Obtenir la liste la plus à jour des matchs terminés
+              getCompletedMatches(competitionId)
+                .then((newCompletedMatches) => {
+                  // Mettre à jour l'état local
+                  setCompletedMatches(newCompletedMatches);
 
-              // Utiliser directement les données du participant vainqueur renvoyées par l'API
-              // au lieu de se baser sur winnerPosition
-              if (saveResult.winnerParticipant) {
-                const winnerName = `${saveResult.winnerParticipant.prenom} ${saveResult.winnerParticipant.nom}`;
-                alert(
-                  "Match terminé avec succès! Vainqueur: " +
-                    winnerName +
-                    " - 3 points attribués"
-                );
-              } else {
-                // Fallback au cas où winnerParticipant n'est pas disponible
-                let winnerName = "Pas de vainqueur";
-                if (resultToSave.winner === "A") {
-                  const participantA = dbMatch.matchParticipants.find(
-                    (p) => p.position === "A"
-                  )?.participant;
-                  if (participantA) {
-                    winnerName = `${participantA.prenom} ${participantA.nom}`;
-                  }
-                } else if (resultToSave.winner === "B") {
-                  const participantB = dbMatch.matchParticipants.find(
-                    (p) => p.position === "B"
-                  )?.participant;
-                  if (participantB) {
-                    winnerName = `${participantB.prenom} ${participantB.nom}`;
-                  }
-                }
+                  // Recalculer les retards avec les données les plus récentes
+                  const updatedDelayInfo =
+                    calculateAreasDelayInfo(newCompletedMatches);
+                  setAreasDelayInfo(updatedDelayInfo);
 
-                alert(
-                  "Match terminé avec succès! Vainqueur: " +
-                    winnerName +
-                    " - 3 points attribués"
-                );
-              }
+                  // Utiliser directement les données du participant vainqueur renvoyées par l'API
+                  // au lieu de se baser sur winnerPosition
+                  if (saveResult.winnerParticipant) {
+                    const winnerName = `${saveResult.winnerParticipant.prenom} ${saveResult.winnerParticipant.nom}`;
+                    alert(
+                      "Match terminé avec succès! Vainqueur: " +
+                        winnerName +
+                        " - 3 points attribués"
+                    );
+                  } else {
+                    // Fallback au cas où winnerParticipant n'est pas disponible
+                    let winnerName = "Pas de vainqueur";
+                    if (resultToSave.winner === "A") {
+                      const participantA = dbMatch.matchParticipants.find(
+                        (p) => p.position === "A"
+                      )?.participant;
+                      if (participantA) {
+                        winnerName = `${participantA.prenom} ${participantA.nom}`;
+                      }
+                    } else if (resultToSave.winner === "B") {
+                      const participantB = dbMatch.matchParticipants.find(
+                        (p) => p.position === "B"
+                      )?.participant;
+                      if (participantB) {
+                        winnerName = `${participantB.prenom} ${participantB.nom}`;
+                      }
+                    }
+
+                    alert(
+                      "Match terminé avec succès! Vainqueur: " +
+                        winnerName +
+                        " - 3 points attribués"
+                    );
+                  }
+                })
+                .catch((err) => {
+                  console.error(
+                    "Erreur lors de la récupération des matchs terminés après sauvegarde:",
+                    err
+                  );
+
+                  // Fallback: utiliser calculateAreasDelayInfo avec les données actuelles
+                  const updatedDelayInfo = calculateAreasDelayInfo();
+                  setAreasDelayInfo(updatedDelayInfo);
+                });
             }, 500);
           }
         } else {
