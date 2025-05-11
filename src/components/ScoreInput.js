@@ -1195,7 +1195,28 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   // Formatage du nom du participant
   const getParticipantName = (match, position) => {
     try {
-      const participant = match?.participants?.[position];
+      // Si position est un nombre (index), convertir en position A ou B
+      if (typeof position === "number") {
+        // Position 0 correspond à B (rouge) et position 1 correspond à A (bleu)
+        position = position === 0 ? "B" : "A";
+      }
+
+      // Vérifier si nous avons la structure matchParticipants (version BD)
+      if (match.matchParticipants) {
+        const participant = match.matchParticipants.find(
+          (p) => p.position === position
+        )?.participant;
+        if (!participant) return "Inconnu";
+        return (
+          `${participant.prenom || ""} ${participant.nom || ""}`.trim() ||
+          "Inconnu"
+        );
+      }
+
+      // Sinon, utiliser l'ancienne structure participants (version mémoire)
+      // A = bleu (indice 1), B = rouge (indice 0)
+      const participantIndex = position === "A" ? 1 : 0;
+      const participant = match?.participants?.[participantIndex];
       if (!participant) return "Inconnu";
 
       if (participant.athleteInfo) {
@@ -2175,7 +2196,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                                 matchResult.winner === "A" ? "winner" : ""
                               }`}
                             >
-                              {getParticipantName(match, 0)}
+                              {getParticipantName(match, "A")}
                             </div>
                             <div className="vs">VS</div>
                             <div
@@ -2183,7 +2204,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                                 matchResult.winner === "B" ? "winner" : ""
                               }`}
                             >
-                              {getParticipantName(match, 1)}
+                              {getParticipantName(match, "B")}
                             </div>
                           </div>
 
@@ -2196,7 +2217,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                                 <div className="score-inputs">
                                   <div className="fighter-score">
                                     <span className="fighter-label">
-                                      {getParticipantName(match, 0)}
+                                      {getParticipantName(match, "A")}
                                     </span>
                                     <input
                                       type="number"
@@ -2219,7 +2240,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                                   <span className="separator">VS</span>
                                   <div className="fighter-score">
                                     <span className="fighter-label">
-                                      {getParticipantName(match, 1)}
+                                      {getParticipantName(match, "B")}
                                     </span>
                                     <input
                                       type="number"
@@ -2277,8 +2298,8 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                                 <span>
                                   Vainqueur:{" "}
                                   {matchResult.winner === "A"
-                                    ? getParticipantName(match, 0)
-                                    : getParticipantName(match, 1)}
+                                    ? getParticipantName(match, "A")
+                                    : getParticipantName(match, "B")}
                                 </span>
                               </div>
                             )}

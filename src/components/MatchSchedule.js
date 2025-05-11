@@ -674,7 +674,28 @@ const MatchSchedule = ({
   // Obtenir le nom du participant
   const getParticipantName = (matchInfo, position) => {
     try {
-      const participant = matchInfo?.participants?.[position];
+      // Si position est un nombre (index), convertir en position A ou B
+      if (typeof position === "number") {
+        // Dans ce cas, 0 correspond à B (rouge) et 1 correspond à A (bleu)
+        // A = bleu (position 1), B = rouge (position 0)
+        position = position === 0 ? "B" : "A";
+      }
+
+      // Vérifier si nous avons la structure matchParticipants (version BD)
+      if (matchInfo.matchParticipants) {
+        const participant = matchInfo.matchParticipants.find(
+          (p) => p.position === position
+        )?.participant;
+        if (!participant) return "-";
+        return (
+          `${participant.prenom || ""} ${participant.nom || ""}`.trim() || "-"
+        );
+      }
+
+      // Sinon, utiliser l'ancienne structure participants (version mémoire)
+      // A = bleu (indice 1), B = rouge (indice 0)
+      const participantIndex = position === "A" ? 1 : 0;
+      const participant = matchInfo?.participants?.[participantIndex];
       if (!participant) {
         return "-";
       }
@@ -706,7 +727,26 @@ const MatchSchedule = ({
   // Obtenir la ligue du participant
   const getParticipantLigue = (matchInfo, position) => {
     try {
-      const participant = matchInfo?.participants?.[position];
+      // Si position est un nombre (index), convertir en position A ou B
+      if (typeof position === "number") {
+        // Dans ce cas, 0 correspond à B (rouge) et 1 correspond à A (bleu)
+        // A = bleu (position 1), B = rouge (position 0)
+        position = position === 0 ? "B" : "A";
+      }
+
+      // Vérifier si nous avons la structure matchParticipants (version BD)
+      if (matchInfo.matchParticipants) {
+        const participant = matchInfo.matchParticipants.find(
+          (p) => p.position === position
+        )?.participant;
+        if (!participant || !participant.ligue) return "-";
+        return participant.ligue;
+      }
+
+      // Sinon, utiliser l'ancienne structure participants (version mémoire)
+      // A = bleu (indice 1), B = rouge (indice 0)
+      const participantIndex = position === "A" ? 1 : 0;
+      const participant = matchInfo?.participants?.[participantIndex];
       if (!participant) {
         return "-";
       }
@@ -957,8 +997,8 @@ const MatchSchedule = ({
             const poolText =
               match.poolIndex !== undefined ? match.poolIndex + 1 : "-";
 
-            const blueAthlete = getParticipantName(match, 0);
-            const redAthlete = getParticipantName(match, 1);
+            const blueAthlete = getParticipantName(match, "A");
+            const redAthlete = getParticipantName(match, "B");
 
             // Récupérer les informations de seuil de puissance
             const powerInfo = getPowerThresholdInfo(match);
@@ -1134,8 +1174,8 @@ const MatchSchedule = ({
             const poolText =
               match.poolIndex !== undefined ? match.poolIndex + 1 : "-";
 
-            const blueAthlete = getParticipantName(match, 0);
-            const redAthlete = getParticipantName(match, 1);
+            const blueAthlete = getParticipantName(match, "A");
+            const redAthlete = getParticipantName(match, "B");
 
             // Récupérer les informations de seuil de puissance
             const powerInfo = getPowerThresholdInfo(match);
@@ -1506,10 +1546,10 @@ const MatchSchedule = ({
                                   : "-"}
                               </td>
                               <td className="blue-athlete">
-                                {getParticipantName(match, 0)}
+                                {getParticipantName(match, "A")}
                               </td>
                               <td className="red-athlete">
-                                {getParticipantName(match, 1)}
+                                {getParticipantName(match, "B")}
                               </td>
                               <td>Combat</td>
                               <td className="pss-info">
@@ -2022,10 +2062,10 @@ const MatchSchedule = ({
                                           : "-"}
                                       </td>
                                       <td className="blue-athlete">
-                                        {getParticipantName(match, 0)}
+                                        {getParticipantName(match, "A")}
                                       </td>
                                       <td className="red-athlete">
-                                        {getParticipantName(match, 1)}
+                                        {getParticipantName(match, "B")}
                                       </td>
                                       <td>
                                         {scheduledMatch
@@ -2290,10 +2330,10 @@ const MatchSchedule = ({
                                             : "-"}
                                         </td>
                                         <td className="blue-athlete">
-                                          {getParticipantName(match, 0)}
+                                          {getParticipantName(match, "A")}
                                         </td>
                                         <td className="red-athlete">
-                                          {getParticipantName(match, 1)}
+                                          {getParticipantName(match, "B")}
                                         </td>
                                         <td>Combat</td>
                                         <td className="pss-info">

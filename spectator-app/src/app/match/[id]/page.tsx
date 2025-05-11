@@ -242,82 +242,84 @@ export default function MatchDetails() {
 
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {match.matchParticipants?.map((mp) => {
-                  const isWinner = match.winner === mp.participantId;
-                  const position = mp.position;
-                  const participant = mp.participant;
+                {match.matchParticipants
+                  ?.sort((a) => (a.position === "A" ? -1 : 1))
+                  .map((mp) => {
+                    const isWinner = match.winner === mp.participantId;
+                    const position = mp.position;
+                    const participant = mp.participant;
 
-                  return (
-                    <div
-                      key={mp.id || `${mp.position}-${mp.participantId}`}
-                      className={`border rounded-lg p-4 ${
-                        position === "A"
-                          ? isWinner
-                            ? "border-blue-500 bg-blue-50"
+                    return (
+                      <div
+                        key={mp.id || `${mp.position}-${mp.participantId}`}
+                        className={`border rounded-lg p-4 ${
+                          position === "A"
+                            ? isWinner
+                              ? "border-blue-500 bg-blue-50"
+                              : "border-gray-200"
+                            : isWinner
+                            ? "border-red-500 bg-red-50"
                             : "border-gray-200"
-                          : isWinner
-                          ? "border-red-500 bg-red-50"
-                          : "border-gray-200"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <span
-                          className={`px-2 py-1 rounded text-xs font-bold ${
-                            position === "A"
-                              ? "bg-blue-200 text-blue-900"
-                              : "bg-red-200 text-red-900"
-                          }`}
-                        >
-                          Position {position}
-                        </span>
-                        {isWinner && (
-                          <span className="bg-yellow-200 text-yellow-900 px-2 py-1 rounded text-xs font-bold">
-                            Vainqueur
-                          </span>
-                        )}
-                      </div>
-
-                      <h3
-                        className={`text-xl font-extrabold ${
-                          position === "A" ? "text-blue-800" : "text-red-800"
                         }`}
                       >
-                        {getParticipantName(participant)}
-                      </h3>
-
-                      {participant && (
-                        <div className="mt-3 space-y-1 text-sm">
-                          <div className="grid grid-cols-2">
-                            <span className="text-gray-700 font-bold">
-                              Ligue:
+                        <div className="flex items-center justify-between mb-3">
+                          <span
+                            className={`px-2 py-1 rounded text-xs font-bold ${
+                              position === "A"
+                                ? "bg-blue-200 text-blue-900"
+                                : "bg-red-200 text-red-900"
+                            }`}
+                          >
+                            Position {position}
+                          </span>
+                          {isWinner && (
+                            <span className="bg-yellow-200 text-yellow-900 px-2 py-1 rounded text-xs font-bold">
+                              Vainqueur
                             </span>
-                            <span className="font-bold text-gray-900">
-                              {participant.ligue || "N/A"}
-                            </span>
-                          </div>
-                          <div className="grid grid-cols-2">
-                            <span className="text-gray-700 font-bold">
-                              Âge:
-                            </span>
-                            <span className="font-bold text-gray-900">
-                              {participant.age || "N/A"}
-                            </span>
-                          </div>
-                          <div className="grid grid-cols-2">
-                            <span className="text-gray-700 font-bold">
-                              Poids:
-                            </span>
-                            <span className="font-bold text-gray-900">
-                              {participant.poids
-                                ? `${participant.poids} kg`
-                                : "N/A"}
-                            </span>
-                          </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
+
+                        <h3
+                          className={`text-xl font-extrabold ${
+                            position === "A" ? "text-blue-800" : "text-red-800"
+                          }`}
+                        >
+                          {getParticipantName(participant)}
+                        </h3>
+
+                        {participant && (
+                          <div className="mt-3 space-y-1 text-sm">
+                            <div className="grid grid-cols-2">
+                              <span className="text-gray-700 font-bold">
+                                Ligue:
+                              </span>
+                              <span className="font-bold text-gray-900">
+                                {participant.ligue || "N/A"}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2">
+                              <span className="text-gray-700 font-bold">
+                                Âge:
+                              </span>
+                              <span className="font-bold text-gray-900">
+                                {participant.age || "N/A"}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2">
+                              <span className="text-gray-700 font-bold">
+                                Poids:
+                              </span>
+                              <span className="font-bold text-gray-900">
+                                {participant.poids
+                                  ? `${participant.poids} kg`
+                                  : "N/A"}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
               </div>
 
               {match.status === "completed" &&
