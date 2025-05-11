@@ -791,6 +791,11 @@ export default function Home() {
                 filters={filters}
                 formatTime={formatTime}
                 getParticipantName={getParticipantName}
+                competitionName={
+                  competitions.find((c) => c.id === competitionId)?.name ||
+                  "Taekwondo Tournament Manager"
+                }
+                competitionDate={competitionDate}
               />
             )}
           </div>
