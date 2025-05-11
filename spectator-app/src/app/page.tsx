@@ -29,6 +29,8 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<"live" | "history" | "all">(
     "live"
   );
+  // État pour stocker la date de la compétition actuelle
+  const [competitionDate, setCompetitionDate] = useState<Date | null>(null);
 
   // Données des matchs
   const [upcomingMatchesByArea, setUpcomingMatchesByArea] = useState<{
@@ -67,6 +69,11 @@ export default function Home() {
         // Sélectionner la première compétition par défaut
         if (data.length > 0 && !competitionId) {
           setCompetitionId(data[0].id);
+
+          // Si la compétition a une date, la stocker
+          if (data[0].date) {
+            setCompetitionDate(new Date(data[0].date));
+          }
         }
       } catch (err) {
         console.error("Erreur lors du chargement des compétitions:", err);
@@ -77,6 +84,37 @@ export default function Home() {
     };
 
     fetchCompetitions();
+  }, [competitionId]);
+
+  // Ajouter un useEffect pour charger la date de la compétition quand l'ID change
+  useEffect(() => {
+    if (!competitionId) return;
+
+    const fetchCompetitionDetails = async () => {
+      try {
+        const response = await fetch(`${API_URL}/competition/${competitionId}`);
+        if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
+
+        const data = await response.json();
+
+        // Si la compétition a une date, la stocker
+        if (data.date) {
+          setCompetitionDate(new Date(data.date));
+        } else {
+          // Si pas de date, utiliser la date actuelle
+          setCompetitionDate(new Date());
+        }
+      } catch (err) {
+        console.error(
+          "Erreur lors du chargement des détails de la compétition:",
+          err
+        );
+        // En cas d'erreur, utiliser la date actuelle
+        setCompetitionDate(new Date());
+      }
+    };
+
+    fetchCompetitionDetails();
   }, [competitionId]);
 
   // Charger les données des matchs
@@ -520,12 +558,33 @@ export default function Home() {
         // Durée prévue pour un match (6 minutes par défaut)
         const expectedDurationInMinutes = 6;
 
-        // Calculer la différence entre l'heure de fin prévue et l'heure de fin réelle
-        const startTime = new Date(lastMatch.startTime);
+        // Utiliser la date de la compétition comme base pour les calculs, sinon la date actuelle
+        // Ceci est important pour s'assurer que les calculs fonctionnent correctement le jour de la compétition
+        const competitionDayDate = competitionDate || new Date();
+
+        // Extraire les heures, minutes, secondes du startTime original
+        const originalStart = new Date(lastMatch.startTime);
+        const hours = originalStart.getHours();
+        const minutes = originalStart.getMinutes();
+        const seconds = originalStart.getSeconds();
+
+        // Créer une nouvelle date basée sur la date de la compétition mais avec les heures du match
+        const startTime = new Date(competitionDayDate);
+        startTime.setHours(hours, minutes, seconds);
+
+        // Idem pour la fin réelle
+        const actualEnd = new Date(lastMatch.endTime);
+        const endHours = actualEnd.getHours();
+        const endMinutes = actualEnd.getMinutes();
+        const endSeconds = actualEnd.getSeconds();
+
+        const actualEndTime = new Date(competitionDayDate);
+        actualEndTime.setHours(endHours, endMinutes, endSeconds);
+
+        // Calculer la fin prévue
         const expectedEndTime = new Date(
           startTime.getTime() + expectedDurationInMinutes * 60000
         );
-        const actualEndTime = new Date(lastMatch.endTime);
 
         // Calculer le retard en minutes
         const delayInMs = actualEndTime.getTime() - expectedEndTime.getTime();
@@ -557,8 +616,20 @@ export default function Home() {
     const delayInfo = delayInfoByArea[areaNum];
 
     if (delayInfo && match.startTime) {
-      // Appliquer le retard à l'heure de début prévue
-      const startTime = new Date(match.startTime);
+      // Utiliser la date de la compétition comme base pour les calculs
+      const competitionDayDate = competitionDate || new Date();
+
+      // Extraire les heures, minutes, secondes du startTime original
+      const originalStart = new Date(match.startTime);
+      const hours = originalStart.getHours();
+      const minutes = originalStart.getMinutes();
+      const seconds = originalStart.getSeconds();
+
+      // Créer une nouvelle date basée sur la date de la compétition mais avec les heures du match
+      const startTime = new Date(competitionDayDate);
+      startTime.setHours(hours, minutes, seconds);
+
+      // Appliquer le retard à l'heure de début
       const adjustedStartTime = new Date(
         startTime.getTime() + delayInfo.delayInMinutes * 60000
       );

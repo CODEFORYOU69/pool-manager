@@ -305,6 +305,7 @@ const TournamentSetup = ({
       const configToSave = {
         ...config,
         name: competitionName,
+        date: config.date,
       };
 
       const savedCompetitionId = await initializeCompetition(configToSave);
@@ -348,6 +349,7 @@ const TournamentSetup = ({
         poolSize: config.poolSize,
         numAreas: config.numberOfAreas,
         name: competitionName,
+        date: config.date,
       };
 
       console.log("Configuration à sauvegarder:", configToSave);
@@ -535,6 +537,29 @@ const TournamentSetup = ({
               id="competitionName"
               value={competitionName}
               onChange={(e) => setCompetitionName(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="competitionDate">Date de la compétition:</label>
+            <input
+              type="date"
+              id="competitionDate"
+              value={config.date.toISOString().split("T")[0]}
+              onChange={(e) => {
+                const newDate = new Date(e.target.value);
+                // Conserver l'heure actuelle en copiant seulement la date
+                newDate.setHours(
+                  config.date.getHours(),
+                  config.date.getMinutes(),
+                  config.date.getSeconds()
+                );
+                setConfig({
+                  ...config,
+                  date: newDate,
+                });
+              }}
               required
             />
           </div>

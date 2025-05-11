@@ -35,6 +35,8 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   const [error, setError] = useState(null);
   const [dataSource, setDataSource] = useState(""); // 'new' ou 'existing'
   const [exportingPdf, setExportingPdf] = useState(false);
+  // Nouvel état pour stocker la date de la compétition
+  const [competitionDate, setCompetitionDate] = useState(null);
   // Nouvel état pour suivre les retards par aire et les heures de fin estimées
   const [areasDelayInfo, setAreasDelayInfo] = useState({});
   const [groups, setGroups] = useState([]);
@@ -69,6 +71,37 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   const loadMatchesAndResults = async () => {
     try {
       setIsLoading(true);
+
+      // Charger les détails de la compétition pour obtenir la date
+      try {
+        const competitionResponse = await fetch(
+          `${API_URL}/competition/${competitionId}`
+        );
+        if (competitionResponse.ok) {
+          const competitionData = await competitionResponse.json();
+          if (competitionData.date) {
+            setCompetitionDate(new Date(competitionData.date));
+            console.log(
+              "Date de la compétition chargée:",
+              new Date(competitionData.date)
+            );
+          } else {
+            // Si pas de date spécifiée, utiliser la date actuelle
+            setCompetitionDate(new Date());
+            console.log(
+              "Aucune date de compétition spécifiée, utilisation de la date actuelle"
+            );
+          }
+        }
+      } catch (error) {
+        console.error(
+          "Erreur lors de la récupération des détails de la compétition:",
+          error
+        );
+        // Fallback à la date actuelle en cas d'erreur
+        setCompetitionDate(new Date());
+      }
+
       // Charger les matchs
       const matchesRes = await loadMatches(competitionId);
       if (matchesRes && matchesRes.data) {
@@ -186,15 +219,36 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
     // Utiliser les matchs complétés fournis ou ceux de l'état
     const matchesToUse = completedMatchesOverride || completedMatches;
 
-    // Récupérer l'heure actuelle
+    // Utiliser la date de la compétition au lieu de la date actuelle
+    // C'est crucial pour que les calculs fonctionnent correctement le jour de la compétition
+    const competitionDay = competitionDate || new Date();
+
+    // Récupérer l'heure actuelle basée sur la date de compétition
     const now = new Date();
+    const nowTime = new Date(competitionDay);
+    nowTime.setHours(
+      now.getHours(),
+      now.getMinutes(),
+      now.getSeconds(),
+      now.getMilliseconds()
+    );
 
     // Trouver l'heure de début prévue de la compétition (premier match du planning)
     const sortedSchedule = [...schedule].sort(
       (a, b) => new Date(a.startTime) - new Date(b.startTime)
     );
-    const competitionStartTime =
-      sortedSchedule.length > 0 ? new Date(sortedSchedule[0].startTime) : null;
+
+    // Utiliser la date de compétition pour l'heure de début
+    let competitionStartTime = null;
+    if (sortedSchedule.length > 0) {
+      const startTimeOriginal = new Date(sortedSchedule[0].startTime);
+      competitionStartTime = new Date(competitionDay);
+      competitionStartTime.setHours(
+        startTimeOriginal.getHours(),
+        startTimeOriginal.getMinutes(),
+        startTimeOriginal.getSeconds()
+      );
+    }
 
     // Grouper les matchs par aire
     const matchesByArea = {};
@@ -270,14 +324,39 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
         );
 
         if (scheduledMatchForCompleted) {
+          // Extraire les heures de l'endTime prévu et les appliquer à la date de compétition
+          const scheduledEndOriginal = new Date(
+            scheduledMatchForCompleted.endTime
+          );
+          const scheduledEndTime = new Date(competitionDay);
+          scheduledEndTime.setHours(
+            scheduledEndOriginal.getHours(),
+            scheduledEndOriginal.getMinutes(),
+            scheduledEndOriginal.getSeconds()
+          );
+
+          // Extraire les heures de l'endTime réel et les appliquer à la date de compétition
+          const actualEndOriginal = new Date(lastCompleted.endTime);
+          const actualEndTime = new Date(competitionDay);
+          actualEndTime.setHours(
+            actualEndOriginal.getHours(),
+            actualEndOriginal.getMinutes(),
+            actualEndOriginal.getSeconds()
+          );
+
           // Calculer le retard en minutes
-          const scheduledEndTime = new Date(scheduledMatchForCompleted.endTime);
-          const actualEndTime = new Date(lastCompleted.endTime);
           const delayInMs = actualEndTime - scheduledEndTime;
           const delayInMinutes = Math.round(delayInMs / 60000);
 
           // Calculer la nouvelle heure de fin estimée
-          const originalScheduledEndTime = new Date(lastScheduled.endTime);
+          const originalScheduledEndOriginal = new Date(lastScheduled.endTime);
+          const originalScheduledEndTime = new Date(competitionDay);
+          originalScheduledEndTime.setHours(
+            originalScheduledEndOriginal.getHours(),
+            originalScheduledEndOriginal.getMinutes(),
+            originalScheduledEndOriginal.getSeconds()
+          );
+
           const newEstimatedEndTime = new Date(
             originalScheduledEndTime.getTime() + delayInMs
           );
@@ -301,15 +380,22 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
       }
       // Cas 2: L'aire n'a pas encore de matchs terminés mais a des matchs prévus
       else if (lastScheduled && competitionStartTime) {
-        // Calculer le retard basé sur l'heure de début prévue de la compétition
-        const timeSinceScheduledStart = now - competitionStartTime;
+        // Calculer le retard basé sur l'heure de début prévue de la compétition en utilisant nowTime
+        const timeSinceScheduledStart = nowTime - competitionStartTime;
         const delayInMinutes = Math.round(timeSinceScheduledStart / 60000);
 
         // Ne compter comme retard que si l'heure actuelle est après l'heure prévue de début
         const actualDelayInMinutes = delayInMinutes > 0 ? delayInMinutes : 0;
 
         // Calculer la nouvelle heure de fin estimée
-        const originalScheduledEndTime = new Date(lastScheduled.endTime);
+        const originalScheduledEndOriginal = new Date(lastScheduled.endTime);
+        const originalScheduledEndTime = new Date(competitionDay);
+        originalScheduledEndTime.setHours(
+          originalScheduledEndOriginal.getHours(),
+          originalScheduledEndOriginal.getMinutes(),
+          originalScheduledEndOriginal.getSeconds()
+        );
+
         const newEstimatedEndTime = new Date(
           originalScheduledEndTime.getTime() + actualDelayInMinutes * 60000
         );
