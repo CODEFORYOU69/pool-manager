@@ -3,16 +3,25 @@
 import { Match } from "@/types";
 import Link from "next/link";
 
+interface DelayInfo {
+  delayInMinutes: number;
+  lastCompletedMatch: number | null;
+}
+
 type LiveMatchesProps = {
   upcomingMatchesByArea: { [key: number]: Match[] };
   getParticipantName: (match: Match, position: string) => string;
   formatTime: (dateString?: string) => string;
+  delayInfoByArea?: { [key: number]: DelayInfo };
+  getAdjustedStartTime?: (match: Match) => string;
 };
 
 export default function LiveMatches({
   upcomingMatchesByArea,
   getParticipantName,
   formatTime,
+  delayInfoByArea = {},
+  getAdjustedStartTime,
 }: LiveMatchesProps) {
   // Obtenir la liste des aires triées
   const areaNumbers = Object.keys(upcomingMatchesByArea)
@@ -32,15 +41,50 @@ export default function LiveMatches({
     );
   }
 
+  // Fonction pour déterminer si on affiche l'indicateur d'avance ou de retard
+  const getDelayIndicator = (areaNumber: number) => {
+    const delayInfo = delayInfoByArea[areaNumber];
+    if (!delayInfo) return null;
+
+    const { delayInMinutes } = delayInfo;
+
+    if (delayInMinutes > 0) {
+      return (
+        <span className="ml-2 bg-red-100 text-red-800 text-xs px-2 py-1 rounded font-medium">
+          Retard de {delayInMinutes} min.
+        </span>
+      );
+    } else if (delayInMinutes < 0) {
+      return (
+        <span className="ml-2 bg-green-100 text-green-800 text-xs px-2 py-1 rounded font-medium">
+          Avance de {Math.abs(delayInMinutes)} min.
+        </span>
+      );
+    } else {
+      return (
+        <span className="ml-2 bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded font-medium">
+          Dans les temps
+        </span>
+      );
+    }
+  };
+
   return (
     <div className="space-y-8">
       {areaNumbers.map((areaNumber) => (
         <div key={areaNumber} className="mb-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center">
             Aire {areaNumber}{" "}
-            <span className="text-sm font-medium text-gray-700">
+            <span className="text-sm font-medium text-gray-700 ml-2">
               ({upcomingMatchesByArea[areaNumber].length} matchs)
             </span>
+            {delayInfoByArea[areaNumber] && getDelayIndicator(areaNumber)}
+            {delayInfoByArea[areaNumber]?.lastCompletedMatch && (
+              <span className="ml-2 text-xs text-gray-500">
+                Dernier match terminé: #
+                {delayInfoByArea[areaNumber].lastCompletedMatch}
+              </span>
+            )}
           </h2>
 
           <div className="space-y-4">
@@ -48,6 +92,11 @@ export default function LiveMatches({
               const isFirstMatch = index === 0;
               const isPending = match.status === "pending";
               const isInProgress = match.status === "in_progress";
+
+              // Utiliser l'heure ajustée si disponible, sinon l'heure originale
+              const adjustedStartTime = getAdjustedStartTime
+                ? getAdjustedStartTime(match)
+                : match.startTime;
 
               return (
                 <div
@@ -103,9 +152,35 @@ export default function LiveMatches({
                       </div>
                     </div>
 
-                    <div className="text-center text-sm font-medium text-gray-700">
-                      {isPending ? "Prévu à: " : "Début: "}
-                      {formatTime(match.startTime)}
+                    <div className="text-center text-sm font-medium">
+                      {isPending ? (
+                        <div>
+                          <div className="text-gray-700">
+                            {/* Afficher l'heure originale prévue */}
+                            Prévu à: {formatTime(match.startTime)}
+                          </div>
+                          {/* Afficher l'heure ajustée si différente de l'originale */}
+                          {adjustedStartTime !== match.startTime &&
+                            delayInfoByArea[areaNumber] && (
+                              <div
+                                className={
+                                  delayInfoByArea[areaNumber].delayInMinutes > 0
+                                    ? "text-red-700"
+                                    : delayInfoByArea[areaNumber]
+                                        .delayInMinutes < 0
+                                    ? "text-green-700"
+                                    : "text-blue-700"
+                                }
+                              >
+                                Estimation: {formatTime(adjustedStartTime)}
+                              </div>
+                            )}
+                        </div>
+                      ) : (
+                        <div className="text-gray-700">
+                          Début: {formatTime(match.startTime)}
+                        </div>
+                      )}
                     </div>
 
                     <div className="mt-3 text-center">

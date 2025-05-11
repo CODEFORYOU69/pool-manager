@@ -1,5 +1,6 @@
 "use client";
 
+import AllMatches from "@/components/AllMatches";
 import LiveMatches from "@/components/LiveMatches";
 import MatchFilters from "@/components/MatchFilters";
 import MatchHistory from "@/components/MatchHistory";
@@ -10,6 +11,12 @@ import { useEffect, useState } from "react";
 // URL de l'API
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
 
+// Types pour les retards
+interface DelayInfo {
+  delayInMinutes: number;
+  lastCompletedMatch: number | null;
+}
+
 // Types définis maintenant dans @/types
 
 export default function Home() {
@@ -19,7 +26,9 @@ export default function Home() {
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [competitionId, setCompetitionId] = useState<string | null>(null);
   const [competitions, setCompetitions] = useState<Competition[]>([]);
-  const [activeTab, setActiveTab] = useState<"live" | "history">("live");
+  const [activeTab, setActiveTab] = useState<"live" | "history" | "all">(
+    "live"
+  );
 
   // Données des matchs
   const [upcomingMatchesByArea, setUpcomingMatchesByArea] = useState<{
@@ -30,7 +39,13 @@ export default function Home() {
   }>({});
   const [recentMatches, setRecentMatches] = useState<Match[]>([]);
   const [allRecentMatches, setAllRecentMatches] = useState<Match[]>([]);
+  const [allMatches, setAllMatches] = useState<Match[]>([]);
   const [availableLigues, setAvailableLigues] = useState<string[]>([]);
+
+  // Nouvel état pour les informations de retard par aire
+  const [delayInfoByArea, setDelayInfoByArea] = useState<{
+    [key: number]: DelayInfo;
+  }>({});
 
   // Filtres
   const [filters, setFilters] = useState({
@@ -262,6 +277,7 @@ export default function Home() {
         // Sauvegarder tous les matchs pour permettre le filtrage
         setAllUpcomingMatchesByArea(allAreas);
         setAllRecentMatches(completedMatches);
+        setAllMatches(matches); // Sauvegarder tous les matchs pour l'onglet "Tous les matchs"
 
         // Appliquer les filtres initiaux
         setUpcomingMatchesByArea(allAreas);
@@ -283,6 +299,10 @@ export default function Home() {
             );
           }
         }
+
+        // Calculer les retards par aire
+        const delays = calculateDelaysByArea(matches);
+        setDelayInfoByArea(delays);
       } catch (err) {
         console.error("Erreur lors du chargement des matchs:", err);
         setError(
@@ -452,6 +472,104 @@ export default function Home() {
     }
   };
 
+  // Fonction pour calculer le retard par aire en fonction du dernier match terminé
+  const calculateDelaysByArea = (matches: Match[]) => {
+    // Obtenir tous les matchs terminés avec endTime
+    const completedMatches = matches.filter(
+      (match) => match.status === "completed" && match.endTime
+    );
+
+    // Regrouper par aire
+    const completedMatchesByArea: { [key: number]: Match[] } = {};
+
+    completedMatches.forEach((match) => {
+      // Déterminer le numéro d'aire
+      let areaNum = 1;
+      if (match.area && match.area.areaNumber) {
+        areaNum = match.area.areaNumber;
+      } else if (match.areaNumber) {
+        areaNum = match.areaNumber;
+      } else {
+        areaNum = (match.matchNumber % 6) + 1;
+      }
+
+      if (!completedMatchesByArea[areaNum]) {
+        completedMatchesByArea[areaNum] = [];
+      }
+
+      completedMatchesByArea[areaNum].push(match);
+    });
+
+    // Calculer le retard pour chaque aire
+    const delays: { [key: number]: DelayInfo } = {};
+
+    Object.keys(completedMatchesByArea).forEach((areaKey) => {
+      const areaNum = parseInt(areaKey);
+      const areaMatches = completedMatchesByArea[areaNum];
+
+      // Trier par endTime pour avoir le plus récent en premier
+      areaMatches.sort(
+        (a, b) =>
+          new Date(b.endTime!).getTime() - new Date(a.endTime!).getTime()
+      );
+
+      // Prendre le dernier match terminé de l'aire
+      const lastMatch = areaMatches[0];
+
+      if (lastMatch && lastMatch.endTime && lastMatch.startTime) {
+        // Durée prévue pour un match (6 minutes par défaut)
+        const expectedDurationInMinutes = 6;
+
+        // Calculer la différence entre l'heure de fin prévue et l'heure de fin réelle
+        const startTime = new Date(lastMatch.startTime);
+        const expectedEndTime = new Date(
+          startTime.getTime() + expectedDurationInMinutes * 60000
+        );
+        const actualEndTime = new Date(lastMatch.endTime);
+
+        // Calculer le retard en minutes
+        const delayInMs = actualEndTime.getTime() - expectedEndTime.getTime();
+        const delayInMinutes = Math.round(delayInMs / 60000);
+
+        delays[areaNum] = {
+          delayInMinutes,
+          lastCompletedMatch: lastMatch.matchNumber,
+        };
+      }
+    });
+
+    return delays;
+  };
+
+  // Fonction pour ajuster l'heure de début des matchs en fonction du retard de leur aire
+  const getAdjustedStartTime = (match: Match) => {
+    // Déterminer le numéro d'aire
+    let areaNum = 1;
+    if (match.area && match.area.areaNumber) {
+      areaNum = match.area.areaNumber;
+    } else if (match.areaNumber) {
+      areaNum = match.areaNumber;
+    } else {
+      areaNum = (match.matchNumber % 6) + 1;
+    }
+
+    // Récupérer les informations de retard pour cette aire
+    const delayInfo = delayInfoByArea[areaNum];
+
+    if (delayInfo && match.startTime) {
+      // Appliquer le retard à l'heure de début prévue
+      const startTime = new Date(match.startTime);
+      const adjustedStartTime = new Date(
+        startTime.getTime() + delayInfo.delayInMinutes * 60000
+      );
+
+      return adjustedStartTime.toISOString();
+    }
+
+    // Si pas d'information de retard, retourner l'heure de début originale
+    return match.startTime;
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <TournamentHeader
@@ -492,6 +610,16 @@ export default function Home() {
             >
               Historique des résultats
             </button>
+            <button
+              onClick={() => setActiveTab("all")}
+              className={`py-4 px-1 font-medium text-sm border-b-2 ${
+                activeTab === "all"
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Tous les matchs
+            </button>
           </div>
         </div>
       </div>
@@ -499,43 +627,110 @@ export default function Home() {
       <MatchFilters
         filters={filters}
         onFilterChange={handleFilterChange}
-        areas={Object.keys(allUpcomingMatchesByArea)
-          .map(Number)
-          .sort((a, b) => a - b)}
+        areas={Object.keys(allUpcomingMatchesByArea).map(Number)}
         ligues={availableLigues}
       />
 
-      <main className="flex-1 py-6">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {loading ? (
-            <div className="flex items-center justify-center h-64">
-              <div className="text-gray-500">Chargement des données...</div>
+      <main className="flex-grow pt-2 pb-8">
+        {loading ? (
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 text-center">
+            <div className="flex flex-col items-center justify-center">
+              <svg
+                className="animate-spin h-10 w-10 text-blue-500 mb-4"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                ></circle>
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
+              </svg>
+              <h3 className="text-lg font-bold text-gray-900">
+                Chargement des données...
+              </h3>
+              <p className="text-gray-500 mt-1">
+                Nous récupérons les informations des matchs pour cette
+                compétition.
+              </p>
             </div>
-          ) : error ? (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
-              {error}
+          </div>
+        ) : error ? (
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+            <div className="bg-red-50 p-4 rounded-md border border-red-200">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <svg
+                    className="h-5 w-5 text-red-400"
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-sm font-bold text-red-800">
+                    Erreur de chargement
+                  </h3>
+                  <div className="mt-2 text-sm text-red-700">
+                    <p>{error}</p>
+                  </div>
+                </div>
+              </div>
             </div>
-          ) : activeTab === "live" ? (
-            <LiveMatches
-              upcomingMatchesByArea={upcomingMatchesByArea}
-              getParticipantName={getParticipantName}
-              formatTime={formatTime}
-            />
-          ) : (
-            <MatchHistory
-              recentMatches={recentMatches}
-              getParticipantName={getParticipantName}
-              formatTime={formatTime}
-            />
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="max-w-7xl mx-auto">
+            {activeTab === "live" && (
+              <LiveMatches
+                upcomingMatchesByArea={upcomingMatchesByArea}
+                formatTime={formatTime}
+                getParticipantName={getParticipantName}
+                delayInfoByArea={delayInfoByArea}
+                getAdjustedStartTime={getAdjustedStartTime}
+              />
+            )}
+
+            {activeTab === "history" && (
+              <MatchHistory
+                recentMatches={recentMatches}
+                formatTime={formatTime}
+                getParticipantName={getParticipantName}
+              />
+            )}
+
+            {activeTab === "all" && (
+              <AllMatches
+                matches={allMatches}
+                filters={filters}
+                formatTime={formatTime}
+                getParticipantName={getParticipantName}
+              />
+            )}
+          </div>
+        )}
       </main>
 
-      <footer className="bg-gray-800 text-white py-6">
+      <footer className="bg-white border-t border-gray-200 py-4">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <p className="text-center text-sm">
-            Taekwondo Tournament Manager - Vue Spectateur -{" "}
-            {new Date().getFullYear()}
+          <p className="text-center text-sm text-gray-500">
+            Spectator App - Dernière mise à jour :{" "}
+            {formatTime(lastUpdate.toISOString())}
           </p>
         </div>
       </footer>
