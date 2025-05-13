@@ -54,6 +54,7 @@ export default function Home() {
     areaNumber: "",
     participantName: "",
     ligue: "",
+    status: "",
   });
 
   // Charger la liste des compétitions
@@ -132,6 +133,10 @@ export default function Home() {
         }
 
         // Récupérer les matchs pour la compétition sélectionnée
+        console.log(
+          "Chargement des matchs pour la compétition:",
+          competitionId
+        );
         const response = await fetch(
           `${API_URL}/competition/${competitionId}/matchesWithDetails`
         );
@@ -141,6 +146,18 @@ export default function Home() {
         }
 
         const matches = (await response.json()) as Match[];
+        console.log("Réponse de l'API:", matches);
+
+        // Log détaillé pour le match #101
+        const match101 = matches.find((m: Match) => m.matchNumber === 101);
+        if (match101) {
+          console.log("Match #101:", {
+            id: match101.id,
+            matchNumber: match101.matchNumber,
+            status: match101.status,
+            matchParticipants: match101.matchParticipants,
+          });
+        }
 
         // Débogage plus détaillé : examiner les 10 premiers matchs en détail
         console.log("Détails des 10 premiers matchs:");
