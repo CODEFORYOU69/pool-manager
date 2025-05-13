@@ -190,16 +190,12 @@ const MatchSchedule = ({
           const existingMatches = await matchesResponse.json();
 
           if (existingMatches && existingMatches.length > 0) {
-            console.log(`${existingMatches.length} matchs existants trouvés.`);
             // Des matchs existent déjà, charger ces matchs au lieu d'en générer de nouveaux
             try {
               const { matches: loadedMatches, schedule: loadedSchedule } =
                 await fetchFormattedMatches(competitionId);
 
               if (loadedMatches && loadedMatches.length > 0) {
-                console.log(
-                  `${loadedMatches.length} matchs existants chargés avec succès.`
-                );
                 setGeneratedMatches(loadedMatches);
                 setGeneratedSchedule(loadedSchedule);
                 setDataSource("existing");
@@ -215,10 +211,6 @@ const MatchSchedule = ({
               );
               // Continuer avec la génération
             }
-          } else {
-            console.log(
-              "Aucun match existant trouvé, génération de nouveaux matchs..."
-            );
           }
         }
       } catch (checkError) {
@@ -231,7 +223,6 @@ const MatchSchedule = ({
 
       // Générer tous les combats pour toutes les poules
       const allMatches = generateMatches(groups);
-      console.log("Matchs générés:", allMatches.length);
 
       // Créer le planning des combats
       const {
@@ -239,12 +230,9 @@ const MatchSchedule = ({
         updatedMatches,
         stats,
       } = createSchedule(allMatches, tournamentConfig);
-      console.log("Planning créé:", generatedSchedule.length, "éléments");
-      console.log("Statistiques:", stats);
 
       // Utiliser les matchs mis à jour avec leurs numéros et aires attribués
       const matchesWithSchedule = updatedMatches;
-      console.log("Matchs avec planification:", matchesWithSchedule.length);
 
       // Mettre à jour les matchs avec les numéros et horaires du planning
       const matchesWithNumbers = matchesWithSchedule.map((match) => {
@@ -262,31 +250,14 @@ const MatchSchedule = ({
         return match;
       });
 
-      console.log("Matchs avec numéros:", matchesWithNumbers.length);
-
-      // Exemple du premier match avec les informations complètes
-      if (matchesWithNumbers.length > 0) {
-        console.log("Exemple de match avec numéro:", matchesWithNumbers[0]);
-      }
-
       // Au lieu de sauvegarder les groupes à chaque fois, vérifier d'abord s'ils existent déjà
       checkExistingGroupsAndPools(competitionId)
         .then((existingGroupsResult) => {
-          console.log(
-            "Vérification des groupes existants:",
-            existingGroupsResult
-          );
-
           if (
             existingGroupsResult.exists &&
             existingGroupsResult.groups &&
             existingGroupsResult.groups.length > 0
           ) {
-            console.log(
-              "Utilisation des groupes existants:",
-              existingGroupsResult.groups
-            );
-
             // Utiliser directement les groupes existants
             const savedGroups = existingGroupsResult.groups;
 
@@ -339,10 +310,6 @@ const MatchSchedule = ({
               }
             });
 
-            console.log(
-              `Organisation des matchs pour ${uniquePools.size} poules uniques`
-            );
-
             // Si nous n'avons pas directement des poolId, utiliser les combinaisons groupId et poolIndex
             if (uniquePools.size === 0) {
               // Grouper par combinaison groupId + poolIndex
@@ -354,10 +321,6 @@ const MatchSchedule = ({
                 }
                 poolMap.get(key).push(match);
               });
-
-              console.log(
-                `Organisé ${poolMap.size} groupes de matchs par groupe/index de poule`
-              );
 
               // Récupérer les pools de chaque groupe
               savedGroups.forEach((group) => {
@@ -379,9 +342,6 @@ const MatchSchedule = ({
                           poolId: pool.id,
                           matches: matches,
                         });
-                        console.log(
-                          `Ajout de ${matches.length} matchs pour la poule ${pool.id} (groupe ${group.id}, index ${pool.poolIndex})`
-                        );
                       }
                     });
 
@@ -421,9 +381,6 @@ const MatchSchedule = ({
                     poolId: poolId,
                     matches: poolMatches,
                   });
-                  console.log(
-                    `Ajout de ${poolMatches.length} matchs pour la poule ${poolId}`
-                  );
                 }
               });
             }
@@ -435,36 +392,14 @@ const MatchSchedule = ({
               );
             }
 
-            console.log(
-              `Envoi de ${matchesByPool.length} poules avec leurs matchs pour sauvegarde`
-            );
-
-            // Vérifier le contenu du premier groupe de matchs
-            if (
-              matchesByPool.length > 0 &&
-              matchesByPool[0].matches.length > 0
-            ) {
-              console.log("Exemple de match à sauvegarder:", {
-                poolId: matchesByPool[0].poolId,
-                matchExample: matchesByPool[0].matches[0],
-              });
-            }
-
             // Sauvegarder les matchs avec le format attendu
             return saveGeneratedMatches(competitionId, matchesByPool)
               .then(handleSaveMatchesSuccess)
               .catch(handleSaveError);
           } else {
             // Si les groupes n'existent pas, les sauvegarder d'abord
-            console.log(
-              "Aucun groupe existant trouvé, sauvegarde des nouveaux groupes"
-            );
             return saveGroupsAndPools(competitionId, groups)
               .then((savedGroupsResult) => {
-                console.log(
-                  "Groupes sauvegardés avec succès:",
-                  savedGroupsResult
-                );
                 const savedGroups = savedGroupsResult.savedGroups || [];
 
                 // Mettre à jour les IDs des groupes dans les matchs
@@ -519,10 +454,6 @@ const MatchSchedule = ({
                   }
                 });
 
-                console.log(
-                  `Organisation des matchs pour ${uniquePools.size} poules uniques`
-                );
-
                 // Si nous n'avons pas directement des poolId, utiliser les combinaisons groupId et poolIndex
                 if (uniquePools.size === 0) {
                   // Grouper par combinaison groupId + poolIndex
@@ -535,10 +466,6 @@ const MatchSchedule = ({
                     poolMap.get(key).push(match);
                   });
 
-                  console.log(
-                    `Organisé ${poolMap.size} groupes de matchs par groupe/index de poule`
-                  );
-
                   // Pour chaque savedGroup, trouver ses poules et les ajouter à matchesByPool
                   savedGroups.forEach((group) => {
                     const groupPools = group.poolIds || [];
@@ -549,9 +476,6 @@ const MatchSchedule = ({
                           poolId: poolId,
                           matches: matches,
                         });
-                        console.log(
-                          `Ajout de ${matches.length} matchs pour la poule ${poolId} (groupe ${group.id}, index ${index})`
-                        );
                       }
                     });
                   });
@@ -566,9 +490,6 @@ const MatchSchedule = ({
                         poolId: poolId,
                         matches: poolMatches,
                       });
-                      console.log(
-                        `Ajout de ${poolMatches.length} matchs pour la poule ${poolId}`
-                      );
                     }
                   });
                 }
@@ -578,21 +499,6 @@ const MatchSchedule = ({
                   throw new Error(
                     "Impossible d'organiser les matchs par poule. Vérifiez que les poules ont été correctement sauvegardées."
                   );
-                }
-
-                console.log(
-                  `Envoi de ${matchesByPool.length} poules avec leurs matchs pour sauvegarde`
-                );
-
-                // Vérifier le contenu du premier groupe de matchs
-                if (
-                  matchesByPool.length > 0 &&
-                  matchesByPool[0].matches.length > 0
-                ) {
-                  console.log("Exemple de match à sauvegarder:", {
-                    poolId: matchesByPool[0].poolId,
-                    matchExample: matchesByPool[0].matches[0],
-                  });
                 }
 
                 // Sauvegarder les matchs avec le format attendu
@@ -615,7 +521,6 @@ const MatchSchedule = ({
 
       // Fonction de gestion du succès de la sauvegarde des matchs
       const handleSaveMatchesSuccess = (savedMatches) => {
-        console.log("Tous les matchs ont été sauvegardés:", savedMatches);
         setGeneratedMatches(matchesWithSchedule);
         setGeneratedSchedule(generatedSchedule);
 
@@ -676,9 +581,8 @@ const MatchSchedule = ({
     try {
       // Si position est un nombre (index), convertir en position A ou B
       if (typeof position === "number") {
-        // Dans ce cas, 0 correspond à B (rouge) et 1 correspond à A (bleu)
-        // A = bleu (position 1), B = rouge (position 0)
-        position = position === 0 ? "B" : "A";
+        // Index 0 correspond à A (bleu), 1 correspond à B (rouge)
+        position = position === 0 ? "A" : "B";
       }
 
       // Vérifier si nous avons la structure matchParticipants (version BD)
@@ -693,8 +597,8 @@ const MatchSchedule = ({
       }
 
       // Sinon, utiliser l'ancienne structure participants (version mémoire)
-      // A = bleu (indice 1), B = rouge (indice 0)
-      const participantIndex = position === "A" ? 1 : 0;
+      // Index 0 = A (bleu), Index 1 = B (rouge)
+      const participantIndex = position === "A" ? 0 : 1;
       const participant = matchInfo?.participants?.[participantIndex];
       if (!participant) {
         return "-";
@@ -729,9 +633,8 @@ const MatchSchedule = ({
     try {
       // Si position est un nombre (index), convertir en position A ou B
       if (typeof position === "number") {
-        // Dans ce cas, 0 correspond à B (rouge) et 1 correspond à A (bleu)
-        // A = bleu (position 1), B = rouge (position 0)
-        position = position === 0 ? "B" : "A";
+        // Index 0 correspond à A (bleu), 1 correspond à B (rouge)
+        position = position === 0 ? "A" : "B";
       }
 
       // Vérifier si nous avons la structure matchParticipants (version BD)
@@ -744,8 +647,8 @@ const MatchSchedule = ({
       }
 
       // Sinon, utiliser l'ancienne structure participants (version mémoire)
-      // A = bleu (indice 1), B = rouge (indice 0)
-      const participantIndex = position === "A" ? 1 : 0;
+      // Index 0 = A (bleu), Index 1 = B (rouge)
+      const participantIndex = position === "A" ? 0 : 1;
       const participant = matchInfo?.participants?.[participantIndex];
       if (!participant) {
         return "-";
@@ -1351,7 +1254,16 @@ const MatchSchedule = ({
   };
 
   const renderScheduleView = () => {
-    // Logs de débogage pour comprendre la distribution des matchs par aire
+    // Vérifier si nous avons des matchs valides
+    if (generatedMatches.length === 0 || generatedSchedule.length === 0) {
+      return (
+        <div className="no-matches">
+          <p>Aucun match planifié. Veuillez générer un planning.</p>
+        </div>
+      );
+    }
+
+    // Calculer la distribution des matchs par aire pour l'affichage du résumé
     const matchesByArea = {};
     generatedSchedule.forEach((item) => {
       if (!matchesByArea[item.areaNumber]) {
@@ -1359,61 +1271,6 @@ const MatchSchedule = ({
       }
       matchesByArea[item.areaNumber]++;
     });
-
-    console.log("Distribution des matchs par aire:", matchesByArea);
-    console.log("Nombre total d'aires configurées:", tournamentConfig.numAreas);
-    console.log("Filtre actuel par aire:", areaFilter);
-    console.log("Afficher toutes les aires:", displayAllAreas);
-
-    // Vérifier si nous avons des matchs valides
-    console.log("Nombre total de matchs générés:", generatedMatches.length);
-    console.log(
-      "Nombre total d'éléments de planning:",
-      generatedSchedule.length
-    );
-
-    // Logs pour vérifier les premiers matchs et leur aire associée
-    if (generatedMatches.length > 0) {
-      console.log("Premier match:", generatedMatches[0]);
-      const matchAreas = generatedMatches.map((match) => {
-        const schedule = generatedSchedule.find((s) => s.matchId === match.id);
-        return {
-          matchId: match.id,
-          areaNumber: schedule ? schedule.areaNumber : "non attribué",
-          participantsCount: match.participants ? match.participants.length : 0,
-        };
-      });
-      console.log(
-        "Attribution des aires aux 5 premiers matchs:",
-        matchAreas.slice(0, 5)
-      );
-    }
-
-    if (generatedSchedule.length > 0) {
-      console.log("Premier élément de planning:", generatedSchedule[0]);
-    }
-
-    // CORRECTION: Debug complet de l'état
-    console.log("Voici les structures de données complètes:");
-    console.log("Groups:", groups);
-    console.log("TournamentConfig:", tournamentConfig);
-    console.log("Dataset:", dataSource);
-
-    // Vérifier la correspondance entre matches et planning
-    const matchesWithSchedule = generatedSchedule.map((scheduleItem) => {
-      const matchDetails = generatedMatches.find(
-        (m) => m.id === scheduleItem.matchId
-      );
-      return {
-        schedule: scheduleItem,
-        match: matchDetails,
-      };
-    });
-
-    console.log(
-      "Échantillon des matchs avec planning:",
-      matchesWithSchedule.slice(0, 3)
-    );
 
     return (
       <div className="schedule-view">
@@ -1456,10 +1313,6 @@ const MatchSchedule = ({
                 return filterMatches(matchDetails, scheduleItem);
               })
               .sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
-
-            console.log(
-              `Aire ${areaNumber}: ${areaScheduleItems.length} matchs totaux, ${filteredAreaScheduleItems.length} après filtrage`
-            );
 
             return (
               <div key={areaIndex} className="area-schedule">
@@ -1512,10 +1365,6 @@ const MatchSchedule = ({
                           }
 
                           if (!match) {
-                            console.log(
-                              "Match non trouvé pour l'élément de planning:",
-                              scheduleItem
-                            );
                             return null;
                           }
 
@@ -1592,7 +1441,6 @@ const MatchSchedule = ({
 
       try {
         // Supprimer d'abord les matchs existants
-        console.log("Suppression des matchs existants...");
         const deleteResponse = await fetch(
           `${API_URL}/match/deleteByCompetition/${competitionId}`,
           {
@@ -1605,7 +1453,6 @@ const MatchSchedule = ({
 
         if (deleteResponse.ok) {
           const result = await deleteResponse.json();
-          console.log(`${result.count || 0} matchs supprimés avec succès`);
 
           setMatchesAlreadyLoaded(false);
           setGeneratedMatches([]);
@@ -1613,7 +1460,6 @@ const MatchSchedule = ({
 
           // Après avoir supprimé les matchs, générer de nouveaux matchs
           const allMatches = generateMatches(groups);
-          console.log("Nouveaux matchs générés:", allMatches.length);
 
           // Créer le planning des combats
           const {
@@ -1621,7 +1467,6 @@ const MatchSchedule = ({
             updatedMatches,
             stats,
           } = createSchedule(allMatches, tournamentConfig);
-          console.log("Planning créé:", generatedSchedule.length, "éléments");
 
           // Sauvegarder les nouveaux matchs
           await handleSaveNewMatches(
@@ -1662,7 +1507,6 @@ const MatchSchedule = ({
       const existingGroupsResult = await checkExistingGroupsAndPools(
         competitionId
       );
-      console.log("Vérification des groupes existants:", existingGroupsResult);
 
       let savedGroups = [];
       if (
@@ -1670,14 +1514,9 @@ const MatchSchedule = ({
         existingGroupsResult.groups &&
         existingGroupsResult.groups.length > 0
       ) {
-        console.log(
-          "Utilisation des groupes existants:",
-          existingGroupsResult.groups
-        );
         savedGroups = existingGroupsResult.groups;
       } else {
         // Si les groupes n'existent pas, les sauvegarder d'abord
-        console.log("Sauvegarde des nouveaux groupes");
         const savedGroupsResult = await saveGroupsAndPools(
           competitionId,
           groups
@@ -1703,13 +1542,11 @@ const MatchSchedule = ({
       const poolMap = new Map();
       matchesWithNumbers.forEach((match) => {
         if (!match.groupId || !Array.isArray(groups)) {
-          console.error("Données de match invalides:", match);
           return;
         }
 
         const originalGroup = groups.find((g) => g.id === match.groupId);
         if (!originalGroup) {
-          console.error("Groupe original non trouvé pour le match:", match);
           return;
         }
 
@@ -1722,7 +1559,6 @@ const MatchSchedule = ({
         );
 
         if (!savedGroup) {
-          console.error("Groupe sauvegardé non trouvé pour le match:", match);
           return;
         }
 
@@ -1779,7 +1615,6 @@ const MatchSchedule = ({
           competitionId,
           matchesByPool
         );
-        console.log("Tous les matchs ont été sauvegardés:", savedMatches);
 
         setGeneratedMatches(updatedMatches);
         setGeneratedSchedule(schedule);

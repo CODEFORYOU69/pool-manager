@@ -6,7 +6,6 @@ import {
   API_URL,
   getCompletedMatches,
   getMatchByNumber,
-  loadMatches,
   loadResults,
   saveMatchResult,
   updateMatchResult,
@@ -14,6 +13,53 @@ import {
 import "../styles/ScoreInput.css";
 import { findPssInfo } from "../utils/categories";
 import { findPowerThreshold } from "../utils/constants";
+
+// Classe utilitaire pour limiter le nombre de requêtes API simultanées
+class RequestQueue {
+  constructor(maxConcurrent = 5) {
+    this.queue = [];
+    this.running = 0;
+    this.maxConcurrent = maxConcurrent;
+  }
+
+  add(request) {
+    return new Promise((resolve, reject) => {
+      this.queue.push({
+        request,
+        resolve,
+        reject,
+      });
+      this.processQueue();
+    });
+  }
+
+  async processQueue() {
+    if (this.running >= this.maxConcurrent || this.queue.length === 0) {
+      return;
+    }
+
+    this.running++;
+    const { request, resolve, reject } = this.queue.shift();
+
+    try {
+      const result = await request();
+      resolve(result);
+    } catch (error) {
+      reject(error);
+    } finally {
+      this.running--;
+      this.processQueue();
+    }
+  }
+}
+
+// Instancier la file d'attente de requêtes
+const requestQueue = new RequestQueue(5);
+
+// Fonction d'encapsulation pour fetch qui utilise la file d'attente
+const queuedFetch = (url, options) => {
+  return requestQueue.add(() => fetch(url, options));
+};
 
 // Définition de l'URL de l'API
 // const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3001/api";
@@ -43,6 +89,156 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   const [matchesWithPssInfo, setMatchesWithPssInfo] = useState({});
   const [pendingPssRequests, setPendingPssRequests] = useState(new Set());
   const [isThrottling, setIsThrottling] = useState(false);
+  // État pour indiquer un rafraîchissement en cours
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Nouveaux états pour la gestion du vainqueur obligatoire
+  const [showWinnerModal, setShowWinnerModal] = useState(false);
+  const [currentTieData, setCurrentTieData] = useState(null);
+
+  // Charger les matchs et les résultats
+  const loadMatchesAndResults = async () => {
+    try {
+      if (!refreshing) {
+        setIsLoading(true);
+      }
+
+      // Sauvegarder l'état actuel des informations PSS avant le rafraîchissement
+      const currentPssInfo = { ...matchesWithPssInfo };
+      const currentPendingRequests = new Set(pendingPssRequests);
+
+      // Charger les matchs avec les participants
+      const matchesRes = await fetch(
+        `${API_URL}/competition/${competitionId}/matches?include=matchParticipants`
+      );
+      if (!matchesRes.ok) {
+        throw new Error("Erreur lors du chargement des matchs");
+      }
+      const matchesData = await matchesRes.json();
+
+      if (matchesData && matchesData.data) {
+        const allMatches = matchesData.data.matches || [];
+
+        // S'assurer que les participants sont dans le bon ordre pour l'affichage
+        const processedMatches = allMatches.map((match) => {
+          if (match.matchParticipants) {
+            const participantA = match.matchParticipants.find(
+              (p) => p.position === "A"
+            );
+            const participantB = match.matchParticipants.find(
+              (p) => p.position === "B"
+            );
+
+            // Créer un tableau participants dans le bon ordre
+            match.participants = [];
+            if (participantA) match.participants[0] = participantA.participant;
+            if (participantB) match.participants[1] = participantB.participant;
+          }
+          return match;
+        });
+
+        setCurrentMatches(processedMatches);
+        setAreasCount(
+          Math.max(...processedMatches.map((m) => m.areaNumber || 1))
+        );
+
+        if (matchesData.data.groups) {
+          setGroups(matchesData.data.groups);
+        }
+      }
+
+      // Charger les résultats
+      const res = await loadResults(competitionId);
+      if (res && res.data) {
+        setResults(res.data);
+      }
+
+      // Charger les matchs terminés
+      await loadCompletedMatches();
+
+      // Restaurer les informations PSS déjà chargées
+      setMatchesWithPssInfo((prev) => ({
+        ...currentPssInfo,
+        ...prev,
+      }));
+
+      // Si des requêtes étaient en cours, les maintenir dans l'état
+      if (currentPendingRequests.size > 0) {
+        setPendingPssRequests(currentPendingRequests);
+      }
+
+      setIsLoading(false);
+      setRefreshing(false);
+    } catch (error) {
+      console.error(
+        "Erreur lors du chargement des matchs et résultats:",
+        error
+      );
+      setIsLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  // Rafraîchissement automatique toutes les 60 secondes
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setRefreshing(true);
+      loadMatchesAndResults();
+    }, 60000); // 60 secondes = 1 minute
+
+    // Nettoyage de l'intervalle quand le composant est démonté
+    return () => clearInterval(intervalId);
+  }, [competitionId]);
+
+  // Chargement initial des données
+  useEffect(() => {
+    const initializeMatches = async () => {
+      try {
+        if (matches && matches.length > 0) {
+          console.log(
+            "Utilisation des matchs fournis par les props:",
+            matches.length
+          );
+
+          // Vérifier si les matchs ont déjà les matchParticipants
+          const needsParticipants = !matches.some((m) => m.matchParticipants);
+
+          if (needsParticipants && competitionId) {
+            // Charger les matchs avec les participants depuis l'API
+            const matchesRes = await fetch(
+              `${API_URL}/competition/${competitionId}/matches?include=matchParticipants`
+            );
+            if (matchesRes.ok) {
+              const matchesData = await matchesRes.json();
+              if (matchesData && matchesData.data && matchesData.data.matches) {
+                setCurrentMatches(matchesData.data.matches);
+                setAreasCount(
+                  Math.max(
+                    ...matchesData.data.matches.map((m) => m.areaNumber || 1)
+                  )
+                );
+              }
+            }
+          } else {
+            setCurrentMatches(matches);
+            setAreasCount(Math.max(...matches.map((m) => m.areaNumber || 1)));
+          }
+
+          await loadCompletedMatches();
+          setIsLoading(false);
+        } else if (competitionId) {
+          await loadMatchesAndResults();
+        } else {
+          setIsLoading(false);
+        }
+      } catch (error) {
+        console.error("Erreur lors de l'initialisation des matchs:", error);
+        setIsLoading(false);
+      }
+    };
+
+    initializeMatches();
+  }, [matches, competitionId]);
 
   // Charger les combats terminés depuis la base de données au chargement
   useEffect(() => {
@@ -66,73 +262,6 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
       setIsLoading(false);
     }
   }, [matches, competitionId]);
-
-  // Charger les matchs et les résultats
-  const loadMatchesAndResults = async () => {
-    try {
-      setIsLoading(true);
-
-      // Charger les détails de la compétition pour obtenir la date
-      try {
-        const competitionResponse = await fetch(
-          `${API_URL}/competition/${competitionId}`
-        );
-        if (competitionResponse.ok) {
-          const competitionData = await competitionResponse.json();
-          if (competitionData.date) {
-            setCompetitionDate(new Date(competitionData.date));
-            console.log(
-              "Date de la compétition chargée:",
-              new Date(competitionData.date)
-            );
-          } else {
-            // Si pas de date spécifiée, utiliser la date actuelle
-            setCompetitionDate(new Date());
-            console.log(
-              "Aucune date de compétition spécifiée, utilisation de la date actuelle"
-            );
-          }
-        }
-      } catch (error) {
-        console.error(
-          "Erreur lors de la récupération des détails de la compétition:",
-          error
-        );
-        // Fallback à la date actuelle en cas d'erreur
-        setCompetitionDate(new Date());
-      }
-
-      // Charger les matchs
-      const matchesRes = await loadMatches(competitionId);
-      if (matchesRes && matchesRes.data) {
-        const allMatches = matchesRes.data.matches || [];
-        setCurrentMatches(allMatches);
-        setAreasCount(Math.max(...allMatches.map((m) => m.areaNumber || 1)));
-
-        // Récupérer les groupes pour les informations PSS
-        if (matchesRes.data.groups) {
-          setGroups(matchesRes.data.groups);
-        }
-      }
-
-      // Charger les résultats
-      const res = await loadResults(competitionId);
-      if (res && res.data) {
-        setResults(res.data);
-      }
-
-      // Charger les matchs terminés
-      await loadCompletedMatches();
-
-      setIsLoading(false);
-    } catch (error) {
-      console.error(
-        "Erreur lors du chargement des matchs et résultats:",
-        error
-      );
-      setIsLoading(false);
-    }
-  };
 
   // Charger les combats terminés depuis la base de données
   const loadCompletedMatches = async () => {
@@ -465,6 +594,12 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
 
   // Gestion de la saisie des scores
   const handleScoreChange = (matchId, roundIndex, fighter, value) => {
+    // Vérifier que fighter est bien une position valide "A" ou "B"
+    if (fighter !== "A" && fighter !== "B") {
+      console.error(`Position de combattant invalide: ${fighter}`);
+      return;
+    }
+
     const scoreValue = parseInt(value, 10) || 0;
 
     setMatchResults((prev) => {
@@ -477,6 +612,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
         ],
         winner: null,
         completed: false,
+        positionsFixed: true,
       };
 
       // Mettre à jour le score du round
@@ -487,6 +623,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
           fighterA: scoreValue,
         };
       } else {
+        // fighter === "B"
         updatedRounds[roundIndex] = {
           ...updatedRounds[roundIndex],
           fighterB: scoreValue,
@@ -496,11 +633,80 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
       // Déterminer le vainqueur du round
       const round = updatedRounds[roundIndex];
       if (round.fighterA > round.fighterB) {
-        round.winner = "A";
+        round.winner = "A"; // Utiliser la chaîne "A" pour le vainqueur
       } else if (round.fighterB > round.fighterA) {
-        round.winner = "B";
+        round.winner = "B"; // Utiliser la chaîne "B" pour le vainqueur
       } else {
         round.winner = null;
+      }
+
+      // Vérifier si les deux premiers rounds ont été gagnés par le même combattant
+      if (roundIndex <= 1) {
+        // Seulement vérifier après modification des rounds 0 ou 1
+        const twoRoundsWonByA =
+          updatedRounds[0].winner === "A" && updatedRounds[1].winner === "A";
+        const twoRoundsWonByB =
+          updatedRounds[0].winner === "B" && updatedRounds[1].winner === "B";
+
+        // Si le même combattant a gagné les deux premiers rounds, désactiver le 3ème
+        if (twoRoundsWonByA || twoRoundsWonByB) {
+          // Réinitialiser le 3ème round
+          updatedRounds[2] = { fighterA: 0, fighterB: 0, winner: null };
+        }
+      }
+
+      // Vérifier s'il y a égalité dans le round actuel
+      if (round.fighterA === round.fighterB && round.fighterA > 0) {
+        // Programmer l'ouverture du modal pour choisir le vainqueur
+        setTimeout(() => {
+          const matchInfo = currentMatches.find((m) => m.id === matchId);
+          setCurrentTieData({
+            matchId,
+            roundIndex,
+            round,
+            matchInfo,
+          });
+          setShowWinnerModal(true);
+        }, 100);
+      }
+
+      return {
+        ...prev,
+        [matchId]: {
+          ...matchResult,
+          rounds: updatedRounds,
+          positionsFixed: true,
+        },
+      };
+    });
+  };
+
+  // Fonction pour sélectionner un vainqueur en cas d'égalité
+  const handleTieWinnerSelection = (winner) => {
+    if (!currentTieData) return;
+
+    const { matchId, roundIndex } = currentTieData;
+
+    setMatchResults((prev) => {
+      const matchResult = prev[matchId];
+      if (!matchResult) return prev;
+
+      const updatedRounds = [...matchResult.rounds];
+      updatedRounds[roundIndex] = {
+        ...updatedRounds[roundIndex],
+        winner, // "A" ou "B"
+      };
+
+      // Vérifier si les deux premiers rounds ont été gagnés par le même combattant
+      const twoRoundsWonByA =
+        updatedRounds[0].winner === "A" && updatedRounds[1].winner === "A";
+      const twoRoundsWonByB =
+        updatedRounds[0].winner === "B" && updatedRounds[1].winner === "B";
+
+      // Si le même combattant a gagné les deux premiers rounds, désactiver le 3ème
+      if (twoRoundsWonByA || twoRoundsWonByB) {
+        // Réinitialiser le 3ème round
+        updatedRounds[2] = { fighterA: 0, fighterB: 0, winner: null };
       }
 
       return {
@@ -511,6 +717,10 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
         },
       };
     });
+
+    // Fermer le modal
+    setShowWinnerModal(false);
+    setCurrentTieData(null);
   };
 
   // Finaliser un match
@@ -520,20 +730,56 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
 
       if (!matchResult) return prev;
 
-      // Compter les rounds gagnés
+      // Vérifier si tous les rounds nécessaires ont un vainqueur
+      const rounds = matchResult.rounds;
+
+      // Vérifier les deux premiers rounds
+      if (rounds[0].winner === null || rounds[1].winner === null) {
+        // Il manque un vainqueur dans les deux premiers rounds
+        alert(
+          "Tous les rounds doivent avoir un vainqueur. Veuillez désigner un vainqueur pour chaque round à égalité."
+        );
+        return prev;
+      }
+
+      // Vérifier si les deux premiers rounds ont été gagnés par le même combattant
+      const twoRoundsWonByA =
+        rounds[0].winner === "A" && rounds[1].winner === "A";
+      const twoRoundsWonByB =
+        rounds[0].winner === "B" && rounds[1].winner === "B";
+
+      // Si un troisième round est nécessaire, vérifier qu'il a un vainqueur
+      if (!twoRoundsWonByA && !twoRoundsWonByB) {
+        // Les deux premiers rounds ont été gagnés par des combattants différents
+        // Le 3ème round est donc nécessaire
+        if (rounds[2].winner === null) {
+          alert(
+            "Le troisième round doit avoir un vainqueur. Veuillez désigner un vainqueur pour ce round."
+          );
+          return prev;
+        }
+      }
+
+      // Compter les rounds gagnés en comparant avec les chaînes "A" et "B"
       const roundsWonByA = matchResult.rounds.filter(
-        (r) => r.winner === "A"
+        (r) => r.winner === "A" // "A" est une chaîne
       ).length;
       const roundsWonByB = matchResult.rounds.filter(
-        (r) => r.winner === "B"
+        (r) => r.winner === "B" // "B" est une chaîne
       ).length;
 
-      // Déterminer le vainqueur du match
+      // Déterminer le vainqueur du match en utilisant des chaînes "A" et "B"
       let winner = null;
       if (roundsWonByA > roundsWonByB) {
-        winner = "A";
+        winner = "A"; // Utiliser la chaîne "A"
       } else if (roundsWonByB > roundsWonByA) {
-        winner = "B";
+        winner = "B"; // Utiliser la chaîne "B"
+      } else {
+        // Cela ne devrait pas arriver avec la logique de vainqueur obligatoire
+        alert(
+          "Erreur: Le nombre de rounds gagnés est égal. Cela ne devrait pas arriver avec la logique de vainqueur obligatoire."
+        );
+        return prev;
       }
 
       return {
@@ -542,6 +788,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
           ...matchResult,
           winner,
           completed: true,
+          positionsFixed: true,
         },
       };
     });
@@ -550,22 +797,16 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   // Finaliser et sauvegarder un match
   const finalizeAndSaveMatch = async (matchId) => {
     setSavingMatch(matchId);
-    console.log("=== Début de finalizeAndSaveMatch ===");
-    console.log("ID du match à sauvegarder:", matchId);
-    console.log("Type de l'ID:", typeof matchId);
 
     try {
       // D'abord finaliser le match localement
       finalizeMatch(matchId);
-      console.log("Match finalisé localement");
 
       // Attendre un cycle pour s'assurer que le state est à jour
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       // Récupérer les résultats du match
       const matchResult = matchResults[matchId];
-      console.log("État complet de matchResults:", matchResults);
-      console.log("Résultats du match à sauvegarder:", matchResult);
 
       // Récupérer le match depuis la liste des matchs actuels
       const matchData = currentMatches.find((m) => m.id === matchId);
@@ -573,192 +814,61 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
         throw new Error("Match non trouvé dans les données locales");
       }
 
-      // Récupérer le match par son numéro depuis l'API (pour obtenir l'ID correct)
-      console.log(
-        `Recherche du match par son numéro: ${
-          matchData.matchNumber || matchData.number
-        }`
-      );
       const matchNumber = matchData.matchNumber || matchData.number;
 
       try {
         // Utiliser la nouvelle fonction getMatchByNumber
         const dbMatch = await getMatchByNumber(competitionId, matchNumber);
-        console.log(
-          `Match #${matchNumber} trouvé dans la DB avec l'ID: ${dbMatch.id}`
-        );
-
-        // Vérifier que les participants sont correctement mappés
-        console.log(
-          "Participants du match dans la base de données:",
-          dbMatch.matchParticipants
-        );
-        console.log("Participants locaux:", matchData.participants);
 
         // Créer une copie du résultat du match pour éviter de modifier l'original
         const resultToSave = { ...matchResult };
 
-        // Vérifier si les positions A et B correspondent entre l'interface et la base de données
+        // Garantir la cohérence des positions A/B entre l'interface et la base de données
         if (
           dbMatch.matchParticipants &&
           dbMatch.matchParticipants.length >= 2
         ) {
+          // Récupérer les participants de la BD avec leurs positions explicites
           const dbParticipantA = dbMatch.matchParticipants.find(
-            (p) => p.position === "A"
+            (p) => p.position === "A" // Position stockée comme chaîne "A"
           )?.participant;
           const dbParticipantB = dbMatch.matchParticipants.find(
-            (p) => p.position === "B"
+            (p) => p.position === "B" // Position stockée comme chaîne "B"
           )?.participant;
 
-          // Comparer avec les participants locaux pour voir s'il y a une inversion
-          const localParticipantA = matchData.participants
-            ? matchData.participants[0]
-            : null;
-          const localParticipantB = matchData.participants
-            ? matchData.participants[1]
-            : null;
+          // Participants de l'interface (participants[0] est normalement A, participants[1] est B)
+          const localParticipantA = matchData.participants?.[0];
+          const localParticipantB = matchData.participants?.[1];
 
-          if (
-            dbParticipantA &&
-            dbParticipantB &&
-            localParticipantA &&
-            localParticipantB
-          ) {
+          // Vérifier si les positions sont inversées (comparaison par ID)
+          const positionsInverted =
+            (localParticipantA &&
+              dbParticipantB &&
+              localParticipantA.id === dbParticipantB.id) ||
+            (localParticipantB &&
+              dbParticipantA &&
+              localParticipantB.id === dbParticipantA.id);
+
+          if (positionsInverted) {
             console.log(
-              "DB Participant A:",
-              dbParticipantA.prenom,
-              dbParticipantA.nom,
-              "ID:",
-              dbParticipantA.id
+              "Correction des positions inversées pour le match:",
+              matchNumber
             );
-            console.log(
-              "DB Participant B:",
-              dbParticipantB.prenom,
-              dbParticipantB.nom,
-              "ID:",
-              dbParticipantB.id
-            );
-            console.log(
-              "Local Participant A:",
-              localParticipantA.prenom,
-              localParticipantA.nom,
-              "ID:",
-              localParticipantA.id
-            );
-            console.log(
-              "Local Participant B:",
-              localParticipantB.prenom,
-              localParticipantB.nom,
-              "ID:",
-              localParticipantB.id
-            );
+            // Inverser les scores des rounds
+            resultToSave.rounds = resultToSave.rounds.map((round) => ({
+              fighterA: round.fighterB,
+              fighterB: round.fighterA,
+              winner:
+                round.winner === "A" ? "B" : round.winner === "B" ? "A" : null,
+            }));
 
-            // Vérifier s'il y a une inversion des participants
-            // Méthode plus fiable basée à la fois sur l'ID et le nom
-            const positionsInverted =
-              (localParticipantA.id === dbParticipantB.id &&
-                localParticipantB.id === dbParticipantA.id) ||
-              (localParticipantA.prenom + localParticipantA.nom ===
-                dbParticipantB.prenom + dbParticipantB.nom &&
-                localParticipantB.prenom + localParticipantB.nom ===
-                  dbParticipantA.prenom + dbParticipantA.nom);
-
-            console.log("=== ANALYSE DE L'INVERSION DES POSITIONS ===");
-            console.log(
-              `localParticipantA.id (${
-                localParticipantA.id
-              }) === dbParticipantB.id (${dbParticipantB.id}) ? ${
-                localParticipantA.id === dbParticipantB.id
-              }`
-            );
-            console.log(
-              `localParticipantB.id (${
-                localParticipantB.id
-              }) === dbParticipantA.id (${dbParticipantA.id}) ? ${
-                localParticipantB.id === dbParticipantA.id
-              }`
-            );
-            console.log(`Inversion détectée: ${positionsInverted}`);
-
-            // Ajouter une vérification supplémentaire basée sur la correspondance des noms
-            const nameMatchA =
-              `${localParticipantA.prenom} ${localParticipantA.nom}` ===
-              `${dbParticipantA.prenom} ${dbParticipantA.nom}`;
-            const nameMatchB =
-              `${localParticipantB.prenom} ${localParticipantB.nom}` ===
-              `${dbParticipantB.prenom} ${dbParticipantB.nom}`;
-
-            console.log(
-              `Correspondance des noms A: ${nameMatchA} (${localParticipantA.prenom} ${localParticipantA.nom} vs ${dbParticipantA.prenom} ${dbParticipantA.nom})`
-            );
-            console.log(
-              `Correspondance des noms B: ${nameMatchB} (${localParticipantB.prenom} ${localParticipantB.nom} vs ${dbParticipantB.prenom} ${dbParticipantB.nom})`
-            );
-
-            // Nouvelle approche: ne pas inverser automatiquement s'il y a correspondance des noms
-            const shouldInvert =
-              positionsInverted && !nameMatchA && !nameMatchB;
-
-            console.log(`Faut-il inverser? ${shouldInvert}`);
-
-            if (shouldInvert) {
-              console.log(
-                "ATTENTION: Les positions des participants sont inversées entre l'interface et la base de données"
-              );
-              console.log(
-                "Position A dans l'interface: " +
-                  localParticipantA.prenom +
-                  " " +
-                  localParticipantA.nom
-              );
-              console.log(
-                "Position B dans l'interface: " +
-                  localParticipantB.prenom +
-                  " " +
-                  localParticipantB.nom
-              );
-              console.log(
-                "Position A dans la base: " +
-                  dbParticipantA.prenom +
-                  " " +
-                  dbParticipantA.nom
-              );
-              console.log(
-                "Position B dans la base: " +
-                  dbParticipantB.prenom +
-                  " " +
-                  dbParticipantB.nom
-              );
-
-              console.log("Avant inversion - Résultats:");
-              console.log(JSON.stringify(resultToSave, null, 2));
-
-              // Inverser les scores des rounds
-              resultToSave.rounds = resultToSave.rounds.map((round) => ({
-                fighterA: round.fighterB,
-                fighterB: round.fighterA,
-                winner:
-                  round.winner === "A"
-                    ? "B"
-                    : round.winner === "B"
-                    ? "A"
-                    : null,
-              }));
-
-              // Inverser le vainqueur global
-              if (resultToSave.winner === "A") {
-                resultToSave.winner = "B";
-              } else if (resultToSave.winner === "B") {
-                resultToSave.winner = "A";
-              }
-
-              console.log("Après inversion - Résultats:");
-              console.log(JSON.stringify(resultToSave, null, 2));
-            } else if (positionsInverted) {
-              console.log(
-                "INFORMATION: Une inversion des positions a été détectée mais ignorée car les noms correspondent"
-              );
-            }
+            // Inverser le vainqueur global
+            resultToSave.winner =
+              resultToSave.winner === "A"
+                ? "B"
+                : resultToSave.winner === "B"
+                ? "A"
+                : null;
           }
         }
 
@@ -766,31 +876,59 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
         const correctMatchId = dbMatch.id;
 
         if (resultToSave) {
-          // Sauvegarder dans la base de données en utilisant l'ID correct
-          console.log("Tentative de sauvegarde avec les données:", {
-            matchId: correctMatchId,
-            matchResult: resultToSave,
-          });
           const saveResult = await saveMatchResult(
             correctMatchId,
             resultToSave
           );
-          console.log("Réponse de saveMatchResult:", saveResult);
 
           if (saveResult.success) {
-            // Recharger les combats terminés pour avoir la liste la plus à jour
+            // Recharger immédiatement les matchs terminés pour avoir des affichages cohérents
             await loadCompletedMatches();
-            console.log("Combats terminés rechargés avec succès");
 
-            // Marquer le match comme complété dans la liste locale
+            // Trouver et mettre à jour le prochain match de la même aire et de la même compétition
+            const nextMatchNumber = matchData.matchNumber + 1;
+            const nextMatch = currentMatches.find(
+              (m) =>
+                m.matchNumber === nextMatchNumber &&
+                m.areaNumber === matchData.areaNumber &&
+                m.status === "pending" &&
+                m.groupId.startsWith(competitionId) // Vérifie explicitement la compétition
+            );
+
+            if (nextMatch) {
+              try {
+                // Mettre à jour le statut du prochain match dans la base de données
+                await updateMatchResult(nextMatch.id, {
+                  ...nextMatch,
+                  status: "in_progress",
+                });
+
+                // Mettre à jour le statut dans l'état local
+                setCurrentMatches((prev) =>
+                  prev.map((m) =>
+                    m.id === nextMatch.id
+                      ? { ...m, status: "in_progress" }
+                      : m.id === matchId
+                      ? { ...m, status: "completed" }
+                      : m
+                  )
+                );
+              } catch (error) {
+                console.error(
+                  "Erreur lors de la mise à jour du statut du prochain match:",
+                  error
+                );
+              }
+            }
+
+            // Mettre à jour le statut dans l'état local
             setCurrentMatches((prev) =>
               prev.map((m) =>
                 m.id === matchId ? { ...m, status: "completed" } : m
               )
             );
 
-            // Mettre à jour l'état local des matchResults pour marquer ce match comme complété
-            // C'est cette partie qui assure la persistance des données
+            // Mettre à jour l'état local des matchResults
             setMatchResults((prev) => {
               const updatedResults = { ...prev };
               if (updatedResults[matchId]) {
@@ -800,7 +938,6 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                 };
               }
 
-              // Ajouter également une entrée avec l'ID correct de la base de données
               if (correctMatchId !== matchId) {
                 updatedResults[correctMatchId] = {
                   ...resultToSave,
@@ -815,99 +952,29 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
             setResults((prevResults) => ({
               ...prevResults,
               [matchId]: resultToSave,
-              [correctMatchId]: resultToSave, // Ajouter également avec l'ID correct
+              [correctMatchId]: resultToSave,
             }));
 
-            // Basculer vers l'onglet des combats terminés après un court délai
+            // Basculer vers l'onglet des combats terminés
             setTimeout(() => {
               setShowCompleted(true);
-
-              // Obtenir la liste la plus à jour des matchs terminés
-              getCompletedMatches(competitionId)
-                .then((newCompletedMatches) => {
-                  // Mettre à jour l'état local
-                  setCompletedMatches(newCompletedMatches);
-
-                  // Recalculer les retards avec les données les plus récentes
-                  const updatedDelayInfo =
-                    calculateAreasDelayInfo(newCompletedMatches);
-                  setAreasDelayInfo(updatedDelayInfo);
-
-                  // Utiliser directement les données du participant vainqueur renvoyées par l'API
-                  // au lieu de se baser sur winnerPosition
-                  if (saveResult.winnerParticipant) {
-                    const winnerName = `${saveResult.winnerParticipant.prenom} ${saveResult.winnerParticipant.nom}`;
-                    alert(
-                      "Match terminé avec succès! Vainqueur: " +
-                        winnerName +
-                        " - 3 points attribués"
-                    );
-                  } else {
-                    // Fallback au cas où winnerParticipant n'est pas disponible
-                    let winnerName = "Pas de vainqueur";
-                    if (resultToSave.winner === "A") {
-                      const participantA = dbMatch.matchParticipants.find(
-                        (p) => p.position === "A"
-                      )?.participant;
-                      if (participantA) {
-                        winnerName = `${participantA.prenom} ${participantA.nom}`;
-                      }
-                    } else if (resultToSave.winner === "B") {
-                      const participantB = dbMatch.matchParticipants.find(
-                        (p) => p.position === "B"
-                      )?.participant;
-                      if (participantB) {
-                        winnerName = `${participantB.prenom} ${participantB.nom}`;
-                      }
-                    }
-
-                    alert(
-                      "Match terminé avec succès! Vainqueur: " +
-                        winnerName +
-                        " - 3 points attribués"
-                    );
-                  }
-                })
-                .catch((err) => {
-                  console.error(
-                    "Erreur lors de la récupération des matchs terminés après sauvegarde:",
-                    err
-                  );
-
-                  // Fallback: utiliser calculateAreasDelayInfo avec les données actuelles
-                  const updatedDelayInfo = calculateAreasDelayInfo();
-                  setAreasDelayInfo(updatedDelayInfo);
-                });
+              if (saveResult.winnerParticipant) {
+                alert(
+                  "Match terminé avec succès! Vainqueur: " +
+                    `${saveResult.winnerParticipant.prenom} ${saveResult.winnerParticipant.nom}` +
+                    " - 3 points attribués"
+                );
+              }
             }, 500);
           }
-        } else {
-          throw new Error("Match ou résultats non trouvés");
         }
       } catch (error) {
-        // Vérifier si c'est une erreur 404 (match non trouvé)
-        if (
-          error.message &&
-          (error.message.includes("404") ||
-            error.message.includes("non trouvé"))
-        ) {
-          console.warn(
-            "Match non trouvé dans la base de données (404):",
-            matchId
-          );
-
-          // Message à l'utilisateur
-          alert(
-            `Erreur lors de la sauvegarde du match #${matchNumber}. La base de données et l'interface sont désynchronisées. Veuillez rafraîchir la page.`
-          );
-        } else {
-          // Autre type d'erreur
-          throw error;
-        }
+        console.error("Erreur lors de la sauvegarde du match:", error);
+        alert("Erreur lors de la sauvegarde du match. Veuillez réessayer.");
       }
     } catch (error) {
-      console.error("Erreur détaillée lors de la sauvegarde du match:", error);
-      console.error("Stack trace:", error.stack);
-      alert("Erreur lors de la sauvegarde du match: " + error.message);
+      console.error("Erreur lors de la finalisation du match:", error);
+      alert("Erreur lors de la finalisation du match. Veuillez réessayer.");
     } finally {
       setSavingMatch(null);
     }
@@ -915,10 +982,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
 
   // Fonction pour commencer l'édition d'un match
   const startEditMatch = (match) => {
-    console.log("Début d'édition du match:", match);
-    console.log("ID du vainqueur:", match.winner);
-
-    // Identifier les participants
+    // Identifier les participants avec leurs positions explicites A/B
     const participantA = match.matchParticipants?.find(
       (p) => p.position === "A"
     )?.participant;
@@ -926,13 +990,35 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
       (p) => p.position === "B"
     )?.participant;
 
-    if (participantA && participantB) {
-      console.log(
-        `Participant A (${participantA.id}): ${participantA.prenom} ${participantA.nom}`
-      );
-      console.log(
-        `Participant B (${participantB.id}): ${participantB.prenom} ${participantB.nom}`
-      );
+    // Si on n'a pas les matchParticipants, essayer de les récupérer depuis l'API
+    if (!match.matchParticipants && match.id) {
+      queuedFetch(`${API_URL}/match/${match.id}?include=matchParticipants`)
+        .then((response) => response.json())
+        .then((data) => {
+          if (data.matchParticipants) {
+            // Mettre à jour le match dans matches
+            setCurrentMatches((prev) =>
+              prev.map((m) =>
+                m.id === match.id
+                  ? { ...m, matchParticipants: data.matchParticipants }
+                  : m
+              )
+            );
+
+            // Relancer startEditMatch avec les données mises à jour
+            startEditMatch({
+              ...match,
+              matchParticipants: data.matchParticipants,
+            });
+          }
+        })
+        .catch((error) => {
+          console.error(
+            "Erreur lors de la récupération des participants:",
+            error
+          );
+        });
+      return; // Sortir de la fonction et attendre la récupération des données
     }
 
     // Déterminer la position du vainqueur (A ou B) en fonction de l'ID
@@ -942,72 +1028,71 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
         : match.winner === participantB?.id
         ? "B"
         : null;
-    console.log("Position du vainqueur déterminée:", winnerPosition);
 
-    // Initialiser les scores en s'assurant que la position du vainqueur correspond à celle dans l'interface
+    console.log(
+      "Édition du match:",
+      match.matchNumber,
+      "Vainqueur:",
+      winnerPosition
+    );
+
+    // Initialiser les scores en s'assurant que les positions A/B sont correctes
     setEditingMatch(match);
     setEditedScores({
       rounds: match.rounds.map((round) => {
-        // Vérifier si le vainqueur du round est correctement défini
-        const roundWinnerPosition =
-          round.winnerPosition ||
-          (round.winner === participantA?.id
-            ? "A"
-            : round.winner === participantB?.id
-            ? "B"
-            : null);
-
+        // Utiliser les scores tels qu'ils sont dans la base de données
+        // sans les inverser, car ils correspondent déjà aux positions A/B
         return {
           scoreA: round.scoreA,
           scoreB: round.scoreB,
-          winner: roundWinnerPosition, // Utiliser la position cohérente
+          winner:
+            round.winnerPosition ||
+            (round.winner === participantA?.id
+              ? "A"
+              : round.winner === participantB?.id
+              ? "B"
+              : null),
         };
       }),
-      winner: winnerPosition, // Utiliser la position cohérente
-    });
-
-    console.log("Scores initialisés pour l'édition:", {
-      rounds: match.rounds.map((r) => ({
-        scoreA: r.scoreA,
-        scoreB: r.scoreB,
-        winner:
-          r.winnerPosition ||
-          (r.winner === participantA?.id
-            ? "A"
-            : r.winner === participantB?.id
-            ? "B"
-            : null),
-      })),
       winner: winnerPosition,
     });
   };
 
   // Fonction pour mettre à jour un score pendant l'édition
   const handleEditScoreChange = (roundIndex, fighter, value) => {
+    // Vérifier que fighter est bien une position valide "A" ou "B"
+    if (fighter !== "A" && fighter !== "B") {
+      console.error(
+        `Position de combattant invalide lors de l'édition: ${fighter}`
+      );
+      return;
+    }
+
     const newScores = { ...editedScores };
     const round = newScores.rounds[roundIndex];
 
     if (fighter === "A") {
       round.scoreA = parseInt(value) || 0;
     } else {
+      // fighter === "B"
       round.scoreB = parseInt(value) || 0;
     }
 
     // Déterminer le vainqueur du round
     if (round.scoreA > round.scoreB) {
-      round.winner = "A";
+      round.winner = "A"; // Chaîne "A" pour le vainqueur
     } else if (round.scoreB > round.scoreA) {
-      round.winner = "B";
+      round.winner = "B"; // Chaîne "B" pour le vainqueur
     } else {
       round.winner = null;
     }
 
     // Déterminer le vainqueur du match
     const roundsWonByA = newScores.rounds.filter(
-      (r) => r.winner === "A"
+      (r) => r.winner === "A" // Comparer avec la chaîne "A"
     ).length;
     const roundsWonByB = newScores.rounds.filter(
-      (r) => r.winner === "B"
+      (r) => r.winner === "B" // Comparer avec la chaîne "B"
     ).length;
 
     if (roundsWonByA > roundsWonByB) {
@@ -1024,6 +1109,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   // Fonction pour sauvegarder les modifications
   const saveEditedMatch = async () => {
     try {
+      // Récupérer les participants A et B par leur position explicite
       const participantA = editingMatch.matchParticipants?.find(
         (p) => p.position === "A"
       )?.participant;
@@ -1036,7 +1122,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
         throw new Error("Participants du match incomplets");
       }
 
-      console.log("Édition du match:", editingMatch);
+      console.log("Édition du match:", editingMatch.matchNumber);
       console.log("Scores édités:", editedScores);
       console.log(
         "Participant A:",
@@ -1053,7 +1139,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
         participantB.id
       );
 
-      // Déterminer l'ID du participant vainqueur en fonction de la position (A ou B)
+      // Déterminer l'ID du vainqueur en fonction de la position A/B
       let winnerId = null;
       if (editedScores.winner === "A") {
         winnerId = participantA.id;
@@ -1071,6 +1157,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
 
       // Créer des rounds avec les bons IDs de participants et la position du vainqueur
       const updatedRounds = editedScores.rounds.map((round) => {
+        // Déterminer le vainqueur du round (ID et position)
         let roundWinnerId = null;
         let roundWinnerPosition = null;
 
@@ -1090,7 +1177,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
           scoreA: round.scoreA,
           scoreB: round.scoreB,
           winner: roundWinnerId, // ID du participant vainqueur
-          winnerPosition: round.winner, // Position du vainqueur (A ou B)
+          winnerPosition: roundWinnerPosition, // Position du vainqueur (A ou B)
         };
       });
 
@@ -1117,7 +1204,8 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
       await updateMatchResult(editingMatch.id, updatedMatch);
       console.log("Match mis à jour avec succès");
 
-      await loadCompletedMatches(); // Recharger la liste des matchs
+      // Recharger la liste des matchs immédiatement pour garantir l'affichage correct
+      await loadCompletedMatches();
 
       // Recalculer les retards après la modification d'un match
       const updatedDelayInfo = calculateAreasDelayInfo();
@@ -1195,43 +1283,74 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   // Formatage du nom du participant
   const getParticipantName = (match, position) => {
     try {
-      // Si position est un nombre (index), convertir en position A ou B
+      // S'assurer que position est une chaîne "A" ou "B"
       if (typeof position === "number") {
-        // Position 0 correspond à B (rouge) et position 1 correspond à A (bleu)
-        position = position === 0 ? "B" : "A";
+        position = position === 0 ? "A" : "B";
       }
 
-      // Vérifier si nous avons la structure matchParticipants (version BD)
-      if (match.matchParticipants) {
-        const participant = match.matchParticipants.find(
-          (p) => p.position === position
-        )?.participant;
-        if (!participant) return "Inconnu";
-        return (
-          `${participant.prenom || ""} ${participant.nom || ""}`.trim() ||
-          "Inconnu"
+      if (position !== "A" && position !== "B") {
+        console.warn(
+          `Position invalide: ${position}, utilisation de "A" par défaut`
         );
+        position = "A";
       }
 
-      // Sinon, utiliser l'ancienne structure participants (version mémoire)
-      // A = bleu (indice 1), B = rouge (indice 0)
-      const participantIndex = position === "A" ? 1 : 0;
-      const participant = match?.participants?.[participantIndex];
-      if (!participant) return "Inconnu";
+      // Chercher directement dans matchParticipants avec la position
+      if (match.matchParticipants && match.matchParticipants.length > 0) {
+        const participantInfo = match.matchParticipants.find(
+          (p) => p.position === position
+        );
 
-      if (participant.athleteInfo) {
-        const nom = participant.athleteInfo.nom || "";
-        const prenom = participant.athleteInfo.prenom || "";
-        return `${prenom} ${nom}`.trim() || "Inconnu";
-      } else if (participant.nom || participant.prenom) {
-        return `${participant.prenom || ""} ${participant.nom || ""}`.trim();
-      } else if (participant.name) {
-        return participant.name;
+        if (participantInfo?.participant) {
+          const participant = participantInfo.participant;
+          return (
+            `${participant.prenom || ""} ${participant.nom || ""}`.trim() ||
+            "Inconnu"
+          );
+        }
+      }
+
+      // Si matchParticipants n'est pas disponible, tenter de le récupérer via API
+      if (!match.matchParticipants && match.id) {
+        // Utiliser queuedFetch pour limiter les requêtes simultanées
+        queuedFetch(`${API_URL}/match/${match.id}?include=matchParticipants`)
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.matchParticipants) {
+              setCurrentMatches((prev) =>
+                prev.map((m) =>
+                  m.id === match.id
+                    ? { ...m, matchParticipants: data.matchParticipants }
+                    : m
+                )
+              );
+            }
+          })
+          .catch((error) => {
+            console.error(
+              "Erreur lors de la récupération des participants:",
+              error
+            );
+          });
+      }
+
+      // En dernier recours, fallback sur le tableau participants[] si disponible
+      if (match.participants && match.participants.length > 0) {
+        const index = position === "A" ? 0 : 1;
+        if (index < match.participants.length) {
+          const participant = match.participants[index];
+          if (participant) {
+            return (
+              `${participant.prenom || ""} ${participant.nom || ""}`.trim() ||
+              "Inconnu"
+            );
+          }
+        }
       }
 
       return "Inconnu";
     } catch (error) {
-      console.error("Erreur lors de l'obtention du nom du participant:", error);
+      console.error("Erreur lors de l'accès aux informations de nom:", error);
       return "Inconnu";
     }
   };
@@ -1264,41 +1383,42 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
 
   // Fonction pour récupérer et stocker les informations PSS d'un match
   const fetchPssInfoForMatch = async (matchNumber) => {
+    // Si nous avons déjà des infos ou une requête en cours pour ce match, sortir
+    if (
+      matchesWithPssInfo[matchNumber] ||
+      pendingPssRequests.has(matchNumber)
+    ) {
+      return null;
+    }
+
+    // Ajouter à la liste des requêtes en cours
+    setPendingPssRequests((prev) => {
+      const newSet = new Set(prev);
+      newSet.add(matchNumber);
+      return newSet;
+    });
+
     try {
-      // Vérifier si nous avons déjà ces infos ou si une requête est déjà en cours
-      if (
-        matchesWithPssInfo[matchNumber] ||
-        pendingPssRequests.has(matchNumber)
-      )
-        return;
-
-      // Ajouter à la liste des requêtes en cours
-      setPendingPssRequests((prev) => new Set(prev).add(matchNumber));
-
       // Récupérer les infos
       const pssInfo = await fetchPssInfoByMatchNumber(matchNumber);
 
       if (pssInfo) {
-        // Mettre à jour l'état avec les nouvelles infos
+        // Mettre à jour l'état avec les nouvelles infos de manière persistante
         setMatchesWithPssInfo((prev) => ({
           ...prev,
           [matchNumber]: pssInfo,
         }));
+        return pssInfo;
       }
-
-      // Retirer de la liste des requêtes en cours
-      setPendingPssRequests((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(matchNumber);
-        return newSet;
-      });
+      return null;
     } catch (error) {
       console.error(
         `Erreur lors de la récupération des infos PSS pour le match #${matchNumber}:`,
         error
       );
-
-      // Également retirer en cas d'erreur
+      return null;
+    } finally {
+      // Retirer de la liste des requêtes en cours
       setPendingPssRequests((prev) => {
         const newSet = new Set(prev);
         newSet.delete(matchNumber);
@@ -1351,13 +1471,6 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
 
   // Modifier le rendu des matchs terminés pour inclure l'édition
   const renderCompletedMatches = () => {
-    console.log(
-      "RENDU HISTORIQUE: Affichage de",
-      completedMatches.length,
-      "matchs terminés"
-    );
-    console.log("Le bouton de suppression devrait être visible");
-
     return (
       <div className="completed-matches">
         <h3>Combats terminés</h3>
@@ -1380,6 +1493,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
             </thead>
             <tbody>
               {completedMatches.map((match) => {
+                // Identifier les participants en utilisant leur position A/B explicite
                 const participantA = match.matchParticipants?.find(
                   (p) => p.position === "A"
                 )?.participant;
@@ -1398,18 +1512,6 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                   : isWinnerB
                   ? `${participantB.prenom} ${participantB.nom}`
                   : "Match nul";
-
-                // Log pour débogage afin de s'assurer que le vainqueur est correctement identifié
-                console.log(
-                  `Match #${match.matchNumber} - Vainqueur: ${winnerName}`
-                );
-                console.log(
-                  `  Participant A (${participantA.id}): ${participantA.prenom} ${participantA.nom}`
-                );
-                console.log(
-                  `  Participant B (${participantB.id}): ${participantB.prenom} ${participantB.nom}`
-                );
-                console.log(`  ID du vainqueur dans la DB: ${match.winner}`);
 
                 if (editingMatch?.id === match.id) {
                   return (
@@ -1464,7 +1566,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                   );
                 }
 
-                // En mode affichage normal, présenter les scores avec la même correspondance A/B
+                // Assurer que les scores sont affichés dans le bon ordre (A-B)
                 return (
                   <tr key={match.id}>
                     <td>{match.matchNumber}</td>
@@ -1772,10 +1874,6 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   // Fonction pour récupérer directement les informations PSS d'un match par son numéro
   const fetchPssInfoByMatchNumber = async (matchNumber) => {
     try {
-      console.log(
-        `Récupération des informations PSS pour le match #${matchNumber}`
-      );
-
       // Ajout d'un délai aléatoire pour éviter la synchronisation des requêtes
       await new Promise((resolve) => setTimeout(resolve, Math.random() * 100));
 
@@ -1783,13 +1881,8 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
       const matchData = await getMatchByNumber(competitionId, matchNumber);
 
       if (!matchData) {
-        console.log(`Match #${matchNumber} non trouvé`);
         return null;
       }
-
-      console.log(
-        `Match #${matchNumber} trouvé, ID: ${matchData.id}, groupId: ${matchData.groupId}`
-      );
 
       // Vérifier d'abord si cette information n'a pas déjà été mise en cache par une autre requête
       if (matchesWithPssInfo[matchNumber]) {
@@ -1810,10 +1903,6 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
           const pssInfo = findPssInfo(ageCategory, gender, weightCategory);
 
           if (pssInfo) {
-            console.log(
-              `Informations PSS trouvées via cache/findPssInfo pour le match #${matchNumber}:`,
-              pssInfo
-            );
             return pssInfo;
           }
 
@@ -1825,10 +1914,6 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
           );
 
           if (powerThreshold) {
-            console.log(
-              `Informations PSS trouvées via cache/findPowerThreshold pour le match #${matchNumber}:`,
-              powerThreshold
-            );
             return powerThreshold;
           }
         }
@@ -1836,16 +1921,14 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
 
       // Si nous n'avons pas pu récupérer les informations à partir du cache,
       // faire une requête pour obtenir les informations du groupe
-      const response = await fetch(`${API_URL}/group/${matchData.groupId}`);
+      const response = await queuedFetch(
+        `${API_URL}/group/${matchData.groupId}`
+      );
       if (!response.ok) {
-        console.log(
-          `Erreur lors de la récupération du groupe pour le match #${matchNumber}`
-        );
         return null;
       }
 
       const group = await response.json();
-      console.log(`Informations du groupe récupérées:`, group);
 
       // Maintenant utiliser les informations du groupe pour trouver les seuils PSS
       const ageCategory = group.ageCategoryName;
@@ -1856,10 +1939,6 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
       const pssInfo = findPssInfo(ageCategory, gender, weightCategory);
 
       if (pssInfo) {
-        console.log(
-          `Informations PSS trouvées via findPssInfo pour le match #${matchNumber}:`,
-          pssInfo
-        );
         return pssInfo;
       }
 
@@ -1870,16 +1949,9 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
         weightCategory
       );
       if (powerThreshold) {
-        console.log(
-          `Informations PSS trouvées via findPowerThreshold pour le match #${matchNumber}:`,
-          powerThreshold
-        );
         return powerThreshold;
       }
 
-      console.log(
-        `Aucune information PSS trouvée pour le match #${matchNumber}`
-      );
       return null;
     } catch (error) {
       console.error(
@@ -1892,54 +1964,53 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
 
   // Précharger les informations PSS pour tous les matchs
   useEffect(() => {
-    if (currentMatches && currentMatches.length > 0) {
-      console.log("Préchargement des informations PSS pour les matchs");
+    if (!currentMatches || currentMatches.length === 0) return;
 
-      // Fonction qui va traiter le chargement des informations PSS de manière séquentielle
-      const processQueue = async () => {
-        if (isThrottling) return;
+    // Fonction qui va traiter le chargement des informations PSS de manière séquentielle
+    const processQueue = async () => {
+      if (isThrottling || refreshing) return;
 
-        setIsThrottling(true);
+      setIsThrottling(true);
 
-        // Limiter à 3 requêtes en cours maximum
-        if (pendingPssRequests.size < 3) {
-          // Trouver les 5 premiers matchs qui n'ont pas encore d'informations PSS et qui ne sont pas déjà en train d'être chargés
-          const matchesToFetch = currentMatches
-            .filter(
-              (match) =>
-                match.matchNumber &&
-                !matchesWithPssInfo[match.matchNumber] &&
-                !pendingPssRequests.has(match.matchNumber)
-            )
-            .slice(0, 5);
+      // Accorder la priorité aux matchs visibles dans l'interface
+      const visibleMatches = currentMatches
+        .filter(
+          (match) =>
+            match.matchNumber &&
+            !matchesWithPssInfo[match.matchNumber] &&
+            !pendingPssRequests.has(match.matchNumber) &&
+            (match.status !== "completed" || showCompleted)
+        )
+        .slice(0, 10);
 
-          // Lancer les requêtes avec un délai entre chacune
-          if (matchesToFetch.length > 0) {
-            const match = matchesToFetch[0];
-            fetchPssInfoForMatch(match.matchNumber);
-
-            // Attendre 200ms avant de permettre la prochaine requête
-            setTimeout(() => {
-              setIsThrottling(false);
-            }, 200);
-          } else {
-            setIsThrottling(false);
-          }
-        } else {
-          // Si trop de requêtes en cours, attendons un peu plus longtemps
-          setTimeout(() => {
-            setIsThrottling(false);
-          }, 500);
+      if (visibleMatches.length > 0) {
+        const match = visibleMatches[0];
+        try {
+          await fetchPssInfoForMatch(match.matchNumber);
+        } catch (error) {
+          console.error(`Erreur dans fetchPssInfoForMatch: ${error.message}`);
         }
-      };
+      }
 
-      // Lancer le traitement et le répéter toutes les 500ms
-      const intervalId = setInterval(processQueue, 500);
+      // Attendre avant de permettre la prochaine requête
+      setTimeout(() => {
+        setIsThrottling(false);
+      }, 250);
+    };
 
-      // Nettoyer l'intervalle quand le composant est démonté
-      return () => clearInterval(intervalId);
-    }
-  }, [currentMatches, matchesWithPssInfo, pendingPssRequests, isThrottling]);
+    // Lancer le traitement et le répéter toutes les 500ms
+    const intervalId = setInterval(processQueue, 500);
+
+    // Nettoyer l'intervalle quand le composant est démonté
+    return () => clearInterval(intervalId);
+  }, [
+    currentMatches,
+    matchesWithPssInfo,
+    pendingPssRequests,
+    isThrottling,
+    refreshing,
+    showCompleted,
+  ]);
 
   // Fonction pour réinitialiser un match (supprimer les résultats et remettre en statut "pending")
   const resetMatch = async (match) => {
@@ -1987,58 +2058,54 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
     }
   };
 
+  // Ajouter ce composant modal pour la sélection du vainqueur en cas d'égalité
+  const renderWinnerSelectionModal = () => {
+    if (!showWinnerModal || !currentTieData) return null;
+
+    const { matchId, roundIndex, round, matchInfo } = currentTieData;
+
+    // Récupérer les noms des combattants
+    const participantA = getParticipantName(matchInfo, "A");
+    const participantB = getParticipantName(matchInfo, "B");
+
+    return (
+      <div className="winner-modal-overlay">
+        <div className="winner-modal">
+          <div className="winner-modal-header">
+            <h3>Égalité au Round {roundIndex + 1}</h3>
+            <p>
+              Score: {round.fighterA} - {round.fighterB}
+            </p>
+            <p>Vous devez désigner un vainqueur pour ce round.</p>
+          </div>
+          <div className="winner-modal-body">
+            <button
+              className="winner-btn winner-btn-blue"
+              onClick={() => handleTieWinnerSelection("A")}
+            >
+              {participantA} (Bleu)
+            </button>
+            <button
+              className="winner-btn winner-btn-red"
+              onClick={() => handleTieWinnerSelection("B")}
+            >
+              {participantB} (Rouge)
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="score-input-container">
       <h2>Étape 5: Saisie des scores</h2>
-
-      {/* Header fixe pour les informations de retard qui reste visible lors du défilement */}
-      {Object.keys(areasDelayInfo).length > 0 && (
-        <div className="fixed-header-delay-info">
-          <div className="header-content">
-            <div className="header-title">
-              <span className="header-icon">⏱️</span>
-              <span>Prévisions de fin par aire</span>
-            </div>
-            <div className="areas-delay-cards">
-              {Object.entries(areasDelayInfo).map(([areaNumber, info]) => (
-                <div
-                  key={areaNumber}
-                  className={`area-delay-card ${
-                    !info.hasResults
-                      ? "no-results"
-                      : info.delayInMinutes > 0
-                      ? "delayed"
-                      : "on-time"
-                  }`}
-                >
-                  <h4>Aire {areaNumber}</h4>
-                  <div className="card-content">
-                    <p className="estimated-end-time">
-                      {formatTime(info.estimatedEndTime)}
-                      {info.delayInMinutes !== 0 && (
-                        <span className="delay-indicator">
-                          {info.delayInMinutes > 0
-                            ? ` (+${info.delayInMinutes} min)`
-                            : ` (${info.delayInMinutes} min)`}
-                        </span>
-                      )}
-                    </p>
-                    <div className="last-match-indicator">
-                      {info.lastCompletedMatch
-                        ? `#${info.lastCompletedMatch}`
-                        : "—"}
-                    </div>
-                    <div className="tooltip-container">
-                      <button className="info-button">ℹ️</button>
-                      <div className="tooltip">{info.message}</div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+      {refreshing && (
+        <div className="refresh-indicator">Mise à jour des données...</div>
       )}
+
+      {/* Modal de sélection du vainqueur en cas d'égalité */}
+      {renderWinnerSelectionModal()}
 
       {isLoading ? (
         <div className="loading">
@@ -2196,6 +2263,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                                 matchResult.winner === "A" ? "winner" : ""
                               }`}
                             >
+                              {/* Position A (bleu) */}
                               {getParticipantName(match, "A")}
                             </div>
                             <div className="vs">VS</div>
@@ -2204,65 +2272,127 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                                 matchResult.winner === "B" ? "winner" : ""
                               }`}
                             >
+                              {/* Position B (rouge) */}
                               {getParticipantName(match, "B")}
                             </div>
                           </div>
 
                           <div className="rounds-scores">
-                            {matchResult.rounds.map((round, roundIndex) => (
-                              <div key={roundIndex} className="round">
-                                <div className="round-title">
-                                  Round {roundIndex + 1}
-                                </div>
-                                <div className="score-inputs">
-                                  <div className="fighter-score">
-                                    <span className="fighter-label">
-                                      {getParticipantName(match, "A")}
-                                    </span>
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      value={round.fighterA}
-                                      onChange={(e) =>
-                                        handleScoreChange(
-                                          match.id,
-                                          roundIndex,
-                                          "A",
-                                          e.target.value
-                                        )
-                                      }
-                                      disabled={matchResult.completed}
-                                      className={
-                                        round.winner === "A" ? "winner" : ""
-                                      }
-                                    />
+                            {matchResult.rounds.map((round, roundIndex) => {
+                              // Vérifier si les deux premiers rounds ont été gagnés par le même combattant
+                              const twoRoundsWonByA =
+                                matchResult.rounds[0].winner === "A" &&
+                                matchResult.rounds[1].winner === "A";
+                              const twoRoundsWonByB =
+                                matchResult.rounds[0].winner === "B" &&
+                                matchResult.rounds[1].winner === "B";
+
+                              // Déterminer si ce round est le 3ème et s'il doit être désactivé
+                              const isThirdRound = roundIndex === 2;
+                              const isDisabled =
+                                isThirdRound &&
+                                (twoRoundsWonByA || twoRoundsWonByB);
+
+                              // Vérifier si c'est un round à égalité sans vainqueur désigné
+                              const isTieWithoutWinner =
+                                round.fighterA === round.fighterB &&
+                                round.fighterA > 0 &&
+                                round.winner === null;
+
+                              return (
+                                <div
+                                  key={roundIndex}
+                                  className={`round ${
+                                    isDisabled ? "disabled" : ""
+                                  } ${
+                                    isTieWithoutWinner ? "tie-no-winner" : ""
+                                  }`}
+                                >
+                                  <div className="round-title">
+                                    Round {roundIndex + 1}
+                                    {isDisabled && (
+                                      <span className="disabled-note">
+                                        {" "}
+                                        (Non nécessaire)
+                                      </span>
+                                    )}
                                   </div>
-                                  <span className="separator">VS</span>
-                                  <div className="fighter-score">
-                                    <span className="fighter-label">
-                                      {getParticipantName(match, "B")}
-                                    </span>
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      value={round.fighterB}
-                                      onChange={(e) =>
-                                        handleScoreChange(
-                                          match.id,
-                                          roundIndex,
-                                          "B",
-                                          e.target.value
-                                        )
-                                      }
-                                      disabled={matchResult.completed}
-                                      className={
-                                        round.winner === "B" ? "winner" : ""
-                                      }
-                                    />
+                                  <div className="score-inputs">
+                                    {/* Toujours afficher le participant A à gauche */}
+                                    <div className="fighter-score">
+                                      <span className="fighter-label">
+                                        {getParticipantName(match, "A")}
+                                      </span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        value={round.fighterA}
+                                        onChange={(e) =>
+                                          handleScoreChange(
+                                            match.id,
+                                            roundIndex,
+                                            "A",
+                                            e.target.value
+                                          )
+                                        }
+                                        disabled={
+                                          matchResult.completed || isDisabled
+                                        }
+                                        className={
+                                          round.winner === "A" ? "winner" : ""
+                                        }
+                                      />
+                                    </div>
+                                    <span className="separator">VS</span>
+                                    {/* Toujours afficher le participant B à droite */}
+                                    <div className="fighter-score">
+                                      <span className="fighter-label">
+                                        {getParticipantName(match, "B")}
+                                      </span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        value={round.fighterB}
+                                        onChange={(e) =>
+                                          handleScoreChange(
+                                            match.id,
+                                            roundIndex,
+                                            "B",
+                                            e.target.value
+                                          )
+                                        }
+                                        disabled={
+                                          matchResult.completed || isDisabled
+                                        }
+                                        className={
+                                          round.winner === "B" ? "winner" : ""
+                                        }
+                                      />
+                                    </div>
                                   </div>
+                                  {isTieWithoutWinner && (
+                                    <div className="tie-actions">
+                                      <button
+                                        className="select-winner-btn select-winner-blue"
+                                        onClick={() =>
+                                          handleTieWinnerSelection("A")
+                                        }
+                                      >
+                                        {getParticipantName(match, "A")} (Bleu)
+                                      </button>
+                                      <button
+                                        className="select-winner-btn select-winner-red"
+                                        onClick={() =>
+                                          handleTieWinnerSelection("B")
+                                        }
+                                      >
+                                        {getParticipantName(match, "B")} (Rouge)
+                                      </button>
+                                    </div>
+                                  )}
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
 
                           <div className="match-actions">
@@ -2299,7 +2429,9 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                                   Vainqueur:{" "}
                                   {matchResult.winner === "A"
                                     ? getParticipantName(match, "A")
-                                    : getParticipantName(match, "B")}
+                                    : matchResult.winner === "B"
+                                    ? getParticipantName(match, "B")
+                                    : "Match nul"}
                                 </span>
                               </div>
                             )}

@@ -7,15 +7,13 @@ import { v4 as uuidv4 } from "uuid";
  */
 export const generateMatches = (groups) => {
   try {
-    console.log("Début de la génération des matchs");
-
     if (!groups || !Array.isArray(groups)) {
       console.error("Liste de groupes invalide:", groups);
       throw new Error("Liste de groupes invalide");
     }
 
     if (groups.length === 0) {
-      console.warn("Aucun groupe fourni pour générer des matchs");
+      console.error("Aucun groupe fourni pour générer des matchs");
       return [];
     }
 
@@ -54,10 +52,6 @@ export const generateMatches = (groups) => {
           return;
         }
 
-        console.log(
-          `Génération des matchs pour le groupe ${group.id} (${group.pools.length} poules)`
-        );
-
         // Pour chaque poule dans le groupe
         group.pools.forEach((pool, poolIndex) => {
           try {
@@ -75,9 +69,6 @@ export const generateMatches = (groups) => {
 
             // Si cette combinaison de participants a déjà été traitée, ne pas générer à nouveau
             if (processedCombinations.has(poolParticipantIds)) {
-              console.log(
-                `Poule avec participants ${poolParticipantIds} déjà traitée, évitement de la duplication`
-              );
               return;
             }
 
@@ -119,15 +110,12 @@ export const generateMatches = (groups) => {
     });
 
     if (errors.length > 0) {
-      console.warn(
+      console.error(
         `${errors.length} erreurs lors de la génération des matchs`,
         errors
       );
     }
 
-    console.log(
-      `Génération terminée: ${allMatches.length} matchs générés (sans doublons)`
-    );
     return allMatches;
   } catch (error) {
     console.error("Erreur lors de la génération des matchs:", error);
@@ -148,7 +136,7 @@ const generatePoolMatches = (pool, groupId, poolIndex, groupParticipants) => {
 
   // Vérifier si la poule a suffisamment de participants
   if (!Array.isArray(pool) || pool.length < 2) {
-    console.warn(
+    console.error(
       `Poule avec insuffisamment de participants: ${pool?.length || 0}`
     );
     return matches;
@@ -160,7 +148,7 @@ const generatePoolMatches = (pool, groupId, poolIndex, groupParticipants) => {
   );
 
   if (validPoolIds.length < 2) {
-    console.warn(
+    console.error(
       `Poule avec insuffisamment de participants valides: ${validPoolIds.length}`
     );
     return matches;
@@ -175,14 +163,14 @@ const generatePoolMatches = (pool, groupId, poolIndex, groupParticipants) => {
     if (participant) {
       verifiedParticipants.push(participantId);
     } else {
-      console.warn(
+      console.error(
         `Participant ${participantId} référencé dans la poule mais non trouvé dans les participants du groupe`
       );
     }
   }
 
   if (verifiedParticipants.length < 2) {
-    console.warn(
+    console.error(
       `Poule avec insuffisamment de participants vérifiés: ${verifiedParticipants.length}`
     );
     return matches;
@@ -205,7 +193,7 @@ const generatePoolMatches = (pool, groupId, poolIndex, groupParticipants) => {
     );
 
     if (!participantA || !participantB) {
-      console.warn(
+      console.error(
         `Participant(s) non trouvé(s) pour le match: ${participantAId} vs ${participantBId}`
       );
       return;
@@ -216,7 +204,10 @@ const generatePoolMatches = (pool, groupId, poolIndex, groupParticipants) => {
       id: uuidv4(),
       groupId,
       poolIndex,
-      participants: [participantA, participantB],
+      participants: [
+        { ...participantA, position: "A" },
+        { ...participantB, position: "B" },
+      ],
       status: "pending",
       rounds: Array(3)
         .fill()
@@ -228,12 +219,8 @@ const generatePoolMatches = (pool, groupId, poolIndex, groupParticipants) => {
   });
 
   if (matches.length === 0) {
-    console.warn(
+    console.error(
       `Aucun match n'a pu être généré pour la poule ${poolIndex} du groupe ${groupId}`
-    );
-  } else {
-    console.log(
-      `${matches.length} matches générés pour la poule ${poolIndex} du groupe ${groupId}`
     );
   }
 
