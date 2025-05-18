@@ -11,6 +11,7 @@ interface AllMatchesProps {
     areaNumber: string;
     participantName: string;
     ligue: string;
+    status: string;
   };
   formatTime: (dateString?: string) => string;
   getParticipantName: (match: Match, position: string) => string;
@@ -97,6 +98,11 @@ export default function AllMatches({
       });
     }
 
+    // Filtrer par statut
+    if (filters.status) {
+      result = result.filter((match) => match.status === filters.status);
+    }
+
     // Trier les matchs par numéro
     result.sort((a, b) => a.matchNumber - b.matchNumber);
 
@@ -177,15 +183,19 @@ export default function AllMatches({
 
       // Préparer les données pour le tableau
       const data = filteredMatches.map((match) => {
-        const ligue =
-          match.matchParticipants?.find((mp) => mp.participant?.ligue)
-            ?.participant?.ligue || "Inconnue";
+        const participantA = match.matchParticipants?.find(
+          (mp) => mp.position === "A"
+        );
+        const participantB = match.matchParticipants?.find(
+          (mp) => mp.position === "B"
+        );
         return [
           match.matchNumber,
           match.area?.areaNumber || match.areaNumber || "-",
           getParticipantName(match, "A"),
+          participantA?.participant?.ligue || "Inconnue",
           getParticipantName(match, "B"),
-          ligue,
+          participantB?.participant?.ligue || "Inconnue",
           getStatusText(match.status),
           match.status === "completed" && match.endTime
             ? `${formatTime(match.startTime)} → ${formatTime(match.endTime)}`
@@ -197,7 +207,16 @@ export default function AllMatches({
       autoTable(doc, {
         startY: competitionDate ? 52 : 45,
         head: [
-          ["N° Match", "Aire", "Bleu", "Rouge", "Ligue", "Statut", "Heure"],
+          [
+            "N° Match",
+            "Aire",
+            "Bleu",
+            "Ligue (Bleu)",
+            "Rouge",
+            "Ligue (Rouge)",
+            "Statut",
+            "Heure",
+          ],
         ],
         body: data,
         theme: "striped",
@@ -248,6 +267,10 @@ export default function AllMatches({
 
     if (filters.participantName) {
       filterTexts.push(`Participant: ${filters.participantName}`);
+    }
+
+    if (filters.status) {
+      filterTexts.push(`Statut: ${getStatusText(filters.status)}`);
     }
 
     if (filterTexts.length === 0) {
@@ -387,13 +410,19 @@ export default function AllMatches({
                   scope="col"
                   className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
                 >
+                  Ligue (Bleu)
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
+                >
                   Rouge
                 </th>
                 <th
                   scope="col"
                   className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
                 >
-                  Ligue
+                  Ligue (Rouge)
                 </th>
                 <th
                   scope="col"
@@ -411,11 +440,6 @@ export default function AllMatches({
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredMatches.map((match) => {
-                // Récupérer la ligue (prendre la première ligue disponible parmi les participants)
-                const ligue =
-                  match.matchParticipants?.find((mp) => mp.participant?.ligue)
-                    ?.participant?.ligue || "Inconnue";
-
                 return (
                   <tr key={match.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
@@ -427,11 +451,18 @@ export default function AllMatches({
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-700">
                       {getParticipantName(match, "A")}
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {match.matchParticipants?.find(
+                        (mp) => mp.position === "A"
+                      )?.participant?.ligue || "Inconnue"}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-rose-700">
                       {getParticipantName(match, "B")}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {ligue}
+                      {match.matchParticipants?.find(
+                        (mp) => mp.position === "B"
+                      )?.participant?.ligue || "Inconnue"}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span

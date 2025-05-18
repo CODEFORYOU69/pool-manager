@@ -22,7 +22,14 @@ app.post("/api/competition", async (req, res) => {
       "type:",
       typeof competitionData.poolSize
     );
+    console.log(
+      "numAreas reçu:",
+      competitionData.numAreas,
+      "type:",
+      typeof competitionData.numAreas
+    );
 
+    // Créer la compétition
     const result = await prisma.competition.create({
       data: {
         name: competitionData.name,
@@ -34,6 +41,25 @@ app.post("/api/competition", async (req, res) => {
         poolSize: competitionData.poolSize || 4, // Valeur par défaut 4 si non spécifiée
       },
     });
+
+    // Créer les aires de combat si numAreas est spécifié
+    if (competitionData.numAreas && competitionData.numAreas > 0) {
+      console.log(`Création de ${competitionData.numAreas} aires de combat`);
+
+      const areasToCreate = [];
+      for (let i = 1; i <= competitionData.numAreas; i++) {
+        areasToCreate.push({
+          areaNumber: i,
+          competitionId: result.id,
+        });
+      }
+
+      await prisma.area.createMany({
+        data: areasToCreate,
+      });
+
+      console.log(`${areasToCreate.length} aires de combat créées`);
+    }
 
     console.log("Compétition créée:", result);
     res.json(result);
@@ -61,10 +87,19 @@ app.put("/api/competition/:id", async (req, res) => {
       "type:",
       typeof competitionData.poolSize
     );
+    console.log(
+      "numAreas reçu:",
+      competitionData.numAreas,
+      "type:",
+      typeof competitionData.numAreas
+    );
 
     // Vérifier que la compétition existe
     const existingCompetition = await prisma.competition.findUnique({
       where: { id },
+      include: {
+        areas: true,
+      },
     });
 
     if (!existingCompetition) {
@@ -91,6 +126,37 @@ app.put("/api/competition/:id", async (req, res) => {
         poolSize: competitionData.poolSize || existingCompetition.poolSize,
       },
     });
+
+    // Mettre à jour les aires si numAreas est spécifié et différent du nombre actuel
+    if (
+      competitionData.numAreas &&
+      competitionData.numAreas > 0 &&
+      competitionData.numAreas !== existingCompetition.areas.length
+    ) {
+      console.log(
+        `Mise à jour du nombre d'aires : ${existingCompetition.areas.length} -> ${competitionData.numAreas}`
+      );
+
+      // Supprimer toutes les aires existantes
+      await prisma.area.deleteMany({
+        where: { competitionId: id },
+      });
+
+      // Créer le nouveau nombre d'aires
+      const areasToCreate = [];
+      for (let i = 1; i <= competitionData.numAreas; i++) {
+        areasToCreate.push({
+          areaNumber: i,
+          competitionId: id,
+        });
+      }
+
+      await prisma.area.createMany({
+        data: areasToCreate,
+      });
+
+      console.log(`${areasToCreate.length} nouvelles aires de combat créées`);
+    }
 
     console.log("Compétition mise à jour:", result);
     res.json(result);
@@ -629,6 +695,7 @@ app.post("/api/participant", async (req, res) => {
         age: participantData.age,
         poids: participantData.poids,
         ligue: participantData.ligue,
+        club: participantData.club,
         competitionId: participantData.competitionId,
       },
     });
@@ -890,6 +957,7 @@ app.get("/api/competition/:id", async (req, res) => {
       where: { id },
       include: {
         participants: true,
+        areas: true,
         groups: {
           include: {
             pools: {
@@ -905,6 +973,7 @@ app.get("/api/competition/:id", async (req, res) => {
           select: {
             groups: true,
             participants: true,
+            areas: true,
           },
         },
       },
@@ -914,7 +983,13 @@ app.get("/api/competition/:id", async (req, res) => {
       return res.status(404).json({ message: "Compétition non trouvée" });
     }
 
-    res.json(competition);
+    // Ajouter une propriété numAreas plus explicite pour faciliter l'utilisation côté client
+    const responseData = {
+      ...competition,
+      numAreas: competition.areas.length,
+    };
+
+    res.json(responseData);
   } catch (error) {
     console.error("Erreur lors de la récupération de la compétition:", error);
     res.status(500).json({

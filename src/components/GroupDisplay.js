@@ -550,7 +550,8 @@ const GroupDisplay = ({
                           <tr>
                             <th>Nom</th>
                             <th>Prénom</th>
-                            <th>Ligue</th>
+                            <th>Région</th>
+                            <th>Club</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -575,7 +576,7 @@ const GroupDisplay = ({
                               );
                               return (
                                 <tr key={partIndex}>
-                                  <td colSpan="3">
+                                  <td colSpan="4">
                                     Participant ID: {participantId} (non trouvé)
                                   </td>
                                 </tr>
@@ -587,6 +588,7 @@ const GroupDisplay = ({
                                 <td>{participant.nom}</td>
                                 <td>{participant.prenom}</td>
                                 <td>{participant.ligue}</td>
+                                <td>{participant.club || "-"}</td>
                               </tr>
                             );
                           })}
@@ -623,7 +625,8 @@ const GroupDisplay = ({
                     <th>Sexe</th>
                     <th>Âge</th>
                     <th>Poids</th>
-                    <th>Ligue</th>
+                    <th>Région</th>
+                    <th>Club</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -642,6 +645,7 @@ const GroupDisplay = ({
                         <td>{participant.age}</td>
                         <td>{participant.poids}</td>
                         <td>{participant.ligue}</td>
+                        <td>{participant.club || "-"}</td>
                       </tr>
                     ))}
                 </tbody>

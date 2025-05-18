@@ -548,13 +548,16 @@ const TournamentSetup = ({
               id="competitionDate"
               value={config.date.toISOString().split("T")[0]}
               onChange={(e) => {
-                const newDate = new Date(e.target.value);
-                // Conserver l'heure actuelle en copiant seulement la date
-                newDate.setHours(
-                  config.date.getHours(),
-                  config.date.getMinutes(),
-                  config.date.getSeconds()
-                );
+                // Créer la date en utilisant des parties individuelles pour éviter le problème de fuseau horaire
+                const [year, month, day] = e.target.value
+                  .split("-")
+                  .map(Number);
+                const newDate = new Date(config.date); // Copier la date existante
+                // Définir année, mois (0-11 en JS) et jour sans changer l'heure locale
+                newDate.setFullYear(year);
+                newDate.setMonth(month - 1); // Ajuster le mois (0-indexé en JavaScript)
+                newDate.setDate(day);
+
                 setConfig({
                   ...config,
                   date: newDate,

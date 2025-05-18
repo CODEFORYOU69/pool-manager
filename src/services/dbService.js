@@ -22,23 +22,9 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL
 
 export { API_URL }; // Exporter API_URL pour l'utiliser dans d'autres fichiers
 
-console.log(
-  "Mode d'exécution:",
-  process.env.NEXT_PUBLIC_API_URL
-    ? "Déploiement avec NEXT_PUBLIC_API_URL"
-    : isElectron()
-    ? "Electron (localhost)"
-    : "Navigateur (réseau)"
-);
-console.log("URL de l'API utilisée:", API_URL);
-
 // Nouvelle fonction pour récupérer un match par son numéro dans une compétition
 export const getMatchByNumber = async (competitionId, matchNumber) => {
   try {
-    console.log(
-      `Recherche du match numéro ${matchNumber} dans la compétition ${competitionId}`
-    );
-
     // Vérifier que les paramètres sont valides
     if (!competitionId) {
       throw new Error("ID de compétition non fourni");
@@ -67,7 +53,6 @@ export const getMatchByNumber = async (competitionId, matchNumber) => {
     }
 
     const match = await response.json();
-    console.log(`Match #${matchNumber} trouvé avec ID: ${match.id}`);
     return match;
   } catch (error) {
     console.error(
@@ -1074,6 +1059,7 @@ export const saveParticipants = async (competitionId, participants) => {
           poids:
             parseFloat(participant.poids?.toString().replace(",", ".")) || 0,
           ligue: participant.ligue?.trim() || "",
+          club: participant.club?.trim() || "",
           competitionId: competitionId,
         };
 
@@ -1172,12 +1158,57 @@ export const saveGeneratedMatches = async (competitionId, matchesByPool) => {
   console.log(
     `Sauvegarde des matchs pour ${matchesByPool.length} poules dans la compétition ${competitionId}`
   );
-  console.log(
-    "Structure des matchs par poule:",
-    JSON.stringify(matchesByPool[0], null, 2)
-  );
 
   try {
+    // Vérifier d'abord s'il existe déjà des matchs pour cette compétition
+    try {
+      const matchesResponse = await fetch(
+        `${API_URL}/competition/${competitionId}/matches`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (matchesResponse.ok) {
+        const existingMatches = await matchesResponse.json();
+
+        if (existingMatches && existingMatches.length > 0) {
+          console.log(
+            `${existingMatches.length} matchs existants trouvés. Éviter la duplication.`
+          );
+
+          // Pré-remplir le Set avec les combinaisons existantes
+          for (const match of existingMatches) {
+            if (
+              match.matchParticipants &&
+              match.matchParticipants.length >= 2
+            ) {
+              const participantIds = match.matchParticipants
+                .map((mp) => mp.participant.id)
+                .sort();
+              if (participantIds.length >= 2) {
+                const matchKey = participantIds.join("|");
+                savedCombinations.add(matchKey);
+              }
+            }
+          }
+
+          console.log(
+            `${savedCombinations.size} combinaisons uniques existantes détectées`
+          );
+        }
+      }
+    } catch (error) {
+      console.warn(
+        "Erreur lors de la vérification des matchs existants:",
+        error
+      );
+      // Continuer avec la sauvegarde même si la vérification échoue
+    }
+
     // Boucle sur chaque poule
     for (const poolItem of matchesByPool) {
       const { poolId, matches } = poolItem;
@@ -1211,7 +1242,6 @@ export const saveGeneratedMatches = async (competitionId, matchesByPool) => {
       }
 
       const pool = await poolResponse.json();
-      console.log(`Informations de la poule récupérées:`, pool);
 
       // Récupérer les informations du groupe
       const groupResponse = await fetch(`${API_URL}/group/${pool.groupId}`, {
@@ -1227,7 +1257,6 @@ export const saveGeneratedMatches = async (competitionId, matchesByPool) => {
       }
 
       const group = await groupResponse.json();
-      console.log(`Informations du groupe récupérées:`, group);
 
       // Sauvegarder chaque match de la poule
       for (const match of matches) {
@@ -1260,15 +1289,12 @@ export const saveGeneratedMatches = async (competitionId, matchesByPool) => {
           if (match.number) {
             // Si le numéro est déjà défini dans le match
             matchNumber = match.number;
-            console.log(`Numéro du match trouvé directement: ${matchNumber}`);
           } else if (match.id) {
             // Essayer de trouver le numéro dans les informations associées au match
-            console.log(`Recherche du numéro pour le match ID: ${match.id}`);
           } else {
             // Générer un numéro basé sur l'index dans la poule
             const index = matches.indexOf(match);
             matchNumber = index + 1 + pool.poolIndex * 100; // Créer un numéro unique basé sur l'index de poule
-            console.log(`Numéro généré pour le match: ${matchNumber}`);
           }
 
           // Préparer les données du match
@@ -1281,11 +1307,6 @@ export const saveGeneratedMatches = async (competitionId, matchesByPool) => {
             startTime: match.startTime ? new Date(match.startTime) : new Date(),
             status: "pending",
           };
-
-          console.log(
-            `Sauvegarde du match #${matchNumber} pour la poule ${poolId}:`,
-            matchData
-          );
 
           // Créer le match
           const matchResponse = await fetch(`${API_URL}/match`, {
@@ -1304,16 +1325,13 @@ export const saveGeneratedMatches = async (competitionId, matchesByPool) => {
           }
 
           const savedMatch = await matchResponse.json();
-          console.log(
-            `Match #${matchNumber} créé avec succès: ${savedMatch.id}`
-          );
           savedMatches.push(savedMatch);
 
           // Associer les participants au match avec une gestion améliorée des erreurs
           const participantPromises = [];
           for (let i = 0; i < 2; i++) {
             const participant = match.participants[i];
-            const position = i === 0 ? "A" : "B";
+            const position = i === 0 ? "A" : "B"; // Index 0 correspond à A, Index 1 correspond à B
 
             if (!participant || !participant.id) {
               console.warn(
@@ -1337,10 +1355,6 @@ export const saveGeneratedMatches = async (competitionId, matchesByPool) => {
               continue;
             }
 
-            console.log(
-              `Ajout du participant ${participant.id} en position ${position} au match ${savedMatch.id}`
-            );
-
             // Créer une promesse pour l'ajout du participant au match
             participantPromises.push(
               (async () => {
@@ -1361,7 +1375,6 @@ export const saveGeneratedMatches = async (competitionId, matchesByPool) => {
                   );
 
                   const responseText = await matchParticipantResponse.text();
-                  console.log(`Réponse brute: ${responseText}`);
 
                   if (!matchParticipantResponse.ok) {
                     console.warn(
@@ -1369,10 +1382,6 @@ export const saveGeneratedMatches = async (competitionId, matchesByPool) => {
                     );
                     errors.push(
                       `Erreur lors de l'ajout du participant ${participant.id} au match ${savedMatch.id}: ${responseText}`
-                    );
-                  } else {
-                    console.log(
-                      `Participant ${participant.id} ajouté au match ${savedMatch.id} en position ${position}`
                     );
                   }
                 } catch (error) {
@@ -1390,30 +1399,6 @@ export const saveGeneratedMatches = async (competitionId, matchesByPool) => {
 
           // Attendre que toutes les associations de participants soient terminées
           await Promise.all(participantPromises);
-
-          // Vérifier que les participants ont bien été associés au match
-          const matchWithParticipants = await fetch(
-            `${API_URL}/match/${savedMatch.id}`,
-            {
-              method: "GET",
-            }
-          );
-
-          if (matchWithParticipants.ok) {
-            const matchData = await matchWithParticipants.json();
-            if (
-              matchData.matchParticipants &&
-              matchData.matchParticipants.length > 0
-            ) {
-              console.log(
-                `Match ${savedMatch.id} a ${matchData.matchParticipants.length} participants associés`
-              );
-            } else {
-              console.warn(
-                `Match ${savedMatch.id} n'a pas de participants associés`
-              );
-            }
-          }
         } catch (error) {
           console.error(`Erreur lors du traitement d'un match:`, error);
           errors.push(`Erreur lors du traitement d'un match: ${error.message}`);
@@ -1775,7 +1760,11 @@ export const fetchFormattedMatches = async (competitionId) => {
         poolIndex: match.poolIndex,
         number: match.matchNumber,
         status: match.status,
-        participants: match.matchParticipants.map((mp) => mp.participant),
+        participants: match.matchParticipants.map((mp) => ({
+          ...mp.participant,
+          position: mp.position, // Ajoutez la position ici
+        })),
+        matchParticipants: match.matchParticipants, // Conserver aussi la structure originale
         areaNumber: match.area?.areaNumber || 1,
         startTime: match.startTime,
       };
@@ -1861,15 +1850,51 @@ export const checkExistingResults = async (competitionId) => {
  */
 export const loadResults = async (competitionId) => {
   try {
-    const response = await fetch(`${API_URL}/results/${competitionId}`, {
-      method: "GET",
-    });
+    // Utiliser l'endpoint des matchs avec détails au lieu de l'endpoint results qui n'existe pas
+    const response = await fetch(
+      `${API_URL}/competition/${competitionId}/matchesWithDetails`,
+      {
+        method: "GET",
+      }
+    );
 
     if (!response.ok) {
       throw new Error(`Erreur HTTP: ${response.status}`);
     }
 
-    return await response.json();
+    const matches = await response.json();
+
+    // Convertir les données des matchs en format de résultats attendu
+    const results = {};
+
+    matches.forEach((match) => {
+      if (match.status === "completed" && match.rounds) {
+        // Convertir les données au format attendu par le front-end
+        results[match.id] = {
+          completed: true,
+          winner:
+            match.winnerPosition ||
+            (match.winner && match.matchParticipants
+              ? match.winner ===
+                match.matchParticipants.find((p) => p.position === "A")
+                  ?.participantId
+                ? "A"
+                : match.winner ===
+                  match.matchParticipants.find((p) => p.position === "B")
+                    ?.participantId
+                ? "B"
+                : null
+              : null),
+          rounds: match.rounds.map((round) => ({
+            fighterA: round.scoreA,
+            fighterB: round.scoreB,
+            winner: round.winnerPosition || null,
+          })),
+        };
+      }
+    });
+
+    return { data: results };
   } catch (error) {
     console.error("Erreur lors du chargement des résultats:", error);
     throw error;

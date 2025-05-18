@@ -60,6 +60,7 @@ model Participant {
   age               Int
   poids             Float
   ligue             String
+  club              String
   competitionId     String
   matchParticipants MatchParticipant[]
   competition       Competition        @relation(fields: [competitionId], references: [id], onDelete: Cascade)

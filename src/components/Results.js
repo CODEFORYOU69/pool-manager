@@ -31,7 +31,7 @@ const Results = ({
     try {
       // Créer le contenu du CSV
       let csvContent =
-        "Catégorie,Poule,Place,Nom,Prénom,Club,Points,Victoires,Défaites,Rounds+,Rounds-,Points+,Points-,Différence\n";
+        "Catégorie,Poule,Place,Nom,Prénom,Région,Club,Points,Victoires,Défaites,Rounds+,Rounds-,Points+,Points-,Différence\n";
 
       // Ajouter les données de chaque poule
       poolResults.forEach((pool) => {
@@ -43,6 +43,7 @@ const Results = ({
             participant.nom.replace(/,/g, " "),
             participant.prenom.replace(/,/g, " "),
             participant.ligue.replace(/,/g, " "),
+            (participant.club || "-").replace(/,/g, " "),
             participant.points,
             participant.wins,
             participant.matches - participant.wins,
@@ -275,6 +276,42 @@ const Results = ({
   ) => {
     try {
       console.log("Calcul des résultats...");
+
+      // Vérification des structures des données
+      console.log("Détails des données reçues:");
+      console.log(
+        "Participants:",
+        participants?.length,
+        participants ? typeof participants[0] : "N/A"
+      );
+      console.log("Groups:", groups?.length, groups ? typeof groups[0] : "N/A");
+      if (groups && groups.length > 0) {
+        const firstGroup = groups[0];
+        console.log("Premier groupe:", {
+          id: firstGroup.id,
+          pools: firstGroup.pools ? firstGroup.pools.length : "N/A",
+          poolsType: firstGroup.pools ? typeof firstGroup.pools : "N/A",
+          isArray: firstGroup.pools ? Array.isArray(firstGroup.pools) : false,
+        });
+
+        if (firstGroup.pools && firstGroup.pools.length > 0) {
+          const firstPool = firstGroup.pools[0];
+          console.log("Première poule:", {
+            id: firstPool.id,
+            poolIndex: firstPool.poolIndex,
+            poolParticipants: firstPool.poolParticipants
+              ? firstPool.poolParticipants.length
+              : "N/A",
+          });
+        }
+      }
+      console.log(
+        "matchResults type:",
+        typeof matchResults,
+        "keys:",
+        Object.keys(matchResults || {}).length
+      );
+
       const results = calculateResults(
         participants,
         groups,
@@ -422,9 +459,10 @@ const Results = ({
                   <thead>
                     <tr>
                       <th>Place</th>
-                      <th>Nom</th>
+                      <th>Athlète</th>
+                      <th>Région</th>
                       <th>Club</th>
-                      <th>Pts</th>
+                      <th>Points</th>
                       <th>V</th>
                       <th>D</th>
                       <th>R+</th>
@@ -442,6 +480,7 @@ const Results = ({
                           {participant.prenom} {participant.nom}
                         </td>
                         <td>{participant.ligue}</td>
+                        <td>{participant.club || "-"}</td>
                         <td className="points">{participant.points}</td>
                         <td>{participant.wins}</td>
                         <td>{participant.matches - participant.wins}</td>

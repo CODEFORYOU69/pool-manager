@@ -4,6 +4,7 @@ import AllMatches from "@/components/AllMatches";
 import LiveMatches from "@/components/LiveMatches";
 import MatchFilters from "@/components/MatchFilters";
 import MatchHistory from "@/components/MatchHistory";
+import Results from "@/components/Results";
 import TournamentHeader from "@/components/TournamentHeader";
 import { Competition, Match } from "@/types";
 import { useEffect, useState } from "react";
@@ -26,9 +27,9 @@ export default function Home() {
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [competitionId, setCompetitionId] = useState<string | null>(null);
   const [competitions, setCompetitions] = useState<Competition[]>([]);
-  const [activeTab, setActiveTab] = useState<"live" | "history" | "all">(
-    "live"
-  );
+  const [activeTab, setActiveTab] = useState<
+    "live" | "history" | "all" | "results"
+  >("live");
   // État pour stocker la date de la compétition actuelle
   const [competitionDate, setCompetitionDate] = useState<Date | null>(null);
 
@@ -54,6 +55,7 @@ export default function Home() {
     areaNumber: "",
     participantName: "",
     ligue: "",
+    status: "",
   });
 
   // Charger la liste des compétitions
@@ -132,6 +134,10 @@ export default function Home() {
         }
 
         // Récupérer les matchs pour la compétition sélectionnée
+        console.log(
+          "Chargement des matchs pour la compétition:",
+          competitionId
+        );
         const response = await fetch(
           `${API_URL}/competition/${competitionId}/matchesWithDetails`
         );
@@ -141,6 +147,18 @@ export default function Home() {
         }
 
         const matches = (await response.json()) as Match[];
+        console.log("Réponse de l'API:", matches);
+
+        // Log détaillé pour le match #101
+        const match101 = matches.find((m: Match) => m.matchNumber === 101);
+        if (match101) {
+          console.log("Match #101:", {
+            id: match101.id,
+            matchNumber: match101.matchNumber,
+            status: match101.status,
+            matchParticipants: match101.matchParticipants,
+          });
+        }
 
         // Débogage plus détaillé : examiner les 10 premiers matchs en détail
         console.log("Détails des 10 premiers matchs:");
@@ -691,16 +709,28 @@ export default function Home() {
             >
               Tous les matchs
             </button>
+            <button
+              onClick={() => setActiveTab("results")}
+              className={`py-4 px-1 font-medium text-sm border-b-2 ${
+                activeTab === "results"
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Résultats des poules
+            </button>
           </div>
         </div>
       </div>
 
-      <MatchFilters
-        filters={filters}
-        onFilterChange={handleFilterChange}
-        areas={Object.keys(allUpcomingMatchesByArea).map(Number)}
-        ligues={availableLigues}
-      />
+      {activeTab !== "results" && (
+        <MatchFilters
+          filters={filters}
+          onFilterChange={handleFilterChange}
+          areas={Object.keys(allUpcomingMatchesByArea).map(Number)}
+          ligues={availableLigues}
+        />
+      )}
 
       <main className="flex-grow pt-2 pb-8">
         {loading ? (
@@ -797,6 +827,10 @@ export default function Home() {
                 }
                 competitionDate={competitionDate}
               />
+            )}
+
+            {activeTab === "results" && competitionId && (
+              <Results competitionId={competitionId} />
             )}
           </div>
         )}

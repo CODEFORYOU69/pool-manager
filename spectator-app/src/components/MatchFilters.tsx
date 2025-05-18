@@ -1,19 +1,21 @@
 "use client";
 
-type MatchFiltersProps = {
+interface MatchFiltersProps {
   filters: {
     areaNumber: string;
     participantName: string;
     ligue: string;
+    status: string;
   };
   onFilterChange: (filters: {
     areaNumber?: string;
     participantName?: string;
     ligue?: string;
+    status?: string;
   }) => void;
   areas: number[];
   ligues: string[];
-};
+}
 
 export default function MatchFilters({
   filters,
@@ -22,20 +24,21 @@ export default function MatchFilters({
   ligues,
 }: MatchFiltersProps) {
   return (
-    <div className="bg-white py-4 border-b border-gray-200">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div className="bg-white shadow-sm border-b border-gray-200">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
           {/* Filtre par aire */}
           <div>
             <label
-              htmlFor="areaFilter"
-              className="block text-sm font-bold text-gray-800 mb-1"
+              htmlFor="area"
+              className="block text-sm font-semibold text-gray-900 mb-1"
             >
               Aire
             </label>
             <select
-              id="areaFilter"
-              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900 font-medium"
+              id="area"
+              name="area"
+              className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md bg-white shadow-sm text-gray-900"
               value={filters.areaNumber}
               onChange={(e) => onFilterChange({ areaNumber: e.target.value })}
             >
@@ -48,19 +51,20 @@ export default function MatchFilters({
             </select>
           </div>
 
-          {/* Filtre par nom de participant */}
+          {/* Filtre par nom */}
           <div>
             <label
-              htmlFor="nameFilter"
-              className="block text-sm font-bold text-gray-800 mb-1"
+              htmlFor="name"
+              className="block text-sm font-semibold text-gray-900 mb-1"
             >
               Nom du participant
             </label>
             <input
               type="text"
-              id="nameFilter"
-              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900 font-medium"
-              placeholder="Nom ou prénom..."
+              name="name"
+              id="name"
+              className="mt-1 block w-full px-3 py-2 text-base border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md bg-white shadow-sm text-gray-900 placeholder-gray-500"
+              placeholder="Rechercher un participant..."
               value={filters.participantName}
               onChange={(e) =>
                 onFilterChange({ participantName: e.target.value })
@@ -71,14 +75,15 @@ export default function MatchFilters({
           {/* Filtre par ligue */}
           <div>
             <label
-              htmlFor="ligueFilter"
-              className="block text-sm font-bold text-gray-800 mb-1"
+              htmlFor="ligue"
+              className="block text-sm font-semibold text-gray-900 mb-1"
             >
               Ligue
             </label>
             <select
-              id="ligueFilter"
-              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900 font-medium"
+              id="ligue"
+              name="ligue"
+              className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md bg-white shadow-sm text-gray-900"
               value={filters.ligue}
               onChange={(e) => onFilterChange({ ligue: e.target.value })}
             >
@@ -90,37 +95,60 @@ export default function MatchFilters({
               ))}
             </select>
           </div>
-        </div>
 
-        {/* Bouton pour réinitialiser les filtres */}
-        {(filters.areaNumber || filters.participantName || filters.ligue) && (
-          <div className="mt-4 text-center">
+          {/* Filtre par statut */}
+          <div>
+            <label
+              htmlFor="status"
+              className="block text-sm font-semibold text-gray-900 mb-1"
+            >
+              Statut
+            </label>
+            <select
+              id="status"
+              name="status"
+              className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md bg-white shadow-sm text-gray-900"
+              value={filters.status}
+              onChange={(e) => onFilterChange({ status: e.target.value })}
+            >
+              <option value="">Tous les statuts</option>
+              <option value="pending">En attente</option>
+              <option value="in_progress">En cours</option>
+              <option value="completed">Terminé</option>
+            </select>
+          </div>
+
+          {/* Bouton de réinitialisation */}
+          <div className="flex items-end">
             <button
               onClick={() =>
                 onFilterChange({
                   areaNumber: "",
                   participantName: "",
                   ligue: "",
+                  status: "",
                 })
               }
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-bold rounded-md text-red-800 bg-red-200 hover:bg-red-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+              className="w-full inline-flex justify-center items-center px-4 py-2 border-2 border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
-                className="h-4 w-4 mr-1"
-                viewBox="0 0 20 20"
-                fill="currentColor"
+                className="h-4 w-4 mr-2"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
               >
                 <path
-                  fillRule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                  clipRule="evenodd"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
                 />
               </svg>
-              Réinitialiser les filtres
+              Réinitialiser
             </button>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
