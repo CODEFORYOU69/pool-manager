@@ -1059,6 +1059,7 @@ export const saveParticipants = async (competitionId, participants) => {
           poids:
             parseFloat(participant.poids?.toString().replace(",", ".")) || 0,
           ligue: participant.ligue?.trim() || "",
+          club: participant.club?.trim() || "",
           competitionId: competitionId,
         };
 
@@ -1759,7 +1760,11 @@ export const fetchFormattedMatches = async (competitionId) => {
         poolIndex: match.poolIndex,
         number: match.matchNumber,
         status: match.status,
-        participants: match.matchParticipants.map((mp) => mp.participant),
+        participants: match.matchParticipants.map((mp) => ({
+          ...mp.participant,
+          position: mp.position, // Ajoutez la position ici
+        })),
+        matchParticipants: match.matchParticipants, // Conserver aussi la structure originale
         areaNumber: match.area?.areaNumber || 1,
         startTime: match.startTime,
       };

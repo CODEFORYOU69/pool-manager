@@ -933,3 +933,116 @@
   font-weight: normal;
   font-style: italic;
 }
+
+/* Styles pour la section d'informations de retard */
+.delay-info-section {
+  margin: 20px 0;
+  padding: 15px;
+  background-color: #f9f9f9;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.delay-info-section h3 {
+  font-size: 1.2rem;
+  margin-bottom: 15px;
+  color: #333;
+  text-align: center;
+}
+
+.delay-info-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+  justify-content: center;
+}
+
+.delay-card {
+  flex: 0 0 calc(33.333% - 15px);
+  min-width: 250px;
+  padding: 15px;
+  border-radius: 6px;
+  background-color: white;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s;
+}
+
+.delay-card:hover {
+  transform: translateY(-3px);
+}
+
+.delay-card h4 {
+  font-size: 1.1rem;
+  margin-bottom: 10px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid #eee;
+  color: #2c3e50;
+}
+
+.delay-card.delayed {
+  border-left: 4px solid #e74c3c;
+}
+
+.delay-card.early {
+  border-left: 4px solid #2ecc71;
+}
+
+.delay-card.on-time {
+  border-left: 4px solid #3498db;
+}
+
+.delay-details {
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.delay-label {
+  font-weight: 500;
+  color: #555;
+}
+
+.delay-value {
+  font-weight: 600;
+}
+
+.delay-value.red {
+  color: #e74c3c;
+}
+
+.delay-value.green {
+  color: #2ecc71;
+}
+
+.delay-value.estimate {
+  color: #3498db;
+  font-size: 1.1rem;
+}
+
+.delay-note {
+  margin-top: 10px;
+  font-size: 0.85rem;
+  color: #7f8c8d;
+  font-style: italic;
+}
+
+.no-data-message {
+  padding: 10px;
+  color: #7f8c8d;
+  font-style: italic;
+  text-align: center;
+}
+
+/* Style responsive */
+@media (max-width: 768px) {
+  .delay-card {
+    flex: 0 0 calc(50% - 15px);
+  }
+}
+
+@media (max-width: 500px) {
+  .delay-card {
+    flex: 0 0 100%;
+  }
+}

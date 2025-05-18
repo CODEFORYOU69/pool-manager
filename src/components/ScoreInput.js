@@ -130,9 +130,15 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
             );
 
             // Créer un tableau participants dans le bon ordre
-            match.participants = [];
-            if (participantA) match.participants[0] = participantA.participant;
-            if (participantB) match.participants[1] = participantB.participant;
+            match.participants = new Array(2).fill(null); // Initialiser avec 2 éléments null
+            if (participantA?.participant) {
+              match.participants[0] = participantA.participant;
+            }
+
+            if (participantB?.participant) {
+              match.participants[1] = participantB.participant;
+            }
+            match.positionsSynchronized = true;
           }
           return match;
         });
@@ -180,15 +186,15 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   };
 
   // Rafraîchissement automatique toutes les 60 secondes
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      setRefreshing(true);
-      loadMatchesAndResults();
-    }, 60000); // 60 secondes = 1 minute
+  // useEffect(() => {
+  //   const intervalId = setInterval(() => {
+  //     setRefreshing(true);
+  //     loadMatchesAndResults();
+  //   }, 60000); // 60 secondes = 1 minute
 
-    // Nettoyage de l'intervalle quand le composant est démonté
-    return () => clearInterval(intervalId);
-  }, [competitionId]);
+  //   // Nettoyage de l'intervalle quand le composant est démonté
+  //   return () => clearInterval(intervalId);
+  // }, [competitionId]);
 
   // Chargement initial des données
   useEffect(() => {
@@ -303,20 +309,43 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
       // Pour chaque match terminé, vérifier s'il est dans l'état local
       // Si non, ou s'il n'est pas marqué comme terminé, le mettre à jour
       const matchId = match.id;
+      // Identifier clairement les positions A et B depuis les matchParticipants
+      const participantA = match.matchParticipants.find(
+        (mp) => mp.position === "A"
+      );
+      const participantB = match.matchParticipants.find(
+        (mp) => mp.position === "B"
+      );
+
+      if (!participantA || !participantB) {
+        console.error(
+          "Données de participants incomplètes pour le match:",
+          match
+        );
+        return;
+      }
+
       const matchNumber = match.matchNumber;
 
       // Transformer les données du match de l'API au format local attendu
       const matchResultData = {
         completed: true,
         winner:
-          match.winner ===
-          match.matchParticipants.find((p) => p.position === "A")?.participantId
+          match.winner === participantA.participantId
             ? "A"
-            : "B",
+            : match.winner === participantB.participantId
+            ? "B"
+            : null,
         rounds: match.rounds.map((round) => ({
           fighterA: round.scoreA,
           fighterB: round.scoreB,
-          winner: round.winner,
+          winner:
+            round.winnerPosition ||
+            (round.winner === participantA.participantId
+              ? "A"
+              : round.winner === participantB.participantId
+              ? "B"
+              : null),
         })),
       };
 
@@ -327,7 +356,11 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
       setCurrentMatches((prev) =>
         prev.map((m) =>
           m.id === matchId || m.matchNumber === matchNumber
-            ? { ...m, status: "completed" }
+            ? {
+                ...m,
+                status: "completed",
+                matchParticipants: match.matchParticipants,
+              }
             : m
         )
       );
@@ -807,15 +840,43 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
 
       // Récupérer les résultats du match
       const matchResult = matchResults[matchId];
+      console.log("Résultats à envoyer:", JSON.stringify(matchResult, null, 2));
 
       // Récupérer le match depuis la liste des matchs actuels
       const matchData = currentMatches.find((m) => m.id === matchId);
       if (!matchData) {
         throw new Error("Match non trouvé dans les données locales");
       }
+      if (
+        !matchData.matchParticipants ||
+        matchData.matchParticipants.length < 2
+      ) {
+        console.log(
+          "Récupération des données complètes du match depuis la base de données"
+        );
 
+        const matchNumber = matchData.matchNumber || matchData.number;
+        const dbMatch = await getMatchByNumber(competitionId, matchNumber);
+
+        matchData.matchParticipants = dbMatch.matchParticipants;
+
+        if (dbMatch.matchParticipants) {
+          const participantA = dbMatch.matchParticipants.find(
+            (p) => p.position === "A"
+          );
+          const participantB = dbMatch.matchParticipants.find(
+            (p) => p.position === "B"
+          );
+
+          if (participantA?.participant && participantB?.participant) {
+            matchData.participants = [
+              participantA.participant,
+              participantB.participant,
+            ];
+          }
+        }
+      }
       const matchNumber = matchData.matchNumber || matchData.number;
-
       try {
         // Utiliser la nouvelle fonction getMatchByNumber
         const dbMatch = await getMatchByNumber(competitionId, matchNumber);
@@ -849,27 +910,27 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
               dbParticipantA &&
               localParticipantB.id === dbParticipantA.id);
 
-          if (positionsInverted) {
-            console.log(
-              "Correction des positions inversées pour le match:",
-              matchNumber
-            );
-            // Inverser les scores des rounds
-            resultToSave.rounds = resultToSave.rounds.map((round) => ({
-              fighterA: round.fighterB,
-              fighterB: round.fighterA,
-              winner:
-                round.winner === "A" ? "B" : round.winner === "B" ? "A" : null,
-            }));
+          // if (positionsInverted) {
+          //   console.log(
+          //     "Correction des positions inversées pour le match:",
+          //     matchNumber
+          //   );
+          //   // Inverser les scores des rounds
+          //   resultToSave.rounds = resultToSave.rounds.map((round) => ({
+          //     fighterA: round.fighterA,
+          //     fighterB: round.fighterB,
+          //     winner:
+          //       round.winner === "A" ? "B" : round.winner === "B" ? "A" : null,
+          //   }));
 
-            // Inverser le vainqueur global
-            resultToSave.winner =
-              resultToSave.winner === "A"
-                ? "B"
-                : resultToSave.winner === "B"
-                ? "A"
-                : null;
-          }
+          //   // Inverser le vainqueur global
+          //   resultToSave.winner =
+          //     resultToSave.winner === "A"
+          //       ? "A"
+          //       : resultToSave.winner === "B"
+          //       ? "B"
+          //       : null;
+          // }
         }
 
         // Utiliser l'ID correct de la base de données
@@ -1280,22 +1341,18 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
     nextStep();
   };
 
-  // Formatage du nom du participant
   const getParticipantName = (match, position) => {
     try {
-      // S'assurer que position est une chaîne "A" ou "B"
+      // S'assurer que position est "A" ou "B"
       if (typeof position === "number") {
         position = position === 0 ? "A" : "B";
       }
 
       if (position !== "A" && position !== "B") {
-        console.warn(
-          `Position invalide: ${position}, utilisation de "A" par défaut`
-        );
         position = "A";
       }
 
-      // Chercher directement dans matchParticipants avec la position
+      // ÉTAPE 1: Essayer d'abord avec matchParticipants (source de vérité)
       if (match.matchParticipants && match.matchParticipants.length > 0) {
         const participantInfo = match.matchParticipants.find(
           (p) => p.position === position
@@ -1310,9 +1367,26 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
         }
       }
 
-      // Si matchParticipants n'est pas disponible, tenter de le récupérer via API
-      if (!match.matchParticipants && match.id) {
-        // Utiliser queuedFetch pour limiter les requêtes simultanées
+      // ÉTAPE 2: Si pas disponible, fallback sur participants[] (pour éviter "Inconnu")
+      if (match.participants && match.participants.length > 0) {
+        const index = position === "A" ? 0 : 1;
+        if (index < match.participants.length && match.participants[index]) {
+          const participant = match.participants[index];
+          return (
+            `${participant.prenom || ""} ${participant.nom || ""}`.trim() ||
+            "Inconnu"
+          );
+        }
+      }
+
+      // ÉTAPE 3: En parallèle, déclencher une requête pour récupérer matchParticipants (pour les futurs rendus)
+      if (
+        !match.matchParticipants &&
+        !match.positionsSynchronized &&
+        match.id
+      ) {
+        match.positionsSynchronized = true;
+
         queuedFetch(`${API_URL}/match/${match.id}?include=matchParticipants`)
           .then((response) => response.json())
           .then((data) => {
@@ -1320,37 +1394,30 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
               setCurrentMatches((prev) =>
                 prev.map((m) =>
                   m.id === match.id
-                    ? { ...m, matchParticipants: data.matchParticipants }
+                    ? {
+                        ...m,
+                        matchParticipants: data.matchParticipants,
+                        // Synchroniser également participants[]
+                        participants: [
+                          data.matchParticipants.find((p) => p.position === "A")
+                            ?.participant || null,
+                          data.matchParticipants.find((p) => p.position === "B")
+                            ?.participant || null,
+                        ],
+                      }
                     : m
                 )
               );
             }
           })
           .catch((error) => {
-            console.error(
-              "Erreur lors de la récupération des participants:",
-              error
-            );
+            console.error("Erreur lors de la récupération:", error);
           });
-      }
-
-      // En dernier recours, fallback sur le tableau participants[] si disponible
-      if (match.participants && match.participants.length > 0) {
-        const index = position === "A" ? 0 : 1;
-        if (index < match.participants.length) {
-          const participant = match.participants[index];
-          if (participant) {
-            return (
-              `${participant.prenom || ""} ${participant.nom || ""}`.trim() ||
-              "Inconnu"
-            );
-          }
-        }
       }
 
       return "Inconnu";
     } catch (error) {
-      console.error("Erreur lors de l'accès aux informations de nom:", error);
+      console.error("Erreur lors de l'accès aux informations:", error);
       return "Inconnu";
     }
   };
@@ -2104,6 +2171,62 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
         <div className="refresh-indicator">Mise à jour des données...</div>
       )}
 
+      {/* Header fixe avec informations de retard */}
+      <div className="fixed-header-delay-info">
+        <div className="header-content">
+          <div className="header-title">
+            <span>⏱️ Estimations de fin par aire</span>
+          </div>
+          <div className="areas-delay-cards">
+            {Object.keys(areasDelayInfo).length === 0 ? (
+              <div className="no-data-message">
+                Aucune donnée de retard disponible
+              </div>
+            ) : (
+              Object.keys(areasDelayInfo).map((areaNumber) => {
+                const areaInfo = areasDelayInfo[areaNumber];
+                const isDelayed = areaInfo.delayInMinutes > 0;
+                const isEarly = areaInfo.delayInMinutes < 0;
+
+                return (
+                  <div
+                    key={areaNumber}
+                    className={`area-delay-card ${
+                      isDelayed ? "delayed" : isEarly ? "early" : "on-time"
+                    } ${!areaInfo.hasResults ? "no-results" : ""}`}
+                  >
+                    <h4>Aire {areaNumber}</h4>
+                    <div className="card-content">
+                      <div className="time-info">
+                        <div className="estimated-end-time">
+                          {formatTime(areaInfo.estimatedEndTime)}
+                        </div>
+                        <div className="delay-indicator">
+                          {isDelayed
+                            ? `+${areaInfo.delayInMinutes} min`
+                            : isEarly
+                            ? `-${Math.abs(areaInfo.delayInMinutes)} min`
+                            : "À l'heure"}
+                        </div>
+                      </div>
+
+                      <div className="tooltip-container">
+                        {areaInfo.lastCompletedMatch && (
+                          <div className="last-match-indicator">
+                            #{areaInfo.lastCompletedMatch}
+                          </div>
+                        )}
+                        <div className="tooltip">{areaInfo.message}</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Modal de sélection du vainqueur en cas d'égalité */}
       {renderWinnerSelectionModal()}
 
@@ -2133,6 +2256,8 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                   <p>{pendingCount} combats</p>
                 </div>
               </div>
+
+              {/* Supprimer la section de delay-info-section car elle est maintenant dans le header fixe */}
 
               <div className="action-buttons">
                 <button

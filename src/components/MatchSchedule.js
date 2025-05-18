@@ -59,7 +59,7 @@ const MatchSchedule = ({
       // Vérifier si des matchs ont déjà été fournis en props
       if (matches && matches.length > 0 && schedule && schedule.length > 0) {
         console.log(
-          "Utilisation des matchs fournis par les props:",
+          "Utilisation des matchs et du planning fournis:",
           matches.length
         );
         setGeneratedMatches(matches);
@@ -76,6 +76,9 @@ const MatchSchedule = ({
       }
       // Sinon, essayer de charger les matchs existants
       else {
+        console.log(
+          "Chargement des matchs existants ou génération de nouveaux matchs"
+        );
         loadExistingMatches();
       }
     }
@@ -146,7 +149,19 @@ const MatchSchedule = ({
       return total;
     }, 0);
 
-    const numAreas = tournamentConfig?.numAreas || 1;
+    // Vérifier que le nombre d'aires est correct (ne pas utiliser 1 par défaut si tournamentConfig existe)
+    const numAreas =
+      tournamentConfig && tournamentConfig.numAreas
+        ? tournamentConfig.numAreas
+        : 1;
+
+    console.log(
+      "Nombre d'aires de combat dans calculateStats:",
+      numAreas,
+      "tournamentConfig:",
+      tournamentConfig
+    );
+
     const estimatedDuration = totalDuration / numAreas;
 
     // Calculer l'heure de fin estimée
@@ -528,9 +543,19 @@ const MatchSchedule = ({
         const now = new Date();
         const endTime = new Date(now.getTime() + stats.totalDuration * 60000);
 
+        // S'assurer que le nombre d'aires est correctement défini
+        const numAreas =
+          tournamentConfig && tournamentConfig.numAreas
+            ? tournamentConfig.numAreas
+            : 1;
+        console.log(
+          "Nombre d'aires de combat dans handleSaveMatchesSuccess:",
+          numAreas
+        );
+
         setScheduleStats({
           totalMatches: matchesWithSchedule.length,
-          totalAreas: tournamentConfig.numAreas,
+          totalAreas: numAreas,
           estimatedDuration: stats.totalDuration,
           estimatedEndTime: endTime,
         });
@@ -579,46 +604,42 @@ const MatchSchedule = ({
   // Obtenir le nom du participant
   const getParticipantName = (matchInfo, position) => {
     try {
-      // Si position est un nombre (index), convertir en position A ou B
+      // Si position est un nombre, convertir en position A ou B
       if (typeof position === "number") {
-        // Index 0 correspond à A (bleu), 1 correspond à B (rouge)
         position = position === 0 ? "A" : "B";
       }
 
-      // Vérifier si nous avons la structure matchParticipants (version BD)
+      // Vérifier d'abord dans matchParticipants (structure DB)
       if (matchInfo.matchParticipants) {
         const participant = matchInfo.matchParticipants.find(
           (p) => p.position === position
         )?.participant;
-        if (!participant) return "-";
-        return (
-          `${participant.prenom || ""} ${participant.nom || ""}`.trim() || "-"
+        if (participant) {
+          return (
+            `${participant.prenom || ""} ${participant.nom || ""}`.trim() || "-"
+          );
+        }
+      }
+
+      // Chercher ensuite dans la version avec position intégrée
+      if (matchInfo.participants) {
+        const participant = matchInfo.participants.find(
+          (p) => p.position === position
         );
-      }
+        if (participant) {
+          return (
+            `${participant.prenom || ""} ${participant.nom || ""}`.trim() || "-"
+          );
+        }
 
-      // Sinon, utiliser l'ancienne structure participants (version mémoire)
-      // Index 0 = A (bleu), Index 1 = B (rouge)
-      const participantIndex = position === "A" ? 0 : 1;
-      const participant = matchInfo?.participants?.[participantIndex];
-      if (!participant) {
-        return "-";
-      }
-
-      // Si l'information est dans athleteInfo
-      if (participant.athleteInfo) {
-        const nom = participant.athleteInfo.nom || "";
-        const prenom = participant.athleteInfo.prenom || "";
-        return `${prenom} ${nom}`.trim() || "-";
-      }
-      // Si l'information est directement dans le participant
-      else if (participant.nom || participant.prenom) {
-        const nom = participant.nom || "";
-        const prenom = participant.prenom || "";
-        return `${prenom} ${nom}`.trim() || "-";
-      }
-      // Fallback sur un champ name générique
-      else if (participant.name) {
-        return participant.name;
+        // Fallback à l'ancienne méthode par index
+        const participantIndex = position === "A" ? 0 : 1;
+        if (participantIndex < matchInfo.participants.length) {
+          const participant = matchInfo.participants[participantIndex];
+          return (
+            `${participant.prenom || ""} ${participant.nom || ""}`.trim() || "-"
+          );
+        }
       }
 
       return "-";
@@ -847,7 +868,7 @@ const MatchSchedule = ({
       let pdfData = [];
 
       // Si l'affichage est par aire
-      if (viewMode === "byArea" || true) {
+      if (viewMode === "byArea") {
         // Par défaut, génération par aire car c'est le format le plus utile pour les arbitres
         for (
           let areaNumber = 1;
@@ -1022,6 +1043,28 @@ const MatchSchedule = ({
     try {
       setExportLoading((prev) => ({ ...prev, csv: true }));
 
+      console.log("Début de l'exportation CSV");
+      console.log("Nombre de matchs générés:", generatedMatches.length);
+      console.log("Nombre d'éléments de planning:", generatedSchedule.length);
+      console.log("Nombre d'aires de combat:", tournamentConfig.numAreas);
+
+      // Vérifier que nous avons des données à exporter
+      if (!generatedSchedule || generatedSchedule.length === 0) {
+        alert(
+          "Aucun planning disponible. Veuillez d'abord générer le planning des matchs."
+        );
+        setExportLoading((prev) => ({ ...prev, csv: false }));
+        return;
+      }
+
+      if (!generatedMatches || generatedMatches.length === 0) {
+        alert(
+          "Aucun match disponible. Veuillez d'abord générer le planning des matchs."
+        );
+        setExportLoading((prev) => ({ ...prev, csv: false }));
+        return;
+      }
+
       // Préparation des en-têtes CSV
       const headers = [
         "N° Combat",
@@ -1039,7 +1082,7 @@ const MatchSchedule = ({
       let csvContent = headers.join(",") + "\n";
 
       // Si la vue est par aire
-      if (viewMode === "byArea" || true) {
+      if (viewMode === "byArea") {
         // Par défaut, génération par aire car c'est le format le plus utile
         for (
           let areaNumber = 1;
@@ -1623,9 +1666,19 @@ const MatchSchedule = ({
         const now = new Date();
         const endTime = new Date(now.getTime() + stats.totalDuration * 60000);
 
+        // S'assurer que le nombre d'aires est correctement défini
+        const numAreas =
+          tournamentConfig && tournamentConfig.numAreas
+            ? tournamentConfig.numAreas
+            : 1;
+        console.log(
+          "Nombre d'aires de combat dans handleSaveNewMatches:",
+          numAreas
+        );
+
         setScheduleStats({
           totalMatches: updatedMatches.length,
-          totalAreas: tournamentConfig.numAreas,
+          totalAreas: numAreas,
           estimatedDuration: stats.totalDuration,
           estimatedEndTime: endTime,
         });

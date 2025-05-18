@@ -100,8 +100,26 @@ function App() {
       }
 
       // 4. Extraire la configuration du tournoi depuis les données de la compétition
+      console.log("Données de la compétition chargées:", competitionDetails);
+      console.log(
+        "Nombre d'aires dans areas:",
+        competitionDetails.areas?.length || "non défini"
+      );
+      console.log(
+        "Nombre d'aires dans numAreas:",
+        competitionDetails.numAreas || "non défini"
+      );
+      console.log(
+        "Nombre d'aires dans numberOfAreas:",
+        competitionDetails.numberOfAreas || "non défini"
+      );
+
       setTournamentConfig({
-        numAreas: competitionDetails.areas?.length || 1,
+        numAreas:
+          competitionDetails.numAreas ||
+          competitionDetails.numberOfAreas ||
+          competitionDetails.areas?.length ||
+          1,
         roundDuration: competitionDetails.roundDuration || 90,
         breakDuration: competitionDetails.breakDuration || 300,
         breakFrequency: competitionDetails.breakFrequency || 10,

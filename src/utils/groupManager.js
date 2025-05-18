@@ -499,13 +499,13 @@ const categorizeParticipants = (participants, config) => {
 };
 
 /**
- * Crée un groupe avec des poules de taille fixe selon la configuration
- * @param {string} gender - Genre ('male' ou 'female')
+ * Crée un groupe avec des poules de taille fixe
+ * @param {string} gender - Genre (male/female)
  * @param {Object} ageCategory - Catégorie d'âge
  * @param {Object} weightCategory - Catégorie de poids
- * @param {Array} participants - Participants du groupe
- * @param {number} targetPoolSize - Taille cible des poules selon configuration
- * @returns {Object} - Groupe créé
+ * @param {Array} participants - Liste des participants
+ * @param {number} targetPoolSize - Taille cible des poules
+ * @returns {Object} - Groupe créé avec ses poules
  */
 const createGroupWithFixedPoolSize = (
   gender,
@@ -515,46 +515,40 @@ const createGroupWithFixedPoolSize = (
   targetPoolSize
 ) => {
   try {
-    // Validation des paramètres
-    if (!Array.isArray(participants)) {
-      participants = [];
-    }
-
-    // Valider et utiliser la taille de poule configurée
-    let poolSize = targetPoolSize;
-    if (typeof targetPoolSize !== "number" || targetPoolSize <= 0) {
-      poolSize = 4;
-    }
-
-    // S'assurer que ageCategory a les propriétés min et max
-    let validAgeCategory = ageCategory || { name: "Default" };
-    if (!validAgeCategory.min || typeof validAgeCategory.min !== "number") {
-      validAgeCategory = { ...validAgeCategory, min: 0 };
-    }
-    if (!validAgeCategory.max || typeof validAgeCategory.max !== "number") {
-      validAgeCategory = { ...validAgeCategory, max: 99 };
-    }
-
-    // S'assurer que weightCategory a la propriété max
-    let validWeightCategory = weightCategory || { name: "Default" };
-    if (
-      !validWeightCategory.max ||
-      typeof validWeightCategory.max !== "number"
-    ) {
-      validWeightCategory = { ...validWeightCategory, max: 999 };
-    }
-
+    // Création de l'objet groupe
     const group = {
       id: uuidv4(),
-      gender: gender || "unknown",
-      ageCategory: validAgeCategory,
-      weightCategory: validWeightCategory,
+      gender,
+      ageCategory: {
+        ...ageCategory,
+      },
+      weightCategory: {
+        ...weightCategory,
+      },
       participants,
       pools: [],
     };
 
+    // Valider les paramètres
+    const validAgeCategory = {
+      name: "Default",
+      min: 0,
+      max: 99,
+      ...ageCategory,
+    };
+    const validWeightCategory = {
+      name: "Default",
+      max: 999,
+      ...weightCategory,
+    };
+
+    // S'assurer que group.ageCategory et group.weightCategory sont définis
+    group.ageCategory = validAgeCategory;
+    group.weightCategory = validWeightCategory;
+    group.pools = [];
+
     // Vérifier s'il y a des participants
-    if (participants.length === 0) {
+    if (!participants || participants.length === 0) {
       return group;
     }
 
@@ -574,194 +568,23 @@ const createGroupWithFixedPoolSize = (
       return true;
     });
 
-    if (validParticipants.length < participants.length) {
+    // Si pas assez de participants pour une poule valide (minimum 3)
+    if (validParticipants.length < 3) {
+      return group;
     }
 
-    // CORRECTION: Copier uniquement les participants valides
-    const participantsCopy = [...validParticipants];
+    // Utiliser la nouvelle fonction createBalancedPool qui renvoie un tableau de poules
+    const poolsArray = createBalancedPool(validParticipants, targetPoolSize);
 
-    // Vérifier que tous les participants ont une ligue
-    for (let i = 0; i < participantsCopy.length; i++) {
-      if (!participantsCopy[i].ligue) {
-        participantsCopy[i].ligue = "Inconnue";
-      }
-    }
-
-    // Trier les participants par ligue pour faciliter la répartition
-    participantsCopy.sort((a, b) => {
-      if (!a.ligue && !b.ligue) return 0;
-      if (!a.ligue) return 1;
-      if (!b.ligue) return -1;
-      return a.ligue.localeCompare(b.ligue);
-    });
-
-    // MODIFICATION IMPORTANTE: Diviser les participants en poules de taille fixe
-    // Calculer combien de poules complètes peuvent être formées
-    const numFullPools = Math.floor(participantsCopy.length / poolSize);
-    const remainingParticipants = participantsCopy.length % poolSize;
-
-    let numPools;
-    let participantsPerPool;
-
-    if (remainingParticipants === 0) {
-      // Cas idéal: tous les participants peuvent être répartis équitablement
-      numPools = numFullPools;
-      participantsPerPool = poolSize;
-    } else {
-      // Cas avec reste: déterminer la meilleure stratégie de répartition
-      if (remainingParticipants >= 3) {
-        // Si le reste est suffisant pour former une poule valide (≥ 3)
-        numPools = numFullPools + 1;
-        participantsPerPool = poolSize; // Les poules régulières gardent leur taille
-      } else {
-        // Si le reste est trop petit (1 ou 2 participants)
-        // IMPORTANT: Toujours garantir un minimum de 3 participants par poule
-
-        // Cas spécial: si on a suffisamment de participants pour redistribuer
-        if (numFullPools > 0) {
-          // Répartir les participants restants dans les poules existantes pour les équilibrer
-          numPools = numFullPools;
-        } else if (participantsCopy.length >= 3) {
-          // On a moins de 'poolSize' participants, mais au moins 3
-          // Créer une seule poule avec tous les participants
-          numPools = 1;
-          participantsPerPool = participantsCopy.length;
-        } else {
-          // Cas d'erreur: moins de 3 participants au total
-          // Ne devrait pas arriver car on vérifie auparavant qu'il y a au moins 3 participants
-          numPools = 0;
-          participantsPerPool = 0;
-        }
-      }
-    }
-
-    // Créer les poules selon la stratégie déterminée
-    if (remainingParticipants >= 3 && remainingParticipants < poolSize) {
-      // Cas spécial: poules régulières + une poule plus petite mais viable
-      for (let poolIndex = 0; poolIndex < numFullPools; poolIndex++) {
-        const startIndex = poolIndex * poolSize;
-        const poolParticipants = participantsCopy.slice(
-          startIndex,
-          startIndex + poolSize
-        );
-
-        try {
-          const pool = createBalancedPool(poolParticipants, poolSize);
-          if (pool && pool.length > 0) {
-            group.pools.push(pool);
-          }
-        } catch (error) {}
-      }
-
-      // Créer la dernière poule avec les participants restants
-      const remainingParticipantsList = participantsCopy.slice(
-        numFullPools * poolSize
-      );
-      try {
-        const pool = createBalancedPool(
-          remainingParticipantsList,
-          remainingParticipants
-        );
-        if (pool && pool.length > 0) {
-          group.pools.push(pool);
-        }
-      } catch (error) {}
-    } else if (remainingParticipants === 0) {
-      // Cas simple: poules de taille égale
-      for (let poolIndex = 0; poolIndex < numPools; poolIndex++) {
-        const startIndex = poolIndex * participantsPerPool;
-        const endIndex = Math.min(
-          startIndex + participantsPerPool,
-          participantsCopy.length
-        );
-        const poolParticipants = participantsCopy.slice(startIndex, endIndex);
-
-        try {
-          const pool = createBalancedPool(
-            poolParticipants,
-            poolParticipants.length
-          );
-          if (pool && pool.length > 0) {
-            group.pools.push(pool);
-          }
-        } catch (error) {}
-      }
-    } else {
-      // Cas avec redistribution: poules de tailles légèrement différentes
-      // Mais toujours avec au moins 3 participants par poule
-
-      if (numPools === 1) {
-        // Cas d'une seule poule avec tous les participants
-        try {
-          const pool = createBalancedPool(
-            participantsCopy,
-            participantsCopy.length
-          );
-          if (pool && pool.length > 0) {
-            group.pools.push(pool);
-          }
-        } catch (error) {}
-      } else {
-        // Calculer la meilleure distribution pour des poules de taille similaire
-        // Mais avec au moins 3 participants chacune
-        const baseSize = Math.floor(participantsCopy.length / numPools);
-
-        // Si baseSize < 3, on doit réduire le nombre de poules
-        if (baseSize < 3) {
-          // Recalculer le nombre de poules pour garantir au moins 3 participants par poule
-          const maxPools = Math.floor(participantsCopy.length / 3);
-          numPools = maxPools;
-        }
-
-        const numPoolsWithExtra = participantsCopy.length % numPools;
-
-        let startIndex = 0;
-        for (let poolIndex = 0; poolIndex < numPools; poolIndex++) {
-          // Déterminer la taille de cette poule (certaines auront un participant de plus)
-          const thisPoolSize =
-            baseSize + (poolIndex < numPoolsWithExtra ? 1 : 0);
-
-          // Vérification de sécurité
-          if (thisPoolSize < 3) {
-            continue;
-          }
-
-          const poolParticipants = participantsCopy.slice(
-            startIndex,
-            startIndex + thisPoolSize
-          );
-          startIndex += thisPoolSize;
-
-          try {
-            const pool = createBalancedPool(poolParticipants, thisPoolSize);
-            if (pool && pool.length > 0) {
-              group.pools.push(pool);
-            }
-          } catch (error) {}
-        }
-
-        // S'il reste des participants non assignés
-        if (startIndex < participantsCopy.length) {
-          const remainingUnassigned = participantsCopy.length - startIndex;
-
-          // Les répartir dans les poules existantes
-          if (group.pools.length > 0) {
-            const remainingParticipantsList =
-              participantsCopy.slice(startIndex);
-            remainingParticipantsList.forEach((participant, index) => {
-              const poolIndex = index % group.pools.length;
-              // Ajouter à la poule correspondante
-              if (participant && participant.id) {
-                group.pools[poolIndex].push(participant.id);
-              }
-            });
-          }
-        }
-      }
+    // CORRECTION: Maintenant poolsArray est toujours un tableau de tableaux
+    // On peut l'assigner directement aux pools du groupe
+    if (Array.isArray(poolsArray) && poolsArray.length > 0) {
+      group.pools = poolsArray;
     }
 
     return group;
   } catch (error) {
+    console.error("Erreur dans createGroupWithFixedPoolSize:", error);
     return {
       id: uuidv4(),
       gender: gender || "unknown",
@@ -774,130 +597,173 @@ const createGroupWithFixedPoolSize = (
 };
 
 /**
- * Crée une poule équilibrée en évitant les athlètes de la même ligue
+ * Crée une répartition équilibrée des participants en poules en évitant les athlètes de la même ligue
  * @param {Array} participants - Liste des participants disponibles
- * @param {number} poolSize - Taille de la poule
- * @returns {Array} - Poule créée (liste d'IDs de participants)
+ * @param {number} targetPoolSize - Taille cible des poules
+ * @returns {Array} - Poules créées (tableau de tableaux d'IDs de participants)
  */
-const createBalancedPool = (participants, poolSize) => {
+const createBalancedPool = (participants, targetPoolSize) => {
   try {
     // Validation des paramètres
     if (!Array.isArray(participants)) {
       return [];
     }
 
-    if (typeof poolSize !== "number" || poolSize <= 0) {
-      return participants
-        .slice(0, Math.min(participants.length, 8))
-        .map((p) => p.id);
-    }
-
-    const pool = [];
-    const liguesInPool = new Set();
-
-    // Limiter la taille de la poule au nombre de participants disponibles
-    const effectivePoolSize = Math.min(poolSize, participants.length);
-
-    if (effectivePoolSize <= 0) {
-      return [];
+    if (typeof targetPoolSize !== "number" || targetPoolSize <= 0) {
+      targetPoolSize = Math.min(participants.length, 8);
     }
 
     // CORRECTION: Faire une copie de la liste des participants avec seulement ceux qui ont un ID valide
-    const participantsCopy = [...participants].filter((p) => p && p.id);
+    const validParticipants = participants.filter((p) => p && p.id);
 
-    // Essayer d'éviter les athlètes de la même ligue
-    let attempts = 0;
-    const maxAttempts = 100; // Limite pour éviter une boucle infinie
+    // Si pas assez de participants, renvoyer une seule poule avec tous les participants
+    if (validParticipants.length <= targetPoolSize) {
+      return [validParticipants.map((p) => p.id)]; // Renvoyer un tableau contenant une poule
+    }
 
-    while (
-      pool.length < effectivePoolSize &&
-      participantsCopy.length > 0 &&
-      attempts < maxAttempts
-    ) {
-      attempts++;
+    // Calculer le nombre de poules nécessaires
+    const numPools = Math.ceil(validParticipants.length / targetPoolSize);
 
-      // Parcourir les participants pour trouver le meilleur candidat
-      let bestCandidateIndex = -1;
-      let bestCandidateScore = -1;
+    // Initialiser les poules vides
+    const pools = Array.from({ length: numPools }, () => []);
 
-      for (let i = 0; i < participantsCopy.length; i++) {
-        const participant = participantsCopy[i];
+    // Regrouper les participants par ligue
+    const participantsByLigue = {};
+    validParticipants.forEach((participant) => {
+      const ligue = participant.ligue || "Inconnue";
+      if (!participantsByLigue[ligue]) {
+        participantsByLigue[ligue] = [];
+      }
+      participantsByLigue[ligue].push(participant);
+    });
 
-        // Si la poule est vide, prendre n'importe quel participant
-        if (pool.length === 0) {
-          bestCandidateIndex = 0;
-          break;
+    // Trier les ligues par nombre de participants (de la plus nombreuse à la moins nombreuse)
+    const sortedLigues = Object.keys(participantsByLigue).sort(
+      (a, b) => participantsByLigue[b].length - participantsByLigue[a].length
+    );
+
+    // Liste pour stocker les participants non encore placés
+    let remainingParticipants = [];
+
+    // Première phase: distribuer un participant de chaque ligue dans chaque poule
+    sortedLigues.forEach((ligue) => {
+      const ligueParticipants = [...participantsByLigue[ligue]]; // Copie pour ne pas modifier l'original
+
+      // Distribuer un participant par poule
+      pools.forEach((pool, poolIndex) => {
+        if (ligueParticipants.length > 0 && pool.length < targetPoolSize) {
+          const participant = ligueParticipants.shift(); // Retirer le premier participant
+          pool.push(participant.id);
         }
+      });
 
-        // Calculer un score pour ce candidat (plus élevé = meilleur)
-        let score = 0;
+      // Ajouter les participants restants à la liste des restants
+      remainingParticipants = remainingParticipants.concat(ligueParticipants);
+    });
 
-        const participantLigue = participant.ligue || "Inconnue";
+    // Deuxième phase: placer les participants restants dans les poules les plus appropriées
+    remainingParticipants.forEach((participant) => {
+      // Trouver la poule avec le moins de participants de cette ligue
+      const ligue = participant.ligue || "Inconnue";
 
-        // Bonus si la ligue n'est pas déjà dans la poule
-        if (!liguesInPool.has(participantLigue)) {
-          score += 10;
-        } else {
-          // Si la ligue est déjà présente, calculer combien de fois
-          const ligueCount = pool.reduce((count, id) => {
-            const poolParticipant = participants.find((p) => p && p.id === id);
-            return poolParticipant && poolParticipant.ligue === participantLigue
+      let bestPoolIndex = 0;
+      let minSameLigue = Infinity;
+      let minPoolSize = Infinity;
+
+      pools.forEach((pool, poolIndex) => {
+        // Ne considérer que les poules qui ne sont pas pleines
+        if (pool.length < targetPoolSize) {
+          // Compter combien de participants de la même ligue sont déjà dans cette poule
+          const sameLigueCount = pool.reduce((count, participantId) => {
+            const poolParticipant = validParticipants.find(
+              (p) => p.id === participantId
+            );
+            return poolParticipant &&
+              (poolParticipant.ligue || "Inconnue") === ligue
               ? count + 1
               : count;
           }, 0);
 
-          // Pénalité proportionnelle au nombre d'athlètes de cette ligue déjà dans la poule
-          score -= ligueCount * 5;
-        }
-
-        // Mettre à jour le meilleur candidat si nécessaire
-        if (score > bestCandidateScore) {
-          bestCandidateScore = score;
-          bestCandidateIndex = i;
-        }
-      }
-
-      // Si on a trouvé un candidat
-      if (
-        bestCandidateIndex >= 0 &&
-        bestCandidateIndex < participantsCopy.length
-      ) {
-        const selectedParticipant = participantsCopy[bestCandidateIndex];
-
-        // Vérifier que l'ID du participant est valide
-        if (selectedParticipant.id) {
-          pool.push(selectedParticipant.id);
-          liguesInPool.add(selectedParticipant.ligue || "Inconnue");
-        }
-
-        // Supprimer le participant de la liste
-        participantsCopy.splice(bestCandidateIndex, 1);
-      } else {
-        // Si on n'a pas trouvé de candidat, prendre le premier disponible
-        if (participantsCopy.length > 0) {
-          const selectedParticipant = participantsCopy[0];
-
-          // Vérifier que l'ID du participant est valide
-          if (selectedParticipant.id) {
-            pool.push(selectedParticipant.id);
-            liguesInPool.add(selectedParticipant.ligue || "Inconnue");
+          // Meilleure poule = moins de participants de même ligue, puis moins remplie
+          if (
+            sameLigueCount < minSameLigue ||
+            (sameLigueCount === minSameLigue && pool.length < minPoolSize)
+          ) {
+            minSameLigue = sameLigueCount;
+            minPoolSize = pool.length;
+            bestPoolIndex = poolIndex;
           }
-
-          participantsCopy.splice(0, 1);
-        } else {
-          break;
         }
+      });
+
+      // Si toutes les poules sont pleines, créer une nouvelle poule
+      if (pools[bestPoolIndex].length >= targetPoolSize) {
+        pools.push([participant.id]);
+      } else {
+        pools[bestPoolIndex].push(participant.id);
       }
+    });
+
+    // Équilibrer les poules si nécessaire
+    const minParticipantsPerPool = 3; // Minimum pour qu'une poule soit valide
+
+    // Fusionner les poules trop petites si nécessaire
+    const validPools = pools.filter(
+      (pool) => pool.length >= minParticipantsPerPool
+    );
+    const smallPools = pools.filter(
+      (pool) => pool.length > 0 && pool.length < minParticipantsPerPool
+    );
+
+    // Si des poules sont trop petites, redistribuer leurs participants
+    if (smallPools.length > 0) {
+      // Aplatir les petites poules
+      const participantsToRedistribute = [].concat(...smallPools);
+
+      // Redistribuer ces participants dans les poules valides
+      participantsToRedistribute.forEach((participantId) => {
+        const participant = validParticipants.find(
+          (p) => p.id === participantId
+        );
+        if (!participant) return;
+
+        const ligue = participant.ligue || "Inconnue";
+
+        // Même logique que précédemment pour trouver la meilleure poule
+        let bestPoolIndex = 0;
+        let minSameLigue = Infinity;
+
+        validPools.forEach((pool, poolIndex) => {
+          const sameLigueCount = pool.reduce((count, id) => {
+            const poolParticipant = validParticipants.find((p) => p.id === id);
+            return poolParticipant &&
+              (poolParticipant.ligue || "Inconnue") === ligue
+              ? count + 1
+              : count;
+          }, 0);
+
+          if (sameLigueCount < minSameLigue) {
+            minSameLigue = sameLigueCount;
+            bestPoolIndex = poolIndex;
+          }
+        });
+
+        validPools[bestPoolIndex].push(participantId);
+      });
     }
 
-    if (attempts >= maxAttempts) {
-    }
-
-    return pool;
+    // CORRECTION: Renvoyer toutes les poules valides, pas juste la première
+    return validPools.length > 0
+      ? validPools // Renvoyer toutes les poules valides
+      : [validParticipants.map((p) => p.id)]; // Renvoyer un tableau contenant une poule
   } catch (error) {
-    return participants
-      .slice(0, Math.min(poolSize, participants.length))
-      .map((p) => p.id);
+    console.error("Erreur dans createBalancedPool:", error);
+    // Renvoyer un tableau contenant une poule avec tous les participants
+    return [
+      participants
+        .slice(0, Math.min(targetPoolSize, participants.length))
+        .map((p) => p.id),
+    ];
   }
 };
 

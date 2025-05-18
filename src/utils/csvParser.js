@@ -260,7 +260,8 @@ export const parseCSV = (csvContent) => {
       ageCategory: ageCategory,
       birthYear: getBirthYear(row.birthdate),
       poids: poids,
-      ligue: row.team || "",
+      ligue: row.region || "",
+      club: row.team || "",
       // Ajouter la catégorie si elle existe
       ...(row.category && { categorie: row.category }),
     };
@@ -343,13 +344,20 @@ const normalizeHeader = (header) => {
     masse: "weights",
     categorie_poids: "weights",
 
-    // Variations possibles pour la ligue/club
-    ligue: "team",
-    league: "team",
+    // Variations possibles pour la ligue/region (stocké dans ligue)
+    ligue: "region",
+    league: "region",
+    region: "region",
+    région: "region",
+    "comité régional": "region",
+    "comite regional": "region",
+
+    // Variations possibles pour le club/team (stocké dans club)
     club: "team",
     team: "team",
     équipe: "team",
     equipe: "team",
+    "club sportif": "team",
   };
 
   const normalizedHeader = header.toLowerCase().trim();
