@@ -1,5 +1,4 @@
 import { jsPDF } from "jspdf";
-import "jspdf-autotable";
 import React, { useEffect, useState } from "react";
 import { useCompetition } from "../context/CompetitionContext";
 import {
@@ -1697,243 +1696,287 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   const handleExportPoolSheetsPDF = () => {
     try {
       setExportingPdf(true);
+      console.log("Démarrage de l'export PDF");
 
       // Créer un nouveau document PDF en format paysage pour plus d'espace
-      const doc = new jsPDF("landscape");
+      const doc = new jsPDF({
+        orientation: "landscape",
+        unit: "mm",
+        format: "a4",
+      });
+      console.log("Document PDF créé");
 
-      // Organiser les matchs par poule
-      const matchesByPool = {};
+      // Collecter tous les matchs pour tri global par numéro
+      const allMatches = [];
 
-      // Regrouper les matchs par groupe et par poule
+      // Ajouter des informations de groupe/poule à chaque match
       currentMatches.forEach((match) => {
-        const key = `${match.groupId}-${match.poolIndex}`;
-        if (!matchesByPool[key]) {
-          matchesByPool[key] = {
-            groupId: match.groupId,
-            poolIndex: match.poolIndex,
-            matches: [],
-          };
+        if (match.groupId !== undefined && match.poolIndex !== undefined) {
+          allMatches.push({
+            ...match,
+            poolLetter: String.fromCharCode(65 + match.poolIndex),
+          });
         }
-        matchesByPool[key].matches.push(match);
       });
 
-      // Récupérer les informations des groupes nécessaires pour l'affichage
-      const groupInfoPromises = Object.values(matchesByPool).map(
-        async (pool) => {
-          try {
-            const response = await fetch(`${API_URL}/group/${pool.groupId}`);
-            if (response.ok) {
-              const group = await response.json();
-              return {
-                ...pool,
-                groupName: `${group.gender === "male" ? "H" : "F"} - ${
-                  group.ageCategoryName
-                } - ${group.weightCategoryName}`,
-              };
-            }
-            return pool;
-          } catch (error) {
-            console.error(
-              "Erreur lors de la récupération des informations du groupe:",
-              error
-            );
-            return pool;
-          }
-        }
+      console.log(`${allMatches.length} matchs collectés pour l'export`);
+
+      if (allMatches.length === 0) {
+        console.error("Aucun match trouvé pour l'export");
+        alert(
+          "Aucun match trouvé pour l'export. Vérifiez que vous avez des matchs valides."
+        );
+        setExportingPdf(false);
+        return;
+      }
+
+      // Trier globalement tous les matchs par numéro
+      allMatches.sort((a, b) => {
+        // Convertir en nombre pour assurer un tri numérique correct
+        const numA = parseInt(a.matchNumber || 0, 10);
+        const numB = parseInt(b.matchNumber || 0, 10);
+        return numA - numB;
+      });
+
+      console.log(
+        `Matchs triés: ${allMatches.map((m) => m.matchNumber).join(", ")}`
       );
 
-      // Attendre la récupération de toutes les informations des groupes
-      Promise.all(groupInfoPromises)
-        .then((poolsWithInfo) => {
-          // Pour chaque poule, créer un tableau sur une nouvelle page
-          poolsWithInfo.forEach((pool, index) => {
-            if (index > 0) {
-              doc.addPage();
+      // Récupérer les informations des groupes pour afficher les détails des catégories
+      const groupsToFetch = new Set();
+      const groupInfoMap = {};
+
+      // Identifier les groupes uniques
+      allMatches.forEach((match) => {
+        if (match.groupId && !groupsToFetch.has(match.groupId)) {
+          groupsToFetch.add(match.groupId);
+        }
+      });
+
+      // Récupérer les informations des groupes
+      const groupPromises = Array.from(groupsToFetch).map((groupId) =>
+        fetch(`${API_URL}/group/${groupId}`)
+          .then((response) => {
+            if (!response.ok) return { groupId, error: response.status };
+            return response.json().then((data) => ({ groupId, data }));
+          })
+          .catch((error) => ({ groupId, error: error.message }))
+      );
+
+      // Traiter tous les matchs une fois les informations des groupes récupérées
+      Promise.all(groupPromises)
+        .then((groupResults) => {
+          // Créer un dictionnaire des infos de groupes
+          groupResults.forEach((result) => {
+            if (result.data) {
+              const { data, groupId } = result;
+              groupInfoMap[groupId] = {
+                name:
+                  data.gender && data.ageCategoryName && data.weightCategoryName
+                    ? `${data.gender === "male" ? "H" : "F"} - ${
+                        data.ageCategoryName
+                      } - ${data.weightCategoryName}`
+                    : `Groupe ${groupId}`,
+                color: data.gender === "female" ? "#D32F2F" : "#3F51B5",
+              };
+            } else {
+              groupInfoMap[result.groupId] = {
+                name: `Groupe ${result.groupId}`,
+                color: "#000000",
+              };
             }
-
-            // Titre principal de la compétition
-            doc.setFontSize(16);
-            doc.setFont("helvetica", "bold");
-            doc.setTextColor(0, 0, 0);
-            doc.text(
-              "TAEKWONDO TOURNAMENT MANAGER",
-              doc.internal.pageSize.width / 2,
-              15,
-              { align: "center" }
-            );
-
-            // Titre de la poule
-            const title = pool.groupName
-              ? `${pool.groupName.toUpperCase()}`
-              : "POULE";
-
-            // Titre secondaire de la poule avec la lettre
-            const poolLetter = String.fromCharCode(65 + pool.poolIndex);
-
-            doc.setFontSize(18);
-            doc.setFont("helvetica", "bold");
-            doc.setTextColor(
-              pool.groupName && pool.groupName.includes("F")
-                ? "#D32F2F"
-                : "#3F51B5"
-            );
-            doc.text(
-              `${poolLetter} - POULE ${poolLetter}`,
-              doc.internal.pageSize.width / 2,
-              30,
-              { align: "center" }
-            );
-
-            // Sous-titre avec le nom du groupe
-            doc.setFontSize(14);
-            doc.text(title, doc.internal.pageSize.width / 2, 40, {
-              align: "center",
-            });
-
-            // Organisation des participants pour le tableau en format matrice
-            const participants = [];
-            pool.matches.forEach((match) => {
-              if (match.participants && match.participants.length >= 2) {
-                // Vérifier que les deux participants ne sont pas déjà dans la liste
-                const participant1 = match.participants[0];
-                const participant2 = match.participants[1];
-
-                if (!participants.some((p) => p.id === participant1.id)) {
-                  participants.push(participant1);
-                }
-
-                if (!participants.some((p) => p.id === participant2.id)) {
-                  participants.push(participant2);
-                }
-              }
-            });
-
-            // Créer la matrice pour le tableau de la poule
-            const tableData = [];
-
-            // Première ligne avec les noms des participants (en colonnes)
-            const headerRow = [""];
-            participants.forEach((participant) => {
-              headerRow.push(`${participant.prenom} ${participant.nom}`);
-            });
-            headerRow.push("POINTS");
-            headerRow.push("CLASSEMENT");
-            tableData.push(headerRow);
-
-            // Lignes pour chaque participant
-            participants.forEach((participant, rowIndex) => {
-              const row = [`${participant.prenom} ${participant.nom}`];
-
-              // Pour chaque colonne (autres participants)
-              participants.forEach((opponent, colIndex) => {
-                if (rowIndex === colIndex) {
-                  // Même participant, mettre une diagonale
-                  row.push("");
-                } else {
-                  // Chercher le match entre ces deux participants
-                  const match = pool.matches.find(
-                    (m) =>
-                      (m.participants[0].id === participant.id &&
-                        m.participants[1].id === opponent.id) ||
-                      (m.participants[1].id === participant.id &&
-                        m.participants[0].id === opponent.id)
-                  );
-
-                  if (match) {
-                    // Inclure l'heure du match s'il existe
-                    const matchTime = match.startTime
-                      ? formatTime(match.startTime)
-                      : "";
-                    row.push(matchTime);
-                  } else {
-                    row.push("");
-                  }
-                }
-              });
-
-              // Colonnes pour les points et le classement
-              row.push(""); // Points
-              row.push(""); // Classement
-
-              tableData.push(row);
-            });
-
-            // Générer le tableau avec autoTable avec plus d'espace pour les scores
-            doc.autoTable({
-              startY: 50,
-              body: tableData,
-              theme: "grid",
-              styles: {
-                fontSize: 10,
-                cellPadding: { top: 10, right: 5, bottom: 10, left: 5 },
-                lineColor: [0, 0, 0],
-                lineWidth: 0.5,
-                halign: "center",
-                valign: "middle",
-              },
-              columnStyles: {
-                0: { fontStyle: "bold", cellWidth: 40, halign: "left" },
-                [participants.length + 1]: { cellWidth: 25 }, // Colonne Points
-                [participants.length + 2]: { cellWidth: 25 }, // Colonne Classement
-              },
-              headStyles: {
-                fillColor: [240, 240, 240],
-                textColor: [0, 0, 0],
-                fontStyle: "bold",
-              },
-              didDrawCell: function (data) {
-                // Tracer une diagonale dans les cellules où le même combattant se rencontre
-                if (
-                  data.section === "body" &&
-                  data.row.index > 0 &&
-                  data.column.index > 0 &&
-                  data.column.index <= participants.length &&
-                  data.row.index === data.column.index
-                ) {
-                  const x = data.cell.x;
-                  const y = data.cell.y;
-                  const w = data.cell.width;
-                  const h = data.cell.height;
-
-                  doc.setDrawColor(0);
-                  doc.setLineWidth(0.5);
-                  doc.line(x, y, x + w, y + h);
-                }
-              },
-            });
-
-            // Pied de page avec information sur la fiche
-            doc.setFontSize(8);
-            doc.setTextColor(0, 0, 0);
-            doc.text(
-              `Catégorie: ${title} - Poule ${poolLetter}`,
-              15,
-              doc.internal.pageSize.height - 10
-            );
-            doc.text(
-              `Généré le ${new Date().toLocaleString()}`,
-              doc.internal.pageSize.width - 15,
-              doc.internal.pageSize.height - 10,
-              { align: "right" }
-            );
           });
 
-          // Sauvegarder le PDF
-          doc.save(
-            `fiches_poules_arbitres_${new Date()
-              .toLocaleDateString()
-              .replace(/\//g, "-")}.pdf`
+          // Variables pour la génération du PDF
+          let currentPage = 1;
+          let yPos = 50;
+          const margin = 5;
+          const pageWidth = doc.internal.pageSize.width;
+          const pageHeight = doc.internal.pageSize.height;
+          const combatWidth = pageWidth - 2 * margin;
+          const combatHeight = 80; // Augmenté pour plus d'espace
+
+          // Titre principal sur la première page
+          doc.setFontSize(16);
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor(0, 0, 0);
+          doc.text(
+            "TAEKWONDO TOURNAMENT MANAGER - FICHES ARBITRES",
+            pageWidth / 2,
+            15,
+            { align: "center" }
           );
+
+          // Créer les fiches pour chaque match (triées par numéro)
+          allMatches.forEach((match, index) => {
+            // Vérifier si on a besoin d'une nouvelle page
+            if (yPos + combatHeight > pageHeight - 20) {
+              doc.addPage();
+              currentPage++;
+              yPos = 30; // Position plus haute sur les pages suivantes
+
+              // Ajouter l'en-tête sur chaque nouvelle page
+              doc.setFontSize(14);
+              doc.setFont("helvetica", "bold");
+              doc.text(
+                "TAEKWONDO TOURNAMENT MANAGER - FICHES ARBITRES",
+                pageWidth / 2,
+                15,
+                { align: "center" }
+              );
+            }
+
+            // Récupérer les informations du groupe
+            const groupInfo = groupInfoMap[match.groupId] || {
+              name: `Groupe ${match.groupId}`,
+              color: "#000000",
+            };
+
+            try {
+              // Récupérer les participants du match
+              const blueAthlete =
+                match.participants && match.participants[0]
+                  ? `${match.participants[0].prenom || ""} ${
+                      match.participants[0].nom || ""
+                    }`.trim()
+                  : "Inconnu";
+              const redAthlete =
+                match.participants && match.participants[1]
+                  ? `${match.participants[1].prenom || ""} ${
+                      match.participants[1].nom || ""
+                    }`.trim()
+                  : "Inconnu";
+
+              // Dessiner le cadre du combat avec bordure plus épaisse
+              doc.setDrawColor(0);
+              doc.setLineWidth(0.4); // Bordure plus épaisse
+              doc.rect(margin, yPos, combatWidth, combatHeight);
+
+              // Entête du combat avec numéro et heure
+              doc.setFillColor(240, 240, 240);
+              doc.rect(margin, yPos, combatWidth, 8, "F"); // Hauteur augmentée
+              doc.setFontSize(14); // Taille de police augmentée
+              doc.setFont("helvetica", "bold");
+              doc.setTextColor(0, 0, 0);
+              doc.text(
+                `Combat #${match.matchNumber} - ${
+                  formatTime(match.startTime) || "Heure non définie"
+                } - ${groupInfo.name} - POULE ${match.poolLetter}`,
+                pageWidth / 2,
+                yPos + 8,
+                { align: "center" }
+              );
+
+              // Ligne pour les athlètes
+              const athleteY = yPos + 15; // Plus bas pour laisser de l'espace
+              doc.setFont("helvetica", "bold");
+
+              // Athlète Bleu
+              doc.setFillColor(200, 220, 255); // Bleu clair
+              doc.rect(
+                margin + 5,
+                athleteY - 5,
+                combatWidth / 2 - 10,
+                12, // Augmenté de 10 à 12
+                "F"
+              );
+              doc.setTextColor(0, 0, 150); // Bleu foncé pour meilleure lisibilité
+              doc.text(blueAthlete, margin + 8, athleteY + 1); // Ajusté pour centrer
+
+              // Athlète Rouge
+              doc.setFillColor(255, 200, 200); // Rouge clair
+              doc.rect(
+                margin + combatWidth / 2 + 5,
+                athleteY - 5,
+                combatWidth / 2 - 10,
+                12, // Augmenté de 10 à 12
+                "F"
+              );
+              doc.setTextColor(150, 0, 0); // Rouge foncé pour meilleure lisibilité
+              doc.text(redAthlete, margin + combatWidth / 2 + 8, athleteY + 1); // Ajusté pour centrer
+
+              // Ligne pour les rounds
+              const roundY = athleteY + 10; // Ajusté pour plus d'espace
+              doc.setFont("helvetica", "normal");
+              doc.setTextColor(0, 0, 0); // Retour au noir
+              doc.text("Round 1:", margin + 8, roundY);
+              doc.text("Round 2:", margin + 8, roundY + 12); // Espacement augmenté
+              doc.text("Round 3:", margin + 8, roundY + 24); // Espacement augmenté
+
+              // Dessiner les cases pour les scores (plus grandes)
+              const scoreColumnWidth = 35; // Augmenté davantage
+              const blueScoreX = margin + 50;
+              const redScoreX = margin + combatWidth / 2 + 50;
+
+              // Round 1
+              doc.rect(blueScoreX, roundY - 5, scoreColumnWidth, 10); // Hauteur augmentée
+              doc.rect(redScoreX, roundY - 5, scoreColumnWidth, 10);
+
+              // Round 2
+              doc.rect(blueScoreX, roundY + 7, scoreColumnWidth, 10); // Position et hauteur ajustées
+              doc.rect(redScoreX, roundY + 7, scoreColumnWidth, 10);
+
+              // Round 3
+              doc.rect(blueScoreX, roundY + 19, scoreColumnWidth, 10); // Position et hauteur ajustées
+              doc.rect(redScoreX, roundY + 19, scoreColumnWidth, 10);
+
+              // Ligne pour le vainqueur
+              const winnerY = roundY + 40; // Ajusté pour plus d'espace
+              doc.setFont("helvetica", "bold");
+              doc.text("VAINQUEUR:", margin + 8, winnerY);
+
+              // Case pour le vainqueur (plus grande)
+              doc.rect(margin, winnerY - 5, combatWidth - 100, 12); // Hauteur augmentée
+
+              // Passer au combat suivant
+              yPos += combatHeight + 15; // Espacement augmenté entre les combats
+            } catch (error) {
+              console.error(
+                `Erreur lors de la génération du combat #${match.matchNumber}:`,
+                error
+              );
+            }
+          });
+
+          // Ajouter un pied de page sur la dernière page
+          doc.setFontSize(8);
+          doc.setTextColor(100, 100, 100);
+          doc.text(
+            `Généré le ${new Date().toLocaleString()} - Total: ${
+              allMatches.length
+            } combats`,
+            pageWidth - margin,
+            pageHeight - 10,
+            { align: "right" }
+          );
+
+          // Sauvegarder le PDF
+          console.log("Sauvegarde du PDF...");
+          try {
+            doc.save(
+              `fiches_arbitres_${new Date()
+                .toLocaleDateString()
+                .replace(/\//g, "-")}.pdf`
+            );
+            console.log("PDF sauvegardé avec succès");
+          } catch (saveError) {
+            console.error("Erreur lors de la sauvegarde du PDF:", saveError);
+            alert(`Erreur lors de la sauvegarde du PDF: ${saveError.message}`);
+          }
           setExportingPdf(false);
         })
         .catch((error) => {
           console.error("Erreur lors du traitement des données:", error);
-          alert("Erreur lors de la génération du PDF. Veuillez réessayer.");
+          alert(
+            `Erreur lors de la génération du PDF: ${error.message}. Consultez la console pour plus de détails.`
+          );
           setExportingPdf(false);
         });
     } catch (error) {
       console.error("Erreur lors de la génération du PDF:", error);
-      alert("Erreur lors de la génération du PDF. Veuillez réessayer.");
+      alert(
+        `Erreur lors de la génération du PDF: ${error.message}. Consultez la console pour plus de détails.`
+      );
       setExportingPdf(false);
     }
   };
