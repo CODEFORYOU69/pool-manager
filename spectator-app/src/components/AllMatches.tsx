@@ -11,6 +11,7 @@ interface AllMatchesProps {
     areaNumber: string;
     participantName: string;
     ligue: string;
+    club: string;
     status: string;
   };
   formatTime: (dateString?: string) => string;
@@ -94,6 +95,18 @@ export default function AllMatches({
           if (!participant || !participant.ligue) return false;
 
           return participant.ligue === filters.ligue;
+        });
+      });
+    }
+
+    // Filtrer par club
+    if (filters.club) {
+      result = result.filter((match) => {
+        return match.matchParticipants?.some((mp) => {
+          const participant = mp.participant;
+          if (!participant || !participant.club) return false;
+
+          return participant.club === filters.club;
         });
       });
     }
@@ -193,8 +206,10 @@ export default function AllMatches({
           match.matchNumber,
           match.area?.areaNumber || match.areaNumber || "-",
           getParticipantName(match, "A"),
+          participantA?.participant?.club || "Inconnu",
           participantA?.participant?.ligue || "Inconnue",
           getParticipantName(match, "B"),
+          participantB?.participant?.club || "Inconnu",
           participantB?.participant?.ligue || "Inconnue",
           getStatusText(match.status),
           match.status === "completed" && match.endTime
@@ -211,8 +226,10 @@ export default function AllMatches({
             "N° Match",
             "Aire",
             "Bleu",
+            "Club (Bleu)",
             "Ligue (Bleu)",
             "Rouge",
+            "Club (Rouge)",
             "Ligue (Rouge)",
             "Statut",
             "Heure",
@@ -265,6 +282,10 @@ export default function AllMatches({
       filterTexts.push(`Ligue: ${filters.ligue}`);
     }
 
+    if (filters.club) {
+      filterTexts.push(`Club: ${filters.club}`);
+    }
+
     if (filters.participantName) {
       filterTexts.push(`Participant: ${filters.participantName}`);
     }
@@ -290,7 +311,11 @@ export default function AllMatches({
     }
 
     if (filters.ligue) {
-      fileNameBase += `_${filters.ligue.replace(/\s+/g, "_")}`;
+      fileNameBase += `_ligue${filters.ligue.replace(/\s+/g, "_")}`;
+    }
+
+    if (filters.club) {
+      fileNameBase += `_club${filters.club.replace(/\s+/g, "_")}`;
     }
 
     return `${fileNameBase}.pdf`;
@@ -384,109 +409,203 @@ export default function AllMatches({
           Aucun match trouvé avec les filtres appliqués
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
-                >
-                  N° Match
-                </th>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
-                >
-                  Aire
-                </th>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
-                >
-                  Bleu
-                </th>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
-                >
-                  Ligue (Bleu)
-                </th>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
-                >
-                  Rouge
-                </th>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
-                >
-                  Ligue (Rouge)
-                </th>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
-                >
-                  Statut
-                </th>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
-                >
-                  Heure
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredMatches.map((match) => {
-                return (
-                  <tr key={match.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
-                      {match.matchNumber}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {match.area?.areaNumber || match.areaNumber || "-"}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-700">
+        <>
+          {/* Affichage tableau pour desktop */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
+                  >
+                    N° Match
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
+                  >
+                    Aire
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
+                  >
+                    Bleu
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
+                  >
+                    Club (Bleu)
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
+                  >
+                    Ligue (Bleu)
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
+                  >
+                    Rouge
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
+                  >
+                    Club (Rouge)
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
+                  >
+                    Ligue (Rouge)
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
+                  >
+                    Statut
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
+                  >
+                    Heure
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredMatches.map((match) => {
+                  return (
+                    <tr key={match.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
+                        {match.matchNumber}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {match.area?.areaNumber || match.areaNumber || "-"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-700">
+                        {getParticipantName(match, "A")}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {match.matchParticipants?.find(
+                          (mp) => mp.position === "A"
+                        )?.participant?.club || "Inconnu"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {match.matchParticipants?.find(
+                          (mp) => mp.position === "A"
+                        )?.participant?.ligue || "Inconnue"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-rose-700">
+                        {getParticipantName(match, "B")}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {match.matchParticipants?.find(
+                          (mp) => mp.position === "B"
+                        )?.participant?.club || "Inconnu"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {match.matchParticipants?.find(
+                          (mp) => mp.position === "B"
+                        )?.participant?.ligue || "Inconnue"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span
+                          className={`px-2 inline-flex text-xs leading-5 font-bold rounded-full ${getStatusColor(
+                            match.status
+                          )}`}
+                        >
+                          {getStatusText(match.status)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {formatTime(match.startTime)}
+                        {match.status === "completed" && match.endTime && (
+                          <span className="text-xs text-gray-500 ml-1">
+                            → {formatTime(match.endTime)}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Affichage cartes pour mobile */}
+          <div className="md:hidden space-y-4">
+            {filteredMatches.map((match) => (
+              <div
+                key={match.id}
+                className="p-4 border border-gray-200 rounded-lg shadow-sm bg-white"
+              >
+                <div className="flex justify-between items-center mb-2">
+                  <div className="flex items-center space-x-2">
+                    <span className="font-bold text-gray-800">
+                      #{match.matchNumber}
+                    </span>
+                    <span className="text-gray-600">
+                      Aire {match.area?.areaNumber || match.areaNumber || "-"}
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span
+                      className={`px-2 py-1 inline-flex text-xs leading-4 font-bold rounded-full ${getStatusColor(
+                        match.status
+                      )}`}
+                    >
+                      {getStatusText(match.status)}
+                    </span>
+                    <span className="text-sm text-gray-600">
+                      {formatTime(match.startTime)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-3 mt-3">
+                  {/* Participant Bleu */}
+                  <div className="flex-1 p-2 bg-blue-50 rounded border-l-4 border-blue-500">
+                    <div className="font-medium text-blue-700">
                       {getParticipantName(match, "A")}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    </div>
+                    <div className="text-xs text-gray-600 mt-1">
+                      {match.matchParticipants?.find(
+                        (mp) => mp.position === "A"
+                      )?.participant?.club || "Inconnu"}{" "}
+                      (
                       {match.matchParticipants?.find(
                         (mp) => mp.position === "A"
                       )?.participant?.ligue || "Inconnue"}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-rose-700">
+                      )
+                    </div>
+                  </div>
+
+                  {/* Participant Rouge */}
+                  <div className="flex-1 p-2 bg-rose-50 rounded border-l-4 border-rose-500">
+                    <div className="font-medium text-rose-700">
                       {getParticipantName(match, "B")}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    </div>
+                    <div className="text-xs text-gray-600 mt-1">
+                      {match.matchParticipants?.find(
+                        (mp) => mp.position === "B"
+                      )?.participant?.club || "Inconnu"}{" "}
+                      (
                       {match.matchParticipants?.find(
                         (mp) => mp.position === "B"
                       )?.participant?.ligue || "Inconnue"}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span
-                        className={`px-2 inline-flex text-xs leading-5 font-bold rounded-full ${getStatusColor(
-                          match.status
-                        )}`}
-                      >
-                        {getStatusText(match.status)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {formatTime(match.startTime)}
-                      {match.status === "completed" && match.endTime && (
-                        <span className="text-xs text-gray-500 ml-1">
-                          → {formatTime(match.endTime)}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                      )
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

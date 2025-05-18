@@ -11,6 +11,7 @@ export interface Participant {
   prenom?: string;
   nom?: string;
   ligue?: string;
+  club?: string;
   age?: number;
   poids?: number;
 }

@@ -31,7 +31,7 @@ const Results = ({
     try {
       // Créer le contenu du CSV
       let csvContent =
-        "Catégorie,Poule,Place,Nom,Prénom,Région,Club,Points,Victoires,Défaites,Rounds+,Rounds-,Points+,Points-,Différence\n";
+        "Catégorie,Poule,Place,Nom,Prénom,Club,Points,Victoires,Défaites,Rounds+,Rounds-,Points+,Points-,Différence\n";
 
       // Ajouter les données de chaque poule
       poolResults.forEach((pool) => {
@@ -42,8 +42,7 @@ const Results = ({
             index + 1,
             participant.nom.replace(/,/g, " "),
             participant.prenom.replace(/,/g, " "),
-            participant.ligue.replace(/,/g, " "),
-            (participant.club || "-").replace(/,/g, " "),
+            (participant.club || participant.ligue || "-").replace(/,/g, " "),
             participant.points,
             participant.wins,
             participant.matches - participant.wins,
@@ -168,7 +167,7 @@ const Results = ({
 
       // Créer le contenu du CSV
       let csvContent =
-        "Catégorie,Poule,Place,Nom,Prénom,Club,Points,Victoires,Défaites\n";
+        "Catégorie,Poule,Place,Nom,Prénom,Club,Points,Victoires,Défaites,Rounds+,Rounds-,Points+,Points-,Différence\n";
 
       // Ajouter les données des qualifiés
       Object.values(qualifiésParGroupe).forEach((groupe) => {
@@ -179,10 +178,15 @@ const Results = ({
             qualifié.place,
             qualifié.nom.replace(/,/g, " "),
             qualifié.prenom.replace(/,/g, " "),
-            qualifié.ligue.replace(/,/g, " "),
+            (qualifié.club || qualifié.ligue || "-").replace(/,/g, " "),
             qualifié.points,
             qualifié.wins,
             qualifié.matches - qualifié.wins,
+            qualifié.roundsWon || 0,
+            qualifié.roundsLost || 0,
+            qualifié.pointsGained || 0,
+            qualifié.pointsLost || 0,
+            qualifié.pointsDiff || 0,
           ].join(",");
           csvContent += row + "\n";
         });
@@ -460,7 +464,6 @@ const Results = ({
                     <tr>
                       <th>Place</th>
                       <th>Athlète</th>
-                      <th>Région</th>
                       <th>Club</th>
                       <th>Points</th>
                       <th>V</th>
@@ -479,8 +482,7 @@ const Results = ({
                         <td>
                           {participant.prenom} {participant.nom}
                         </td>
-                        <td>{participant.ligue}</td>
-                        <td>{participant.club || "-"}</td>
+                        <td>{participant.club || participant.ligue || "-"}</td>
                         <td className="points">{participant.points}</td>
                         <td>{participant.wins}</td>
                         <td>{participant.matches - participant.wins}</td>

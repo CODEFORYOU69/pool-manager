@@ -433,11 +433,29 @@ const compileParticipantStats = (
           stats[participantAId].roundsLost++;
         }
 
-        // Ajouter les scores
+        // Ajouter les scores et les points concédés
         stats[participantAId].scoreTotal += scoreA;
         stats[participantBId].scoreTotal += scoreB;
+
+        // Points concédés (ce que l'adversaire a marqué contre vous)
+        stats[participantAId].pointsLost += scoreB;
+        stats[participantBId].pointsLost += scoreA;
       });
     }
+  });
+
+  // Calculer le différentiel de points pour chaque participant
+  Object.keys(stats).forEach((participantId) => {
+    const participant = stats[participantId];
+
+    // Mettre à jour les statistiques pour l'affichage
+    participant.pointsGained = participant.scoreTotal;
+    participant.pointsDiff = participant.pointsGained - participant.pointsLost;
+    participant.wins = participant.matchesWon; // Pour compatibilité
+    participant.matches =
+      participant.matchesWon +
+      participant.matchesLost +
+      participant.matchesTied;
   });
 
   return stats;
@@ -670,16 +688,14 @@ const calculateRankings = (participantStats, matches, matchResults) => {
   participants.forEach((participant) => {
     try {
       if (participant) {
-        // Normaliser les propriétés pour la compatibilité avec le composant Results
-        participant.wins = participant.matchesWon || 0;
-        participant.matches =
-          (participant.matchesWon || 0) +
-          (participant.matchesLost || 0) +
-          (participant.matchesTied || 0);
-        participant.pointsGained = participant.scoreTotal || 0;
-        participant.pointsLost = 0; // Sera calculé si disponible
-        participant.pointsDiff =
-          participant.pointsGained - participant.pointsLost;
+        // Les propriétés suivantes sont déjà normalisées dans compileParticipantStats
+        // Elles sont donc déjà préparées pour l'affichage
+        // - participant.wins (= participant.matchesWon)
+        // - participant.matches (= matchesWon + matchesLost + matchesTied)
+        // - participant.pointsGained (= participant.scoreTotal)
+        // - participant.pointsLost (points marqués par l'adversaire)
+        // - participant.pointsDiff (= pointsGained - pointsLost)
+        // Rien à faire ici, tout est déjà correctement initialisé
       }
     } catch (error) {
       console.error(
@@ -689,42 +705,29 @@ const calculateRankings = (participantStats, matches, matchResults) => {
     }
   });
 
-  try {
-    // Trier les participants selon les critères
-    participants.sort((a, b) => {
-      // 1. Nombre de points (3 points par victoire)
-      if (a.points !== b.points) {
-        return b.points - a.points;
-      }
+  // Trier les participants par points, puis par différentiel de rounds, puis par différentiel de points
+  participants.sort((a, b) => {
+    // 1. Nombre de points (3 pour victoire, 1 pour match nul)
+    if (a.points !== b.points) return b.points - a.points;
 
-      // 2. Confrontation directe (le gagnant du match direct est placé devant)
-      const directMatchWinnerId = getDirectMatchWinner(a, b);
-      if (directMatchWinnerId === a.id) return -1;
-      if (directMatchWinnerId === b.id) return 1;
+    // 2. Confrontation directe en cas d'égalité
+    const directWinner = getDirectMatchWinner(a, b);
+    if (directWinner === a.id) return -1;
+    if (directWinner === b.id) return 1;
 
-      // 3. Nombre de rounds gagnés
-      if (a.roundsWon !== b.roundsWon) {
-        return b.roundsWon - a.roundsWon;
-      }
+    // 3. Nombre de rounds gagnés
+    if (a.roundsWon !== b.roundsWon) return b.roundsWon - a.roundsWon;
 
-      // 4. Nombre total de points marqués
-      if (a.scoreTotal !== b.scoreTotal) {
-        return b.scoreTotal - a.scoreTotal;
-      }
+    // 4. Différentiel de points (points marqués - points encaissés)
+    if (a.pointsDiff !== b.pointsDiff) return b.pointsDiff - a.pointsDiff;
 
-      // Par défaut, garder l'ordre original
-      return 0;
-    });
-  } catch (error) {
-    console.error("Erreur lors du tri des participants:", error);
-    // Tenter de continuer sans tri
-  }
+    // 5. Si tout est égal, pas de changement d'ordre
+    return 0;
+  });
 
-  // Attribuer le rang
-  participants.forEach((participant, index) => {
-    if (participant) {
-      participant.rank = index + 1;
-    }
+  // Attribuer les rangs après le tri
+  participants.forEach((p, i) => {
+    p.rank = i + 1;
   });
 
   console.log("Classement terminé");

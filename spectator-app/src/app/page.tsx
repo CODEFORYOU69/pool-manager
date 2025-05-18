@@ -44,6 +44,7 @@ export default function Home() {
   const [allRecentMatches, setAllRecentMatches] = useState<Match[]>([]);
   const [allMatches, setAllMatches] = useState<Match[]>([]);
   const [availableLigues, setAvailableLigues] = useState<string[]>([]);
+  const [availableClubs, setAvailableClubs] = useState<string[]>([]);
 
   // Nouvel état pour les informations de retard par aire
   const [delayInfoByArea, setDelayInfoByArea] = useState<{
@@ -55,6 +56,7 @@ export default function Home() {
     areaNumber: "",
     participantName: "",
     ligue: "",
+    club: "",
     status: "",
   });
 
@@ -130,7 +132,7 @@ export default function Home() {
         if (!loading) {
           setRefreshing(true);
         } else {
-          setLoading(true);
+          setRefreshing(true);
         }
 
         // Récupérer les matchs pour la compétition sélectionnée
@@ -139,7 +141,7 @@ export default function Home() {
           competitionId
         );
         const response = await fetch(
-          `${API_URL}/competition/${competitionId}/matchesWithDetails`
+          `${API_URL}/competition/${competitionId}/matchesWithDetails?_t=${Date.now()}`
         );
 
         if (!response.ok) {
@@ -308,10 +310,14 @@ export default function Home() {
 
         // Extraire les ligues uniques des participants
         const ligues = new Set<string>();
+        const clubs = new Set<string>();
         matches.forEach((match) => {
           match.matchParticipants?.forEach((mp) => {
             if (mp.participant?.ligue) {
               ligues.add(mp.participant.ligue);
+            }
+            if (mp.participant?.club) {
+              clubs.add(mp.participant.club);
             }
           });
         });
@@ -319,6 +325,10 @@ export default function Home() {
         // Trier les ligues par ordre alphabétique
         const liguesSorted = Array.from(ligues).sort();
         setAvailableLigues(liguesSorted);
+
+        // Trier les clubs par ordre alphabétique
+        const clubsSorted = Array.from(clubs).sort();
+        setAvailableClubs(clubsSorted);
 
         // Garantir que toutes les aires configurées sont disponibles (de 1 à 6 par défaut)
         // même si elles n'ont pas de matchs actuellement
@@ -395,7 +405,7 @@ export default function Home() {
       setUpcomingMatchesByArea(allUpcomingMatchesByArea);
     }
 
-    // Fonction pour vérifier si un match correspond aux filtres de nom/ligue
+    // Fonction pour vérifier si un match correspond aux filtres de nom/ligue/club
     const matchesCriteria = (match: Match) => {
       // Filtrer par nom de participant
       if (filters.participantName) {
@@ -425,11 +435,23 @@ export default function Home() {
         if (!ligueMatches) return false;
       }
 
+      // Filtrer par club
+      if (filters.club) {
+        const clubMatches = match.matchParticipants?.some((mp) => {
+          const participant = mp.participant;
+          if (!participant || !participant.club) return false;
+
+          return participant.club === filters.club;
+        });
+
+        if (!clubMatches) return false;
+      }
+
       return true;
     };
 
-    // Appliquer les filtres de nom/ligue aux matchs par aire
-    if (filters.participantName || filters.ligue) {
+    // Appliquer les filtres de nom/ligue/club aux matchs par aire
+    if (filters.participantName || filters.ligue || filters.club) {
       const filteredAreas: { [key: number]: Match[] } = {};
 
       Object.keys(upcomingMatchesByArea).forEach((areaKey) => {
@@ -446,7 +468,12 @@ export default function Home() {
     }
 
     // Appliquer les filtres aux matchs récents
-    if (filters.participantName || filters.ligue || filters.areaNumber) {
+    if (
+      filters.participantName ||
+      filters.ligue ||
+      filters.club ||
+      filters.areaNumber
+    ) {
       let filteredRecent = [...allRecentMatches];
 
       // Filtrer par aire avec une logique plus robuste
@@ -486,7 +513,7 @@ export default function Home() {
       }
 
       // Filtrer par autres critères
-      if (filters.participantName || filters.ligue) {
+      if (filters.participantName || filters.ligue || filters.club) {
         filteredRecent = filteredRecent.filter(matchesCriteria);
       }
 
@@ -501,6 +528,8 @@ export default function Home() {
     areaNumber?: string;
     participantName?: string;
     ligue?: string;
+    club?: string;
+    status?: string;
   }) => {
     setFilters((prev) => ({ ...prev, ...newFilters }));
   };
@@ -729,6 +758,7 @@ export default function Home() {
           onFilterChange={handleFilterChange}
           areas={Object.keys(allUpcomingMatchesByArea).map(Number)}
           ligues={availableLigues}
+          clubs={availableClubs}
         />
       )}
 

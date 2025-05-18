@@ -1,7 +1,6 @@
 "use client";
 
 import { Match } from "@/types";
-import Link from "next/link";
 
 interface DelayInfo {
   delayInMinutes: number;
@@ -70,17 +69,20 @@ export default function LiveMatches({
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 p-2 sm:p-0">
       {areaNumbers.map((areaNumber) => (
-        <div key={areaNumber} className="mb-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center">
+        <div
+          key={areaNumber}
+          className="mb-8 bg-white rounded-lg shadow-sm p-4"
+        >
+          <h2 className="text-2xl font-bold text-gray-900 mb-4 flex flex-wrap items-center">
             Aire {areaNumber}{" "}
             <span className="text-sm font-medium text-gray-700 ml-2">
               ({upcomingMatchesByArea[areaNumber].length} matchs)
             </span>
             {delayInfoByArea[areaNumber] && getDelayIndicator(areaNumber)}
             {delayInfoByArea[areaNumber]?.lastCompletedMatch && (
-              <span className="ml-2 text-xs text-gray-500">
+              <span className="ml-2 text-xs text-gray-500 mt-1 sm:mt-0">
                 Dernier match terminé: #
                 {delayInfoByArea[areaNumber].lastCompletedMatch}
               </span>
@@ -113,46 +115,70 @@ export default function LiveMatches({
                     }`}
                   >
                     <div className="flex items-center">
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-bold ${
-                          isFirstMatch
-                            ? "bg-yellow-200 text-yellow-900"
-                            : "bg-gray-200 text-gray-900"
-                        }`}
-                      >
+                      <span className="font-bold text-gray-900">
                         Match #{match.matchNumber}
                       </span>
-                      {isFirstMatch && (
-                        <span className="ml-2 bg-red-200 text-red-900 px-2 py-1 rounded text-xs font-bold animate-pulse">
-                          PROCHAIN
-                        </span>
-                      )}
-                      {isInProgress && (
-                        <span className="ml-2 bg-green-200 text-green-900 px-2 py-1 rounded text-xs font-bold animate-pulse">
-                          EN COURS
-                        </span>
-                      )}
+                      <span
+                        className={`ml-2 px-2 py-0.5 text-xs rounded ${
+                          isInProgress
+                            ? "bg-green-100 text-green-800"
+                            : isPending
+                            ? "bg-yellow-100 text-yellow-800"
+                            : "bg-blue-100 text-blue-800"
+                        }`}
+                      >
+                        {match.status === "in_progress"
+                          ? "En cours"
+                          : match.status === "completed"
+                          ? "Terminé"
+                          : "En attente"}
+                      </span>
                     </div>
                   </div>
 
                   <div className="p-4">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex-1 text-right">
-                        <div className="text-blue-800 font-bold truncate text-lg">
+                    <div className="flex flex-col sm:flex-row gap-3 mb-3">
+                      <div className="flex-1 flex flex-col border-l-4 border-blue-500 bg-blue-50 rounded-r pl-3 py-2">
+                        <span className="font-medium text-blue-700">
                           {getParticipantName(match, "A")}
-                        </div>
+                        </span>
+                        <span className="text-xs text-gray-600 mt-1">
+                          {match.matchParticipants?.find(
+                            (mp) => mp.position === "A"
+                          )?.participant?.club || "Club inconnu"}{" "}
+                          {match.matchParticipants?.find(
+                            (mp) => mp.position === "A"
+                          )?.participant?.ligue
+                            ? `(${
+                                match.matchParticipants?.find(
+                                  (mp) => mp.position === "A"
+                                )?.participant?.ligue
+                              })`
+                            : ""}
+                        </span>
                       </div>
-
-                      <div className="mx-4 text-gray-700 font-bold">VS</div>
-
-                      <div className="flex-1 text-left">
-                        <div className="text-red-800 font-bold truncate text-lg">
+                      <div className="flex-1 flex flex-col border-l-4 border-rose-500 bg-rose-50 rounded-r pl-3 py-2">
+                        <span className="font-medium text-rose-700">
                           {getParticipantName(match, "B")}
-                        </div>
+                        </span>
+                        <span className="text-xs text-gray-600 mt-1">
+                          {match.matchParticipants?.find(
+                            (mp) => mp.position === "B"
+                          )?.participant?.club || "Club inconnu"}{" "}
+                          {match.matchParticipants?.find(
+                            (mp) => mp.position === "B"
+                          )?.participant?.ligue
+                            ? `(${
+                                match.matchParticipants?.find(
+                                  (mp) => mp.position === "B"
+                                )?.participant?.ligue
+                              })`
+                            : ""}
+                        </span>
                       </div>
                     </div>
 
-                    <div className="text-center text-sm font-medium">
+                    <div className="flex justify-between items-center">
                       {isPending ? (
                         <div>
                           <div className="text-gray-700">
@@ -181,29 +207,6 @@ export default function LiveMatches({
                           Début: {formatTime(match.startTime)}
                         </div>
                       )}
-                    </div>
-
-                    <div className="mt-3 text-center">
-                      <Link
-                        href={`/match/${match.id}`}
-                        className="inline-flex items-center text-sm font-semibold text-blue-700 hover:text-blue-900"
-                      >
-                        Voir détails
-                        <svg
-                          className="ml-1 w-4 h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          xmlns="http://www.w3.org/2000/svg"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth="2"
-                            d="M9 5l7 7-7 7"
-                          ></path>
-                        </svg>
-                      </Link>
                     </div>
                   </div>
                 </div>
