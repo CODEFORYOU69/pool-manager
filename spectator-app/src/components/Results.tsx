@@ -19,6 +19,8 @@ type ExtendedRound = {
   winner?: string | null;
   roundNumber: number;
   scores?: Record<string, number>;
+  scoreA?: number;
+  scoreB?: number;
 };
 
 // Étendre l'interface Match importée
@@ -32,6 +34,14 @@ interface ExtendedMatch extends Omit<Match, "matchParticipants" | "rounds"> {
   }[];
   winner?: string;
   rounds?: ExtendedRound[];
+  // Propriétés additionnelles pour la compatibilité
+  participants?: Array<{
+    id?: string;
+    participantId?: string;
+    position?: string | number;
+  }>;
+  participantAId?: string;
+  participantBId?: string;
 }
 
 // Étendre l'interface Participant
@@ -72,6 +82,8 @@ type Round = {
   winner?: string | null;
   roundNumber: number;
   scores?: Record<string, number>;
+  scoreA?: number;
+  scoreB?: number;
 };
 
 type Group = {
@@ -94,6 +106,131 @@ type Pool = {
 
 // URL de l'API
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
+
+// Fonction utilitaire pour extraire les scores d'un round de manière sécurisée
+const extractScore = (
+  round: ExtendedRound,
+  position: string | number | null
+): number => {
+  if (!round || !position) return 0;
+
+  // Si la position est "A" ou 0, renvoyer scoreA
+  if (position === "A" || position === 0) {
+    if (round.scoreA !== undefined) return Number(round.scoreA || 0);
+  }
+
+  // Si la position est "B" ou 1, renvoyer scoreB
+  if (position === "B" || position === 1) {
+    if (round.scoreB !== undefined) return Number(round.scoreB || 0);
+  }
+
+  // Format legacy: si on a toujours des scores dans l'objet scores
+  if (round.scores) {
+    // Si la position est numérique (0 ou 1), convertir en A/B
+    const posKey = position === 0 ? "A" : position === 1 ? "B" : position;
+
+    // Essayer d'extraire le score de différentes façons
+    if (typeof posKey === "string") {
+      // Essayer avec la clé directe
+      if (round.scores[posKey] !== undefined) {
+        return Number(round.scores[posKey] || 0);
+      }
+
+      // Essayer avec la clé en minuscule
+      const lowerKey = posKey.toLowerCase();
+      if (round.scores[lowerKey] !== undefined) {
+        return Number(round.scores[lowerKey] || 0);
+      }
+    }
+
+    // Si la position est numérique, essayer avec cette clé
+    if (typeof position === "number" && round.scores[position] !== undefined) {
+      return Number(round.scores[position] || 0);
+    }
+
+    // Si on a une structure différente, essayer de déduire la position
+    const keys = Object.keys(round.scores);
+    if (keys.length === 2) {
+      // Si on a exactement deux scores, supposer que c'est un match 1v1
+      // et retourner le premier ou le second selon la position
+      if (position === "A" || position === 0) {
+        return Number(round.scores[keys[0]] || 0);
+      } else {
+        return Number(round.scores[keys[1]] || 0);
+      }
+    }
+  }
+
+  // Dernier recours: retourner 0
+  return 0;
+};
+
+// Fonction pour vérifier si un participant est dans un match
+const isParticipantInMatch = (
+  match: ExtendedMatch,
+  participantId: string
+): boolean => {
+  if (!match || !participantId) return false;
+
+  // Vérifier dans matchParticipants
+  if (match.matchParticipants && Array.isArray(match.matchParticipants)) {
+    return match.matchParticipants.some(
+      (mp) =>
+        mp.participantId === participantId ||
+        (mp.participant && mp.participant.id === participantId)
+    );
+  }
+
+  // Vérifier dans participants (autre structure possible)
+  if (match.participants && Array.isArray(match.participants)) {
+    return match.participants.some(
+      (p: { id?: string; participantId?: string }) =>
+        p.id === participantId || p.participantId === participantId
+    );
+  }
+
+  // Vérifier les propriétés directes
+  return (
+    match.participantAId === participantId ||
+    match.participantBId === participantId
+  );
+};
+
+// Fonction pour trouver la position d'un participant dans un match
+const findParticipantPosition = (
+  match: ExtendedMatch,
+  participantId: string
+): string | number | null => {
+  if (!match || !participantId) return null;
+
+  // Vérifier dans matchParticipants
+  if (match.matchParticipants && Array.isArray(match.matchParticipants)) {
+    const mp = match.matchParticipants.find(
+      (mp) =>
+        mp.participantId === participantId ||
+        (mp.participant && mp.participant.id === participantId)
+    );
+    if (mp) return mp.position;
+  }
+
+  // Vérifier dans participants
+  if (match.participants && Array.isArray(match.participants)) {
+    const p = match.participants.find(
+      (p: {
+        id?: string;
+        participantId?: string;
+        position?: string | number;
+      }) => p.id === participantId || p.participantId === participantId
+    );
+    if (p && p.position !== undefined) return p.position;
+  }
+
+  // Vérifier les propriétés directes
+  if (match.participantAId === participantId) return "A";
+  if (match.participantBId === participantId) return "B";
+
+  return null;
+};
 
 const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
   const [poolResults, setPoolResults] = useState<PoolResult[]>([]);
@@ -138,49 +275,52 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
         throw new Error(`Erreur HTTP: ${matchesResponse.status}`);
       }
       const matches = await matchesResponse.json();
-
-      // Récupérer les résultats des matchs
-      let matchResults: Record<string, MatchResult> = {};
-      try {
-        const resultsResponse = await fetch(
-          `${API_URL}/match/results/${competitionId}`
-        );
-        if (resultsResponse.ok) {
-          matchResults = await resultsResponse.json();
-        } else {
-          console.log(
-            "Pas de collection de résultats séparée disponible. Utilisation des données intégrées aux matchs."
-          );
-        }
-      } catch {
+      console.log("Matches récupérés:", matches.length);
+      console.log("Premier match exemple:", matches[0]);
+      if (matches[0]?.rounds) {
+        console.log("Exemple de rounds:", matches[0].rounds);
         console.log(
-          "Erreur lors de la récupération des résultats, utilisation des données intégrées aux matchs."
+          "Format des scores:",
+          matches[0].rounds[0]?.scores ||
+            `scoreA: ${matches[0].rounds[0]?.scoreA}, scoreB: ${matches[0].rounds[0]?.scoreB}`
         );
       }
 
-      // Si pas de résultats séparés, créer les résultats à partir des matchs complétés
-      if (Object.keys(matchResults).length === 0) {
-        console.log(
-          "Création des résultats à partir des données de matchs complétés"
-        );
-        const completedMatches = matches.filter(
-          (match: Match) => match.status === "completed"
-        );
+      // Créer les résultats directement à partir des matchs complétés
+      // (Ne pas essayer de récupérer depuis /match/results qui n'existe pas)
+      const matchResults: Record<string, MatchResult> = {};
 
-        completedMatches.forEach((match: Match) => {
-          matchResults[match.id] = {
-            id: match.id,
-            completed: true,
-            winner: match.winner,
-            rounds: match.rounds || [],
-          };
+      console.log("Création des résultats à partir des matchs complétés");
+      const completedMatches = matches.filter(
+        (match: Match) => match.status === "completed"
+      );
+
+      completedMatches.forEach((match: Match) => {
+        matchResults[match.id] = {
+          id: match.id,
+          completed: true,
+          winner: match.winner,
+          rounds: match.rounds || [],
+        };
+      });
+
+      console.log(
+        `${
+          Object.keys(matchResults).length
+        } résultats créés à partir des matchs complétés`
+      );
+
+      // Vérifier si un match a des scores
+      if (completedMatches.length > 0 && completedMatches[0].rounds) {
+        const exampleMatch = completedMatches[0];
+        console.log("Exemple de match complété:", {
+          id: exampleMatch.id,
+          rounds: exampleMatch.rounds,
+          scores: exampleMatch.rounds[0]?.scores || {
+            scoreA: exampleMatch.rounds[0]?.scoreA,
+            scoreB: exampleMatch.rounds[0]?.scoreB,
+          },
         });
-
-        console.log(
-          `${
-            Object.keys(matchResults).length
-          } résultats créés à partir des matchs complétés`
-        );
       }
 
       // Compter les matchs complétés
@@ -234,102 +374,334 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
                 const poolParticipants: ParticipantResult[] = [];
                 const participantsProcessed = new Set<string>();
 
-                // Récupérer les participants depuis les matchs
-                poolMatches.forEach((match) => {
-                  if ((match as ExtendedMatch).matchParticipants) {
-                    (match as ExtendedMatch).matchParticipants?.forEach(
-                      (mp) => {
+                // Récupérer les participants depuis la poule (méthode plus fiable)
+                if (pool.poolParticipants) {
+                  pool.poolParticipants.forEach((poolParticipant) => {
+                    if (
+                      poolParticipant.participant &&
+                      !participantsProcessed.has(poolParticipant.participant.id)
+                    ) {
+                      const participantId = poolParticipant.participant.id;
+                      participantsProcessed.add(participantId);
+
+                      // Trouver les matchs où ce participant a participé
+                      const participantMatches = poolMatches.filter(
+                        (m) =>
+                          isParticipantInMatch(
+                            m as ExtendedMatch,
+                            participantId
+                          ) && m.status === "completed"
+                      );
+
+                      // Calculer les victoires
+                      const wins = participantMatches.filter(
+                        (m) => (m as ExtendedMatch).winner === participantId
+                      ).length;
+
+                      // Calculer les rounds gagnés et perdus correctement
+                      let roundsWon = 0;
+                      let roundsLost = 0;
+                      let pointsGained = 0;
+                      let pointsLost = 0;
+
+                      // Pour chaque match complété où le participant a joué
+                      participantMatches.forEach((match) => {
                         if (
-                          mp.participant &&
-                          !participantsProcessed.has(mp.participant.id)
+                          (match as ExtendedMatch).rounds &&
+                          match.status === "completed"
                         ) {
-                          participantsProcessed.add(mp.participant.id);
+                          const position = findParticipantPosition(
+                            match as ExtendedMatch,
+                            participantId
+                          );
+                          console.log(
+                            `Match ${match.id} - Position du participant ${participantId}:`,
+                            position
+                          );
 
-                          // Compiler les stats du participant
-                          const wins = poolMatches.filter(
-                            (m) =>
-                              (m as ExtendedMatch).winner === mp.participant?.id
-                          ).length;
-
-                          const matchesPlayed = poolMatches.filter(
-                            (m) =>
-                              (m as ExtendedMatch).matchParticipants?.some(
-                                (p) => p.participantId === mp.participant?.id
-                              ) && m.status === "completed"
-                          ).length;
-
-                          const roundsWon = poolMatches.reduce((total, m) => {
-                            if ((m as ExtendedMatch).rounds) {
-                              return (
-                                total +
-                                ((m as ExtendedMatch).rounds?.filter(
-                                  (r) =>
-                                    (r as ExtendedRound).winner ===
-                                      mp.participant?.id ||
-                                    r.winnerPosition === mp.position
-                                ).length || 0)
-                              );
-                            }
-                            return total;
-                          }, 0);
-
-                          const roundsLost = poolMatches.reduce((total, m) => {
+                          // Pour chaque round du match
+                          (match as ExtendedMatch).rounds?.forEach((round) => {
+                            // Vérifier les rounds gagnés
                             if (
-                              (m as ExtendedMatch).rounds &&
-                              (m as ExtendedMatch).matchParticipants?.some(
-                                (p) => p.participantId === mp.participant?.id
-                              )
+                              round.winner === participantId ||
+                              (position !== null &&
+                                round.winnerPosition === position)
                             ) {
-                              return (
-                                total +
-                                ((m as ExtendedMatch).rounds?.filter(
-                                  (r) =>
-                                    (r as ExtendedRound).winner !==
-                                      mp.participant?.id &&
-                                    (r as ExtendedRound).winner !== null &&
-                                    r.winnerPosition !== mp.position &&
-                                    r.winnerPosition !== null
-                                ).length || 0)
+                              roundsWon++;
+                            }
+                            // Vérifier les rounds perdus
+                            else if (
+                              round.winner !== null ||
+                              round.winnerPosition !== null
+                            ) {
+                              roundsLost++;
+                            }
+
+                            // Calculer les points marqués et concédés avec la fonction extractScore
+                            if (
+                              round.scores ||
+                              round.scoreA !== undefined ||
+                              round.scoreB !== undefined
+                            ) {
+                              console.log(
+                                `Scores du round ${round.roundNumber}:`,
+                                round.scores || {
+                                  scoreA: round.scoreA,
+                                  scoreB: round.scoreB,
+                                }
+                              );
+
+                              // Déterminer la position opposée
+                              const positionOpposee =
+                                position === "A"
+                                  ? "B"
+                                  : position === "B"
+                                  ? "A"
+                                  : position === 0
+                                  ? 1
+                                  : position === 1
+                                  ? 0
+                                  : null;
+
+                              // Extraire les scores avec notre fonction robuste
+                              const pointsGagnes = extractScore(
+                                round,
+                                position
+                              );
+                              const pointsConcedes = extractScore(
+                                round,
+                                positionOpposee
+                              );
+
+                              // Ajouter aux totaux
+                              pointsGained += pointsGagnes;
+                              pointsLost += pointsConcedes;
+
+                              console.log(
+                                `Points pour ce round: gagnés +${pointsGagnes}, perdus +${pointsConcedes}`
                               );
                             }
-                            return total;
-                          }, 0);
-
-                          poolParticipants.push({
-                            id: mp.participant.id,
-                            nom: mp.participant.nom || "",
-                            prenom: mp.participant.prenom || "",
-                            ligue: mp.participant.ligue || "",
-                            club:
-                              (mp.participant as ExtendedParticipant).club ||
-                              "",
-                            points: wins * 3, // 3 points par victoire
-                            wins,
-                            matches: matchesPlayed,
-                            roundsWon,
-                            roundsLost,
-                            pointsGained: 0, // Valeur simplifiée
-                            pointsLost: 0, // Valeur simplifiée
-                            pointsDiff: 0, // Valeur simplifiée
-                            rank: 0, // Sera calculé plus tard
                           });
                         }
-                      }
-                    );
-                  }
-                });
+                      });
+
+                      // Calculer la différence de points
+                      const pointsDiff = pointsGained - pointsLost;
+                      console.log(
+                        `Statistiques finales pour ${participantId}: Rounds gagnés=${roundsWon}, perdus=${roundsLost}, points marqués=${pointsGained}, concédés=${pointsLost}, diff=${pointsDiff}`
+                      );
+
+                      const participant = poolParticipant.participant;
+
+                      poolParticipants.push({
+                        id: participant.id,
+                        nom: participant.nom || "",
+                        prenom: participant.prenom || "",
+                        ligue: participant.ligue || "",
+                        club: (participant as ExtendedParticipant).club || "",
+                        points: wins * 3, // 3 points par victoire
+                        wins,
+                        matches: participantMatches.length, // Nombre de matchs joués
+                        roundsWon,
+                        roundsLost,
+                        pointsGained,
+                        pointsLost,
+                        pointsDiff,
+                        rank: 0, // Sera calculé plus tard
+                      });
+
+                      console.log("Participant ajouté:", {
+                        id: participant.id,
+                        nom: participant.nom,
+                        pointsGained,
+                        pointsLost,
+                        pointsDiff,
+                      });
+                    }
+                  });
+                } else {
+                  // Méthode alternative: extraire les participants des matches si poolParticipants n'est pas disponible
+                  poolMatches.forEach((match) => {
+                    if ((match as ExtendedMatch).matchParticipants) {
+                      (match as ExtendedMatch).matchParticipants?.forEach(
+                        (mp) => {
+                          if (
+                            mp.participant &&
+                            !participantsProcessed.has(mp.participant.id)
+                          ) {
+                            // Compiler les stats du participant
+                            const wins = poolMatches.filter(
+                              (m) =>
+                                (m as ExtendedMatch).winner ===
+                                mp.participant?.id
+                            ).length;
+
+                            const matchesPlayed = poolMatches.filter(
+                              (m) =>
+                                (m as ExtendedMatch).matchParticipants?.some(
+                                  (p) => p.participantId === mp.participant?.id
+                                ) && m.status === "completed"
+                            ).length;
+
+                            const roundsWon = poolMatches.reduce((total, m) => {
+                              if ((m as ExtendedMatch).rounds) {
+                                return (
+                                  total +
+                                  ((m as ExtendedMatch).rounds?.filter(
+                                    (r) =>
+                                      (r as ExtendedRound).winner ===
+                                        mp.participant?.id ||
+                                      r.winnerPosition === mp.position
+                                  ).length || 0)
+                                );
+                              }
+                              return total;
+                            }, 0);
+
+                            const roundsLost = poolMatches.reduce(
+                              (total, m) => {
+                                if (
+                                  (m as ExtendedMatch).rounds &&
+                                  (m as ExtendedMatch).matchParticipants?.some(
+                                    (p) =>
+                                      p.participantId === mp.participant?.id
+                                  )
+                                ) {
+                                  return (
+                                    total +
+                                    ((m as ExtendedMatch).rounds?.filter(
+                                      (r) =>
+                                        (r as ExtendedRound).winner !==
+                                          mp.participant?.id &&
+                                        (r as ExtendedRound).winner !== null &&
+                                        r.winnerPosition !== mp.position &&
+                                        r.winnerPosition !== null
+                                    ).length || 0)
+                                  );
+                                }
+                                return total;
+                              },
+                              0
+                            );
+
+                            // Calculer les points marqués et concédés
+                            let pointsGained = 0;
+                            let pointsLost = 0;
+
+                            poolMatches.forEach((m) => {
+                              if (
+                                (m as ExtendedMatch).rounds &&
+                                m.status === "completed"
+                              ) {
+                                const participantPosition = (
+                                  m as ExtendedMatch
+                                ).matchParticipants?.find(
+                                  (p) => p.participantId === mp.participant?.id
+                                )?.position;
+
+                                if (participantPosition) {
+                                  (m as ExtendedMatch).rounds?.forEach(
+                                    (round) => {
+                                      // Si le participant est en position A
+                                      if (
+                                        participantPosition === "A" ||
+                                        participantPosition === 0
+                                      ) {
+                                        if (
+                                          round.scores ||
+                                          round.scoreA !== undefined ||
+                                          round.scoreB !== undefined
+                                        ) {
+                                          // Utiliser extractScore pour les points
+                                          pointsGained += extractScore(
+                                            round,
+                                            participantPosition
+                                          );
+                                          pointsLost += extractScore(
+                                            round,
+                                            participantPosition === "A"
+                                              ? "B"
+                                              : 1
+                                          );
+                                        }
+                                      }
+                                      // Si le participant est en position B
+                                      else if (
+                                        participantPosition === "B" ||
+                                        participantPosition === 1
+                                      ) {
+                                        if (
+                                          round.scores ||
+                                          round.scoreA !== undefined ||
+                                          round.scoreB !== undefined
+                                        ) {
+                                          // Utiliser extractScore pour les points
+                                          pointsGained += extractScore(
+                                            round,
+                                            participantPosition
+                                          );
+                                          pointsLost += extractScore(
+                                            round,
+                                            participantPosition === "B"
+                                              ? "A"
+                                              : 0
+                                          );
+                                        }
+                                      }
+                                    }
+                                  );
+                                }
+                              }
+                            });
+
+                            // Calculer la différence de points
+                            const pointsDiff = pointsGained - pointsLost;
+
+                            poolParticipants.push({
+                              id: mp.participant.id,
+                              nom: mp.participant.nom || "",
+                              prenom: mp.participant.prenom || "",
+                              ligue: mp.participant.ligue || "",
+                              club:
+                                (mp.participant as ExtendedParticipant).club ||
+                                "",
+                              points: wins * 3, // 3 points par victoire
+                              wins,
+                              matches: matchesPlayed,
+                              roundsWon,
+                              roundsLost,
+                              pointsGained,
+                              pointsLost,
+                              pointsDiff,
+                              rank: 0, // Sera calculé plus tard
+                            });
+                          }
+                        }
+                      );
+                    }
+                  });
+                }
 
                 // Trier les participants par points
                 poolParticipants.sort((a, b) => {
-                  // 1. Nombre de points
+                  // 1. Nombre de points (3 pour victoire)
                   if (a.points !== b.points) return b.points - a.points;
 
-                  // 2. Nombre de rounds gagnés
+                  // 2. Confrontation directe
+                  const directWinner = getDirectMatchWinner(a, b, poolMatches);
+                  if (directWinner === a.id) return -1;
+                  if (directWinner === b.id) return 1;
+
+                  // 3. Nombre de rounds gagnés
                   if (a.roundsWon !== b.roundsWon)
                     return b.roundsWon - a.roundsWon;
 
-                  // 3. Différence de points
-                  return b.pointsDiff - a.pointsDiff;
+                  // 4. Différence de points
+                  if (a.pointsDiff !== b.pointsDiff)
+                    return b.pointsDiff - a.pointsDiff;
+
+                  // Si tout est égal, garder l'ordre
+                  return 0;
                 });
 
                 // Assigner les rangs
@@ -354,6 +726,22 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
           });
 
           console.log("Résultats calculés:", results);
+          console.log(
+            "Exemple de résultat pour la première poule:",
+            results.length > 0
+              ? {
+                  groupId: results[0].groupId,
+                  participants: results[0].participants.map((p) => ({
+                    nom: p.nom,
+                    prenom: p.prenom,
+                    points: p.points,
+                    pointsGained: p.pointsGained,
+                    pointsLost: p.pointsLost,
+                    pointsDiff: p.pointsDiff,
+                  })),
+                }
+              : "Aucun résultat"
+          );
 
           if (results.length === 0) {
             setNoCompletedMatches(true);
@@ -415,6 +803,66 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
   // Tri par index de poule
   selectedGroupPools.sort((a, b) => a.poolIndex - b.poolIndex);
 
+  // Ajouter une fonction pour trouver un match direct entre deux participants
+  const findDirectMatch = (
+    participant1Id: string,
+    participant2Id: string,
+    matches: Match[]
+  ): Match | null => {
+    if (
+      !participant1Id ||
+      !participant2Id ||
+      !matches ||
+      matches.length === 0
+    ) {
+      return null;
+    }
+
+    return (
+      matches.find((match) => {
+        // Vérifier dans matchParticipants (structure BD)
+        if (match.matchParticipants && match.matchParticipants.length >= 2) {
+          const participantIds = match.matchParticipants
+            .filter((mp) => mp.participant)
+            .map((mp) => mp.participant?.id);
+
+          return (
+            participantIds.includes(participant1Id) &&
+            participantIds.includes(participant2Id)
+          );
+        }
+        return false;
+      }) || null
+    );
+  };
+
+  // Ajouter une fonction pour déterminer le gagnant d'une confrontation directe
+  const getDirectMatchWinner = (
+    participantA: ParticipantResult,
+    participantB: ParticipantResult,
+    matches: Match[]
+  ): string | null => {
+    if (!participantA || !participantB) return null;
+
+    const directMatch = findDirectMatch(
+      participantA.id,
+      participantB.id,
+      matches
+    );
+
+    if (!directMatch) return null;
+
+    if (directMatch.status === "completed" && directMatch.winner) {
+      return directMatch.winner === participantA.id
+        ? participantA.id
+        : directMatch.winner === participantB.id
+        ? participantB.id
+        : null;
+    }
+
+    return null;
+  };
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center p-6 min-h-[300px]">
@@ -462,7 +910,7 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
   }
 
   return (
-    <div className="p-4">
+    <div className="p-4 sm:p-6">
       <h2 className="text-2xl font-bold mb-4 text-blue-800">
         Résultats par poules
       </h2>
@@ -504,60 +952,194 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
                 <h3 className="bg-blue-600 p-3 font-medium text-white text-lg">
                   Poule {pool.poolIndex + 1}
                 </h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
+
+                {/* Vue desktop : tableau complet */}
+                <div className="hidden md:block overflow-x-auto px-2 py-1">
+                  <table className="w-full min-w-[650px]">
                     <thead>
                       <tr className="bg-gray-700 text-white">
-                        <th className="px-4 py-3 text-left">Place</th>
-                        <th className="px-4 py-3 text-left">Athlète</th>
-                        <th className="px-4 py-3 text-left">Région</th>
-                        <th className="px-4 py-3 text-left">Club</th>
-                        <th className="px-4 py-3 text-right">Points</th>
-                        <th className="px-4 py-3 text-center">V</th>
-                        <th className="px-4 py-3 text-center">D</th>
-                        <th className="px-4 py-3 text-center">R+</th>
-                        <th className="px-4 py-3 text-center">R-</th>
+                        <th className="px-2 sm:px-4 py-2 sm:py-3 text-left">
+                          Place
+                        </th>
+                        <th className="px-2 sm:px-4 py-2 sm:py-3 text-left">
+                          Athlète
+                        </th>
+                        <th className="px-2 sm:px-4 py-2 sm:py-3 text-left">
+                          Club
+                        </th>
+                        <th className="px-2 sm:px-4 py-2 sm:py-3 text-right">
+                          Pts
+                        </th>
+                        <th className="px-2 sm:px-4 py-2 sm:py-3 text-center">
+                          V
+                        </th>
+                        <th className="px-2 sm:px-4 py-2 sm:py-3 text-center">
+                          D
+                        </th>
+                        <th className="px-2 sm:px-4 py-2 sm:py-3 text-center">
+                          R+
+                        </th>
+                        <th className="px-2 sm:px-4 py-2 sm:py-3 text-center">
+                          R-
+                        </th>
+                        <th className="px-2 sm:px-4 py-2 sm:py-3 text-center">
+                          P+
+                        </th>
+                        <th className="px-2 sm:px-4 py-2 sm:py-3 text-center">
+                          P-
+                        </th>
+                        <th className="px-2 sm:px-4 py-2 sm:py-3 text-center">
+                          Diff
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
-                      {pool.participants.map((participant, index) => (
-                        <tr
-                          key={participant.id}
-                          className={
-                            index % 2 === 0 ? "bg-white" : "bg-blue-50"
-                          }
-                        >
-                          <td className="px-4 py-3 font-bold text-gray-800">
-                            {index + 1}
-                          </td>
-                          <td className="px-4 py-3 font-medium text-gray-800">
-                            {participant.prenom} {participant.nom}
-                          </td>
-                          <td className="px-4 py-3 text-gray-800">
-                            {participant.ligue}
-                          </td>
-                          <td className="px-4 py-3 text-gray-800">
-                            {participant.club || "-"}
-                          </td>
-                          <td className="px-4 py-3 text-right font-bold text-blue-700">
-                            {participant.points}
-                          </td>
-                          <td className="px-4 py-3 text-center font-medium text-green-700">
-                            {participant.wins}
-                          </td>
-                          <td className="px-4 py-3 text-center font-medium text-red-700">
-                            {participant.matches - participant.wins}
-                          </td>
-                          <td className="px-4 py-3 text-center font-medium text-gray-800">
-                            {participant.roundsWon}
-                          </td>
-                          <td className="px-4 py-3 text-center font-medium text-gray-800">
-                            {participant.roundsLost}
-                          </td>
-                        </tr>
-                      ))}
+                      {pool.participants.map((participant, index) => {
+                        console.log(`Affichage participant ${index}:`, {
+                          nom: participant.nom,
+                          pointsGained: participant.pointsGained,
+                          pointsLost: participant.pointsLost,
+                          pointsDiff: participant.pointsDiff,
+                        });
+                        return (
+                          <tr
+                            key={participant.id}
+                            className={
+                              index % 2 === 0 ? "bg-white" : "bg-blue-50"
+                            }
+                          >
+                            <td className="px-2 sm:px-4 py-2 sm:py-3 font-bold text-gray-800">
+                              {index + 1}
+                            </td>
+                            <td className="px-2 sm:px-4 py-2 sm:py-3 font-medium text-gray-800">
+                              {participant.prenom} {participant.nom}
+                            </td>
+                            <td className="px-2 sm:px-4 py-2 sm:py-3 text-gray-800 truncate max-w-[120px]">
+                              {participant.club || participant.ligue || "-"}
+                            </td>
+                            <td className="px-2 sm:px-4 py-2 sm:py-3 text-right font-bold text-blue-700">
+                              {participant.points}
+                            </td>
+                            <td className="px-2 sm:px-4 py-2 sm:py-3 text-center font-medium text-green-700">
+                              {participant.wins}
+                            </td>
+                            <td className="px-2 sm:px-4 py-2 sm:py-3 text-center font-medium text-red-700">
+                              {participant.matches - participant.wins}
+                            </td>
+                            <td className="px-2 sm:px-4 py-2 sm:py-3 text-center font-medium text-gray-800">
+                              {participant.roundsWon}
+                            </td>
+                            <td className="px-2 sm:px-4 py-2 sm:py-3 text-center font-medium text-gray-800">
+                              {participant.roundsLost}
+                            </td>
+                            <td className="px-2 sm:px-4 py-2 sm:py-3 text-center font-medium text-green-700">
+                              {participant.pointsGained}
+                            </td>
+                            <td className="px-2 sm:px-4 py-2 sm:py-3 text-center font-medium text-red-700">
+                              {participant.pointsLost}
+                            </td>
+                            <td
+                              className={`px-2 sm:px-4 py-2 sm:py-3 text-center font-medium ${
+                                participant.pointsDiff >= 0
+                                  ? "text-green-700"
+                                  : "text-red-700"
+                              }`}
+                            >
+                              {participant.pointsDiff >= 0 ? "+" : ""}
+                              {participant.pointsDiff}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
+                </div>
+
+                {/* Vue mobile : cartes individuelles */}
+                <div className="md:hidden px-2 py-2 space-y-3">
+                  {pool.participants.map((participant, index) => (
+                    <div
+                      key={participant.id}
+                      className={`p-3 rounded-lg shadow-sm ${
+                        index % 2 === 0 ? "bg-white" : "bg-blue-50"
+                      }`}
+                    >
+                      <div className="flex justify-between items-center mb-2">
+                        <div className="font-bold text-xl text-gray-800 flex items-center">
+                          <span className="bg-blue-600 text-white w-6 h-6 flex items-center justify-center rounded-full mr-2">
+                            {index + 1}
+                          </span>
+                          <span className="text-base">
+                            {participant.prenom} {participant.nom}
+                          </span>
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          {participant.club || participant.ligue || "-"}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div className="flex flex-col p-1 rounded bg-white shadow-sm">
+                          <span className="text-xs text-gray-500">Points</span>
+                          <span className="font-bold text-blue-700">
+                            {participant.points}
+                          </span>
+                        </div>
+                        <div className="flex flex-col p-1 rounded bg-white shadow-sm">
+                          <span className="text-xs text-gray-500">V/D</span>
+                          <span>
+                            <span className="font-medium text-green-700">
+                              {participant.wins}
+                            </span>
+                            {" / "}
+                            <span className="font-medium text-red-700">
+                              {participant.matches - participant.wins}
+                            </span>
+                          </span>
+                        </div>
+                        <div className="flex flex-col p-1 rounded bg-white shadow-sm">
+                          <span className="text-xs text-gray-500">Rounds</span>
+                          <span>
+                            <span className="font-medium text-green-700">
+                              {participant.roundsWon}
+                            </span>
+                            {" / "}
+                            <span className="font-medium text-red-700">
+                              {participant.roundsLost}
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                        <div className="flex flex-col p-1 rounded bg-white shadow-sm">
+                          <span className="text-xs text-gray-500">Points+</span>
+                          <span className="font-medium text-green-700">
+                            {participant.pointsGained}
+                          </span>
+                        </div>
+                        <div className="flex flex-col p-1 rounded bg-white shadow-sm">
+                          <span className="text-xs text-gray-500">Points-</span>
+                          <span className="font-medium text-red-700">
+                            {participant.pointsLost}
+                          </span>
+                        </div>
+                        <div className="flex flex-col p-1 rounded bg-white shadow-sm">
+                          <span className="text-xs text-gray-500">Diff</span>
+                          <span
+                            className={`font-medium ${
+                              participant.pointsDiff >= 0
+                                ? "text-green-700"
+                                : "text-red-700"
+                            }`}
+                          >
+                            {participant.pointsDiff >= 0 ? "+" : ""}
+                            {participant.pointsDiff}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}

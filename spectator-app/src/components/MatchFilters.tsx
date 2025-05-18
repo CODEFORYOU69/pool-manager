@@ -5,16 +5,19 @@ interface MatchFiltersProps {
     areaNumber: string;
     participantName: string;
     ligue: string;
+    club: string;
     status: string;
   };
   onFilterChange: (filters: {
     areaNumber?: string;
     participantName?: string;
     ligue?: string;
+    club?: string;
     status?: string;
   }) => void;
   areas: number[];
   ligues: string[];
+  clubs?: string[];
 }
 
 export default function MatchFilters({
@@ -22,11 +25,12 @@ export default function MatchFilters({
   onFilterChange,
   areas,
   ligues,
+  clubs = [],
 }: MatchFiltersProps) {
   return (
     <div className="bg-white shadow-sm border-b border-gray-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
           {/* Filtre par aire */}
           <div>
             <label
@@ -96,6 +100,30 @@ export default function MatchFilters({
             </select>
           </div>
 
+          {/* Filtre par club */}
+          <div>
+            <label
+              htmlFor="club"
+              className="block text-sm font-semibold text-gray-900 mb-1"
+            >
+              Club
+            </label>
+            <select
+              id="club"
+              name="club"
+              className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md bg-white shadow-sm text-gray-900"
+              value={filters.club}
+              onChange={(e) => onFilterChange({ club: e.target.value })}
+            >
+              <option value="">Tous les clubs</option>
+              {clubs.map((club) => (
+                <option key={club} value={club}>
+                  {club}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Filtre par statut */}
           <div>
             <label
@@ -126,6 +154,7 @@ export default function MatchFilters({
                   areaNumber: "",
                   participantName: "",
                   ligue: "",
+                  club: "",
                   status: "",
                 })
               }

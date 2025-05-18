@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useCompetition } from "../context/CompetitionContext";
 import {
   API_URL,
@@ -53,9 +53,20 @@ const MatchSchedule = ({
   const [info, setInfo] = useState(null);
   // État pour stocker les informations PSS par match
   const [matchesPssInfo, setMatchesPssInfo] = useState({});
+  // Référence pour éviter les appels multiples à la génération des matchs
+  const isLoadingOrGenerating = useRef(false);
 
   useEffect(() => {
     if (groups && groups.length > 0 && tournamentConfig && competitionId) {
+      // Vérifier si on est déjà en train de charger/générer des matchs
+      if (isLoadingOrGenerating.current) {
+        console.log("Chargement/génération déjà en cours, opération ignorée");
+        return;
+      }
+
+      // Définir le drapeau pour éviter les appels multiples
+      isLoadingOrGenerating.current = true;
+
       // Vérifier si des matchs ont déjà été fournis en props
       if (matches && matches.length > 0 && schedule && schedule.length > 0) {
         console.log(
@@ -68,18 +79,26 @@ const MatchSchedule = ({
         setMatchesAlreadyLoaded(true);
         setDataSource("existing");
         setIsLoading(false);
+        isLoadingOrGenerating.current = false;
       }
       // Si les matchs ont déjà été chargés dans le state, ne pas les recharger
       else if (generatedMatches.length > 0 && matchesAlreadyLoaded) {
         console.log("Matchs déjà chargés, utilisation des données en cache");
         setIsLoading(false);
+        isLoadingOrGenerating.current = false;
       }
       // Sinon, essayer de charger les matchs existants
       else {
         console.log(
           "Chargement des matchs existants ou génération de nouveaux matchs"
         );
-        loadExistingMatches();
+        loadExistingMatches()
+          .then(() => {
+            isLoadingOrGenerating.current = false;
+          })
+          .catch(() => {
+            isLoadingOrGenerating.current = false;
+          });
       }
     }
   }, [groups, tournamentConfig, competitionId, matches, schedule]);
@@ -139,30 +158,127 @@ const MatchSchedule = ({
 
   // Utilitaire pour calculer les statistiques
   const calculateStats = (matches, schedule) => {
-    const totalDuration = schedule.reduce((total, item) => {
-      if (item.endTime && item.startTime) {
-        const start = new Date(item.startTime);
-        const end = new Date(item.endTime);
-        const durationInMinutes = (end - start) / 60000;
-        return total + durationInMinutes;
-      }
-      return total;
-    }, 0);
+    // Vérifier si nous avons des matchs à traiter
+    if (!schedule || schedule.length === 0) {
+      setScheduleStats({
+        totalMatches: matches.length,
+        totalAreas: 0,
+        estimatedDuration: 0,
+        estimatedEndTime: new Date(),
+      });
+      return;
+    }
 
-    // Vérifier que le nombre d'aires est correct (ne pas utiliser 1 par défaut si tournamentConfig existe)
-    const numAreas =
-      tournamentConfig && tournamentConfig.numAreas
-        ? tournamentConfig.numAreas
-        : 1;
+    // Déterminer le nombre d'aires à partir des matchs
+    const airesUtilisees = new Set();
+    matches.forEach((match) => {
+      if (match.areaNumber) airesUtilisees.add(match.areaNumber);
+      else if (match.area && match.area.areaNumber)
+        airesUtilisees.add(match.area.areaNumber);
+    });
+
+    // S'assurer que la valeur de configuration est un nombre
+    let configAreas = 1;
+    if (tournamentConfig && tournamentConfig.numAreas) {
+      // Conversion explicite en nombre entier
+      configAreas = parseInt(tournamentConfig.numAreas, 10);
+      if (isNaN(configAreas)) configAreas = 1; // Valeur par défaut si la conversion échoue
+    }
+
+    // Utiliser le nombre d'aires configuré, mais au minimum le nombre d'aires détectées
+    const numAreas = Math.max(airesUtilisees.size, configAreas);
 
     console.log(
       "Nombre d'aires de combat dans calculateStats:",
       numAreas,
+      "Aires détectées:",
+      Array.from(airesUtilisees),
+      "Aires configurées:",
+      configAreas,
       "tournamentConfig:",
       tournamentConfig
     );
 
-    const estimatedDuration = totalDuration / numAreas;
+    // Trouver l'heure de début du premier match et l'heure de fin du dernier match pour chaque aire
+    const areaTimings = {};
+
+    schedule.forEach((item) => {
+      if (!item.areaNumber || !item.startTime) return;
+
+      if (!areaTimings[item.areaNumber]) {
+        areaTimings[item.areaNumber] = {
+          firstMatch: null,
+          lastMatch: null,
+        };
+      }
+
+      const startTime = new Date(item.startTime);
+      const endTime = item.endTime ? new Date(item.endTime) : null;
+
+      // Mettre à jour l'heure du premier match si nécessaire
+      if (
+        !areaTimings[item.areaNumber].firstMatch ||
+        startTime < areaTimings[item.areaNumber].firstMatch
+      ) {
+        areaTimings[item.areaNumber].firstMatch = startTime;
+      }
+
+      // Mettre à jour l'heure du dernier match si nécessaire
+      if (
+        endTime &&
+        (!areaTimings[item.areaNumber].lastMatch ||
+          endTime > areaTimings[item.areaNumber].lastMatch)
+      ) {
+        areaTimings[item.areaNumber].lastMatch = endTime;
+      }
+    });
+
+    // Calculer la durée totale pour chaque aire (du premier au dernier match)
+    let maxDuration = 0;
+    let earliestStart = null;
+    let latestEnd = null;
+
+    for (const areaNum in areaTimings) {
+      const area = areaTimings[areaNum];
+      if (area.firstMatch && area.lastMatch) {
+        // Garder trace du début le plus tôt et de la fin la plus tardive
+        if (!earliestStart || area.firstMatch < earliestStart) {
+          earliestStart = area.firstMatch;
+        }
+        if (!latestEnd || area.lastMatch > latestEnd) {
+          latestEnd = area.lastMatch;
+        }
+
+        // Calculer la durée pour cette aire
+        const areaDuration = (area.lastMatch - area.firstMatch) / 60000; // en minutes
+        console.log(
+          `Aire ${areaNum}: Début ${area.firstMatch.toLocaleTimeString()}, Fin ${area.lastMatch.toLocaleTimeString()}, Durée ${areaDuration.toFixed(
+            1
+          )} minutes`
+        );
+
+        if (areaDuration > maxDuration) {
+          maxDuration = areaDuration;
+        }
+      }
+    }
+
+    // Utiliser la durée totale du tournoi (du début du premier match à la fin du dernier)
+    let tournamentDuration = 0;
+    if (earliestStart && latestEnd) {
+      tournamentDuration = (latestEnd - earliestStart) / 60000; // en minutes
+      console.log(
+        `Durée totale du tournoi: du ${earliestStart.toLocaleTimeString()} au ${latestEnd.toLocaleTimeString()} = ${tournamentDuration.toFixed(
+          1
+        )} minutes`
+      );
+    } else {
+      // Fallback si les calculs précédents échouent
+      tournamentDuration = (matches.length * 5) / numAreas; // Estimation grossière basée sur 5 minutes par match
+    }
+
+    // Ajouter un facteur d'ajustement pour tenir compte des imprévus
+    const estimatedDuration = tournamentDuration * 1.05; // +5% de marge
 
     // Calculer l'heure de fin estimée
     const now = new Date();
@@ -184,7 +300,15 @@ const MatchSchedule = ({
 
   // Fonction pour générer le planning et les matchs
   const handleGenerateSchedule = async () => {
+    // Vérifier si on est déjà en train de charger/générer des matchs
+    if (isLoadingOrGenerating.current) {
+      console.log("Génération déjà en cours, opération ignorée");
+      return;
+    }
+
     try {
+      // Définir le drapeau pour éviter les appels multiples
+      isLoadingOrGenerating.current = true;
       setIsLoading(true);
       setError(null);
 
@@ -217,6 +341,7 @@ const MatchSchedule = ({
                 calculateStats(loadedMatches, loadedSchedule);
                 setMatchesAlreadyLoaded(true);
                 setIsLoading(false);
+                isLoadingOrGenerating.current = false;
                 return; // Sortir de la fonction, pas besoin de générer de nouveaux matchs
               }
             } catch (loadError) {
@@ -562,6 +687,7 @@ const MatchSchedule = ({
 
         setError(null);
         setIsLoading(false);
+        isLoadingOrGenerating.current = false;
       };
 
       // Fonction de gestion des erreurs
@@ -569,10 +695,12 @@ const MatchSchedule = ({
         console.error("Erreur lors de la sauvegarde:", error);
         setError(`Erreur lors de la sauvegarde: ${error.message}`);
         setIsLoading(false);
+        isLoadingOrGenerating.current = false;
       };
     } catch (err) {
       setError(`Erreur lors de la génération du planning: ${err.message}`);
       setIsLoading(false);
+      isLoadingOrGenerating.current = false;
     }
   };
 
@@ -609,12 +737,35 @@ const MatchSchedule = ({
         position = position === 0 ? "A" : "B";
       }
 
+      // Vérifier si nous avons des données de match
+      if (!matchInfo) {
+        console.log("getParticipantName: matchInfo est null ou undefined");
+        return "-";
+      }
+
+      // Débogage: afficher la structure du match pour le premier appel
+      if (position === "A" && !window._debuggedGetParticipantName) {
+        console.log("Structure du match pour getParticipantName:", {
+          id: matchInfo.id,
+          hasMatchParticipants: !!matchInfo.matchParticipants,
+          matchParticipantsLength: matchInfo.matchParticipants?.length,
+          hasParticipants: !!matchInfo.participants,
+          participantsLength: matchInfo.participants?.length,
+        });
+        window._debuggedGetParticipantName = true;
+      }
+
       // Vérifier d'abord dans matchParticipants (structure DB)
-      if (matchInfo.matchParticipants) {
-        const participant = matchInfo.matchParticipants.find(
+      if (
+        matchInfo.matchParticipants &&
+        matchInfo.matchParticipants.length > 0
+      ) {
+        const participantData = matchInfo.matchParticipants.find(
           (p) => p.position === position
-        )?.participant;
-        if (participant) {
+        );
+
+        if (participantData && participantData.participant) {
+          const participant = participantData.participant;
           return (
             `${participant.prenom || ""} ${participant.nom || ""}`.trim() || "-"
           );
@@ -622,13 +773,17 @@ const MatchSchedule = ({
       }
 
       // Chercher ensuite dans la version avec position intégrée
-      if (matchInfo.participants) {
-        const participant = matchInfo.participants.find(
+      if (matchInfo.participants && matchInfo.participants.length > 0) {
+        // Essayer d'abord avec la propriété position
+        const participantWithPosition = matchInfo.participants.find(
           (p) => p.position === position
         );
-        if (participant) {
+
+        if (participantWithPosition) {
           return (
-            `${participant.prenom || ""} ${participant.nom || ""}`.trim() || "-"
+            `${participantWithPosition.prenom || ""} ${
+              participantWithPosition.nom || ""
+            }`.trim() || "-"
           );
         }
 
@@ -642,9 +797,16 @@ const MatchSchedule = ({
         }
       }
 
+      // Si nous arrivons ici, aucun participant trouvé
+      console.log(
+        `Aucun participant trouvé pour la position ${position} dans le match ID: ${matchInfo.id}`
+      );
       return "-";
     } catch (error) {
-      console.error("Erreur lors de l'accès aux informations de nom:", error);
+      console.error("Erreur lors de l'accès aux informations de nom:", error, {
+        matchId: matchInfo?.id,
+        position,
+      });
       return "-";
     }
   };
@@ -658,35 +820,90 @@ const MatchSchedule = ({
         position = position === 0 ? "A" : "B";
       }
 
-      // Vérifier si nous avons la structure matchParticipants (version BD)
-      if (matchInfo.matchParticipants) {
-        const participant = matchInfo.matchParticipants.find(
-          (p) => p.position === position
-        )?.participant;
-        if (!participant || !participant.ligue) return "-";
-        return participant.ligue;
-      }
-
-      // Sinon, utiliser l'ancienne structure participants (version mémoire)
-      // Index 0 = A (bleu), Index 1 = B (rouge)
-      const participantIndex = position === "A" ? 0 : 1;
-      const participant = matchInfo?.participants?.[participantIndex];
-      if (!participant) {
+      // Vérifier si nous avons des données de match
+      if (!matchInfo) {
         return "-";
       }
 
-      // Si l'information est dans athleteInfo
-      if (participant.athleteInfo && participant.athleteInfo.ligue) {
-        return participant.athleteInfo.ligue;
+      // Vérifier si nous avons la structure matchParticipants (version BD)
+      if (
+        matchInfo.matchParticipants &&
+        matchInfo.matchParticipants.length > 0
+      ) {
+        const participantData = matchInfo.matchParticipants.find(
+          (p) => p.position === position
+        );
+
+        if (participantData && participantData.participant) {
+          const participant = participantData.participant;
+          if (!participant.ligue && !participant.club) return "-";
+          // Retourner le club si disponible, sinon la ligue
+          return participant.club || participant.ligue || "-";
+        }
       }
-      // Si l'information est directement dans le participant
-      else if (participant.ligue) {
-        return participant.ligue;
+
+      // Sinon, utiliser l'ancienne structure participants (version mémoire)
+      if (matchInfo.participants && matchInfo.participants.length > 0) {
+        // Essayer d'abord avec la propriété position
+        const participantWithPosition = matchInfo.participants.find(
+          (p) => p.position === position
+        );
+
+        if (participantWithPosition) {
+          // Si l'information est dans athleteInfo
+          if (participantWithPosition.athleteInfo) {
+            if (participantWithPosition.athleteInfo.club) {
+              return participantWithPosition.athleteInfo.club;
+            }
+            if (participantWithPosition.athleteInfo.ligue) {
+              return participantWithPosition.athleteInfo.ligue;
+            }
+          }
+          // Si l'information est directement dans le participant
+          if (participantWithPosition.club) {
+            return participantWithPosition.club;
+          }
+          if (participantWithPosition.ligue) {
+            return participantWithPosition.ligue;
+          }
+          return "-";
+        }
+
+        // Fallback à la méthode par index
+        const participantIndex = position === "A" ? 0 : 1;
+        const participant = matchInfo?.participants?.[participantIndex];
+        if (!participant) {
+          return "-";
+        }
+
+        // Si l'information est dans athleteInfo
+        if (participant.athleteInfo) {
+          if (participant.athleteInfo.club) {
+            return participant.athleteInfo.club;
+          }
+          if (participant.athleteInfo.ligue) {
+            return participant.athleteInfo.ligue;
+          }
+        }
+        // Si l'information est directement dans le participant
+        if (participant.club) {
+          return participant.club;
+        }
+        if (participant.ligue) {
+          return participant.ligue;
+        }
       }
 
       return "-";
     } catch (error) {
-      console.error("Erreur lors de l'accès aux informations de ligue:", error);
+      console.error(
+        "Erreur lors de l'accès aux informations de ligue/club:",
+        error,
+        {
+          matchId: matchInfo?.id,
+          position,
+        }
+      );
       return "-";
     }
   };
@@ -1184,33 +1401,103 @@ const MatchSchedule = ({
 
     // Recherche par nom d'athlète ou par ligue
     if (searchTerm || ligueFilter) {
-      // S'assurer que les participants existent
-      if (!match.participants || match.participants.length === 0) {
+      let participantMatchFound = false;
+      let ligueMatchFound = false;
+
+      // Cas 1: Vérifier dans la structure matchParticipants (version BD)
+      if (match.matchParticipants && match.matchParticipants.length > 0) {
+        // Filtrer par terme de recherche (nom ou prénom)
+        if (searchTerm) {
+          const searchTermLower = searchTerm.toLowerCase();
+          participantMatchFound = match.matchParticipants.some((mp) => {
+            const participant = mp.participant;
+            if (!participant) return false;
+
+            return (
+              (participant.nom &&
+                participant.nom.toLowerCase().includes(searchTermLower)) ||
+              (participant.prenom &&
+                participant.prenom.toLowerCase().includes(searchTermLower))
+            );
+          });
+
+          if (searchTerm && !participantMatchFound) {
+            return false;
+          }
+        } else {
+          participantMatchFound = true;
+        }
+
+        // Filtrer par ligue
+        if (ligueFilter) {
+          const ligueFilterLower = ligueFilter.toLowerCase();
+          ligueMatchFound = match.matchParticipants.some((mp) => {
+            const participant = mp.participant;
+            if (!participant || !participant.ligue) return false;
+
+            return participant.ligue.toLowerCase().includes(ligueFilterLower);
+          });
+
+          if (ligueFilter && !ligueMatchFound) {
+            return false;
+          }
+        } else {
+          ligueMatchFound = true;
+        }
+      }
+      // Cas 2: Vérifier dans la structure participants (version mémoire)
+      else if (match.participants && match.participants.length > 0) {
+        // Filtrer par terme de recherche (nom ou prénom)
+        if (searchTerm) {
+          const searchTermLower = searchTerm.toLowerCase();
+          participantMatchFound = match.participants.some(
+            (p) =>
+              (p.nom && p.nom.toLowerCase().includes(searchTermLower)) ||
+              (p.prenom && p.prenom.toLowerCase().includes(searchTermLower))
+          );
+
+          if (searchTerm && !participantMatchFound) {
+            return false;
+          }
+        } else {
+          participantMatchFound = true;
+        }
+
+        // Filtrer par ligue
+        if (ligueFilter) {
+          const ligueFilterLower = ligueFilter.toLowerCase();
+          ligueMatchFound = match.participants.some((p) => {
+            // Vérifier si la ligue est dans athleteInfo
+            if (p.athleteInfo && p.athleteInfo.ligue) {
+              return p.athleteInfo.ligue
+                .toLowerCase()
+                .includes(ligueFilterLower);
+            }
+            // Ou directement dans le participant
+            else if (p.ligue) {
+              return p.ligue.toLowerCase().includes(ligueFilterLower);
+            }
+            return false;
+          });
+
+          if (ligueFilter && !ligueMatchFound) {
+            return false;
+          }
+        } else {
+          ligueMatchFound = true;
+        }
+      }
+      // Si aucune structure de participants n'existe, retourner false
+      else if (searchTerm || ligueFilter) {
         return false;
       }
 
-      // Filtrer par terme de recherche (nom ou prénom)
-      if (searchTerm) {
-        const searchTermLower = searchTerm.toLowerCase();
-        const participantMatch = match.participants.some(
-          (p) =>
-            (p.nom && p.nom.toLowerCase().includes(searchTermLower)) ||
-            (p.prenom && p.prenom.toLowerCase().includes(searchTermLower))
-        );
-        if (!participantMatch) {
-          return false;
-        }
-      }
-
-      // Filtrer par ligue
-      if (ligueFilter) {
-        const ligueFilterLower = ligueFilter.toLowerCase();
-        const ligueMatch = match.participants.some(
-          (p) => p.ligue && p.ligue.toLowerCase().includes(ligueFilterLower)
-        );
-        if (!ligueMatch) {
-          return false;
-        }
+      // Si on arrive ici et qu'il y avait des filtres, vérifions si on a trouvé des correspondances
+      if (
+        (searchTerm && !participantMatchFound) ||
+        (ligueFilter && !ligueMatchFound)
+      ) {
+        return false;
       }
     }
 
@@ -1408,7 +1695,46 @@ const MatchSchedule = ({
                           }
 
                           if (!match) {
+                            console.log(
+                              `Match introuvable pour scheduleItem ${scheduleIndex}, ID: ${scheduleItem.matchId}`
+                            );
                             return null;
+                          }
+
+                          // Afficher des infos de débogage pour ce match
+                          if (scheduleIndex === 0) {
+                            console.log("Structure du premier match:", {
+                              matchId: match.id,
+                              hasMatchParticipants: !!match.matchParticipants,
+                              matchParticipantsLength:
+                                match.matchParticipants?.length,
+                              hasParticipants: !!match.participants,
+                              participantsLength: match.participants?.length,
+                            });
+                          }
+
+                          // Obtenir les noms des participants
+                          const blueAthleteName = getParticipantName(
+                            match,
+                            "A"
+                          );
+                          const redAthleteName = getParticipantName(match, "B");
+
+                          // Débogage si les noms sont manquants
+                          if (
+                            blueAthleteName === "-" ||
+                            redAthleteName === "-"
+                          ) {
+                            console.log(
+                              `Noms d'athlètes manquants dans le match ${scheduleItem.matchNumber}:`,
+                              {
+                                bleu: blueAthleteName,
+                                rouge: redAthleteName,
+                                matchId: match.id,
+                                hasMatchParticipants: !!match.matchParticipants,
+                                hasParticipants: !!match.participants,
+                              }
+                            );
                           }
 
                           // Trouver le groupe correspondant
@@ -1438,11 +1764,9 @@ const MatchSchedule = ({
                                   : "-"}
                               </td>
                               <td className="blue-athlete">
-                                {getParticipantName(match, "A")}
+                                {blueAthleteName}
                               </td>
-                              <td className="red-athlete">
-                                {getParticipantName(match, "B")}
-                              </td>
+                              <td className="red-athlete">{redAthleteName}</td>
                               <td>Combat</td>
                               <td className="pss-info">
                                 {powerInfo ? (
@@ -1480,6 +1804,13 @@ const MatchSchedule = ({
         "ATTENTION: Vous êtes sur le point de supprimer tous les matchs existants et d'en générer de nouveaux. Cette action est irréversible et supprimera tous les résultats de matchs déjà saisis. Voulez-vous vraiment continuer?"
       )
     ) {
+      // Vérifier si une génération est déjà en cours
+      if (isLoadingOrGenerating.current) {
+        console.log("Génération déjà en cours, opération ignorée");
+        return;
+      }
+
+      isLoadingOrGenerating.current = true;
       setIsLoading(true);
 
       try {
@@ -1529,11 +1860,13 @@ const MatchSchedule = ({
             `Erreur lors de la suppression des matchs: ${deleteResponse.statusText}`
           );
           setIsLoading(false);
+          isLoadingOrGenerating.current = false;
         }
       } catch (error) {
         console.error("Erreur lors de la régénération des matchs:", error);
         setError(`Erreur lors de la régénération des matchs: ${error.message}`);
         setIsLoading(false);
+        isLoadingOrGenerating.current = false;
       }
     }
   };
@@ -1691,12 +2024,14 @@ const MatchSchedule = ({
       }
 
       setIsLoading(false);
+      isLoadingOrGenerating.current = false;
     } catch (error) {
       console.error("Erreur lors de la sauvegarde des nouveaux matchs:", error);
       setError(
         `Erreur lors de la sauvegarde des nouveaux matchs: ${error.message}`
       );
       setIsLoading(false);
+      isLoadingOrGenerating.current = false;
     }
   };
 
