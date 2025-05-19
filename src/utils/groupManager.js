@@ -720,7 +720,7 @@ const createBalancedPool = (participants, targetPoolSize) => {
       // Aplatir les petites poules
       const participantsToRedistribute = [].concat(...smallPools);
 
-      // Redistribuer ces participants dans les poules valides
+      // MODIFICATION: Améliorer la redistribution pour équilibrer les tailles des poules
       participantsToRedistribute.forEach((participantId) => {
         const participant = validParticipants.find(
           (p) => p.id === participantId
@@ -729,11 +729,15 @@ const createBalancedPool = (participants, targetPoolSize) => {
 
         const ligue = participant.ligue || "Inconnue";
 
-        // Même logique que précédemment pour trouver la meilleure poule
+        // Trouver la poule avec:
+        // 1) Le moins de participants de la même ligue
+        // 2) La plus petite taille actuelle
         let bestPoolIndex = 0;
         let minSameLigue = Infinity;
+        let minPoolSize = Infinity;
 
         validPools.forEach((pool, poolIndex) => {
+          // Compter les participants de la même ligue dans cette poule
           const sameLigueCount = pool.reduce((count, id) => {
             const poolParticipant = validParticipants.find((p) => p.id === id);
             return poolParticipant &&
@@ -742,7 +746,12 @@ const createBalancedPool = (participants, targetPoolSize) => {
               : count;
           }, 0);
 
-          if (sameLigueCount < minSameLigue) {
+          // Priorité à l'équilibre des tailles de poules, puis à l'évitement des participants de même ligue
+          if (
+            pool.length < minPoolSize ||
+            (pool.length === minPoolSize && sameLigueCount < minSameLigue)
+          ) {
+            minPoolSize = pool.length;
             minSameLigue = sameLigueCount;
             bestPoolIndex = poolIndex;
           }

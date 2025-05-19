@@ -25,6 +25,20 @@ function createWindow() {
 
   mainWindow.loadURL(startUrl);
 
+  // Définir une politique de sécurité du contenu (CSP) stricte
+  mainWindow.webContents.session.webRequest.onHeadersReceived(
+    (details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          "Content-Security-Policy": [
+            "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:3001 http://192.168.1.18:3001 http://* https://*;",
+          ],
+        },
+      });
+    }
+  );
+
   // Ouvrir les outils de développement en mode dev
   if (process.env.NODE_ENV === "development") {
     mainWindow.webContents.openDevTools();
