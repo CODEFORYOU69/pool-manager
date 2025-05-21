@@ -1162,44 +1162,33 @@ export const saveGeneratedMatches = async (competitionId, matchesByPool) => {
   try {
     // Vérifier d'abord s'il existe déjà des matchs pour cette compétition
     try {
-      const matchesResponse = await fetch(
-        `${API_URL}/competition/${competitionId}/matches`,
-        {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
+      const { exists, matches: existingMatches } = await checkExistingMatches(
+        competitionId
       );
 
-      if (matchesResponse.ok) {
-        const existingMatches = await matchesResponse.json();
+      if (exists && existingMatches && existingMatches.length > 0) {
+        console.log(
+          `${existingMatches.length} matchs existants trouvés. Éviter la duplication.`
+        );
 
-        if (existingMatches && existingMatches.length > 0) {
-          console.log(
-            `${existingMatches.length} matchs existants trouvés. Éviter la duplication.`
-          );
-
-          // Pré-remplir le Set avec les combinaisons existantes
-          for (const match of existingMatches) {
-            if (
-              match.matchParticipants &&
-              match.matchParticipants.length >= 2
-            ) {
-              const participantIds = match.matchParticipants
-                .map((mp) => mp.participant.id)
-                .sort();
-              if (participantIds.length >= 2) {
-                const matchKey = participantIds.join("|");
-                savedCombinations.add(matchKey);
-              }
+        // Pré-remplir le Set avec les combinaisons existantes
+        for (const match of existingMatches) {
+          if (match.matchParticipants && match.matchParticipants.length >= 2) {
+            const participantIds = match.matchParticipants
+              .map((mp) => mp.participant && mp.participant.id)
+              .filter((id) => id) // Filtrer les IDs null/undefined
+              .sort();
+            if (participantIds.length >= 2) {
+              const matchKey = participantIds.join("|");
+              savedCombinations.add(matchKey);
+              console.log(`Match existant détecté: ${matchKey}`);
             }
           }
-
-          console.log(
-            `${savedCombinations.size} combinaisons uniques existantes détectées`
-          );
         }
+
+        console.log(
+          `${savedCombinations.size} combinaisons uniques existantes détectées`
+        );
       }
     } catch (error) {
       console.warn(
@@ -1269,6 +1258,15 @@ export const saveGeneratedMatches = async (competitionId, matchesByPool) => {
           // Créer une clé unique pour ce match basée sur les IDs des participants
           const participant1 = match.participants[0]?.id || "";
           const participant2 = match.participants[1]?.id || "";
+
+          // Vérifier que les deux IDs sont valides
+          if (!participant1 || !participant2) {
+            console.warn(
+              `Match avec des IDs de participants invalides: ${participant1} vs ${participant2}, ignoré`
+            );
+            continue;
+          }
+
           const matchKey = [participant1, participant2].sort().join("|");
 
           // Vérifier si cette combinaison a déjà été sauvegardée
@@ -1538,89 +1536,52 @@ export const checkExistingGroupsAndPools = async (competitionId) => {
 // Vérifier si des matchs existent déjà pour une compétition
 export const checkExistingMatches = async (competitionId) => {
   try {
+    console.log(
+      `Vérification des matchs existants pour la compétition ${competitionId}`
+    );
+
     if (!competitionId) {
-      console.error("ID de compétition manquant dans checkExistingMatches");
-      return { exists: false, count: 0 };
+      throw new Error(
+        "ID de compétition non fourni pour la vérification des matchs"
+      );
     }
 
-    // Utilisation d'un endpoint qui existe réellement pour vérifier les matchs
-    console.log(
-      `Vérification des matchs existants pour compétition ${competitionId}...`
-    );
+    // Récupérer les matchs existants
     const response = await fetch(
       `${API_URL}/competition/${competitionId}/matches`,
       {
         method: "GET",
         headers: {
-          Accept: "application/json",
           "Content-Type": "application/json",
         },
       }
     );
 
-    console.log(`Statut de la réponse: ${response.status}`);
-
     if (!response.ok) {
-      console.error(
-        `Erreur HTTP lors de la vérification des matchs: ${response.status}`
-      );
-      if (response.status === 404) {
-        // La route n'existe pas - probable erreur côté API
-        console.warn(
-          "L'endpoint /competition/:id/matches n'existe pas. Essai de l'endpoint alternatif..."
-        );
-        // Essayer un autre endpoint si le premier n'existe pas
-        const altResponse = await fetch(
-          `${API_URL}/competition/${competitionId}/matchesWithDetails`,
-          {
-            method: "GET",
-            headers: {
-              Accept: "application/json",
-              "Content-Type": "application/json",
-            },
-          }
-        );
-
-        if (!altResponse.ok) {
-          console.error(
-            `Erreur HTTP avec l'endpoint alternatif: ${altResponse.status}`
-          );
-          return { exists: false, count: 0 };
-        }
-
-        const matches = await altResponse.json();
-        console.log(
-          `${matches.length} matchs trouvés avec l'endpoint alternatif`
-        );
-        return {
-          exists: matches.length > 0,
-          count: matches.length,
-          matches: matches,
-        };
-      }
-
-      return { exists: false, count: 0 };
+      const error = await response.text();
+      console.error(`Erreur lors de la vérification des matchs: ${error}`);
+      return { exists: false, error };
     }
 
     const matches = await response.json();
-    const count = Array.isArray(matches) ? matches.length : 0;
-
     console.log(
-      `${count} matchs existants trouvés pour la compétition ${competitionId}`
+      `${matches.length} matchs trouvés pour la compétition ${competitionId}`
     );
 
-    return {
-      exists: count > 0,
-      count: count,
-      matches: matches,
-    };
+    // Vérifier si nous avons déjà des matchs
+    if (matches && matches.length > 0) {
+      console.log("Des matchs existent déjà pour cette compétition");
+      return { exists: true, matches };
+    }
+
+    console.log("Aucun match trouvé pour cette compétition");
+    return { exists: false, matches: [] };
   } catch (error) {
     console.error(
-      "Erreur détaillée lors de la vérification des matchs existants:",
+      "Erreur lors de la vérification des matchs existants:",
       error
     );
-    // En cas d'erreur, considérer qu'il n'y a pas de matchs pour éviter la régénération
-    return { exists: true, count: 1 };
+    return { exists: false, error: error.message };
   }
 };
 

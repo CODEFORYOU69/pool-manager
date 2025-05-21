@@ -1500,22 +1500,504 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
     return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
 
+  // Obtenir les informations de catégorie dans un format abrégé
+  const getCategoryInfo = (match) => {
+    try {
+      if (!match || !match.groupId) return "";
+
+      // Chercher les informations du groupe dans les participants
+      const participant =
+        match.matchParticipants?.[0]?.participant || match.participants?.[0];
+
+      if (!participant) return "";
+
+      // Récupérer les informations de genre, catégorie d'âge, poids et poule
+      const gender = participant.gender || participant.sexe || "";
+      const ageCategory =
+        participant.ageCategory || participant.categoryAgeAbbr || "";
+
+      // Amélioration pour la catégorie de poids - essayer plusieurs propriétés possibles
+      let weightCategory =
+        participant.weightCategory ||
+        participant.categoryWeightAbbr ||
+        participant.poids ||
+        participant.weight ||
+        (participant.category && participant.category.includes("kg")
+          ? participant.category
+          : "") ||
+        "";
+
+      // S'assurer que weightCategory est une chaîne de caractères
+      weightCategory = String(weightCategory);
+
+      const poolIndex =
+        match.poolIndex !== undefined ? match.poolIndex + 1 : "";
+
+      // Déterminer le sexe abrégé
+      const genderAbbr = gender?.toLowerCase().startsWith("f") ? "F" : "M";
+
+      // Formater la catégorie d'âge en abrégé
+      let ageCatAbbr = "";
+      if (ageCategory) {
+        // Si déjà en abrégé, utiliser tel quel
+        if (ageCategory.length <= 3) {
+          ageCatAbbr = ageCategory.toLowerCase();
+        } else {
+          // Sinon utiliser les trois premières lettres
+          ageCatAbbr = ageCategory.toLowerCase().substring(0, 3);
+        }
+      }
+
+      // Ajouter un tiret devant le poids si ce n'est pas déjà le cas
+      const formattedWeight =
+        weightCategory &&
+        !weightCategory.startsWith("-") &&
+        !weightCategory.startsWith("+")
+          ? `-${weightCategory}`
+          : weightCategory;
+
+      // Formater les informations dans le format souhaité
+      return `${genderAbbr}-${ageCatAbbr} ${formattedWeight} P${poolIndex}`.trim();
+    } catch (error) {
+      console.error(
+        "Erreur lors de l'accès aux informations de catégorie:",
+        error
+      );
+      return "";
+    }
+  };
+
+  // Fonction pour générer un ID unique basé sur la région
+  const getRegionId = (region) => {
+    if (!region) return "000";
+
+    const regionMap = {
+      "Auvergne-Rhône-Alpes": "001",
+      "Bourgogne-Franche-Comté": "002",
+      Bretagne: "003",
+      "Centre-Val de Loire": "004",
+      Corse: "005",
+      "Grand Est": "006",
+      "Hauts-de-France": "007",
+      "Île-de-France": "008",
+      Normandie: "009",
+      "Nouvelle-Aquitaine": "010",
+      Occitanie: "011",
+      "Pays de la Loire": "012",
+      "Provence-Alpes-Côte d'Azur": "013",
+      Guadeloupe: "014",
+      Martinique: "015",
+      Guyane: "016",
+      "La Réunion": "017",
+      Mayotte: "018",
+    };
+
+    return regionMap[region] || "999";
+  };
+
+  // Fonction pour exporter les matchs au format CSV
+  const exportToCsv = () => {
+    // Définir les en-têtes du CSV
+    const headers = [
+      "ID",
+      "Mat",
+      "Number",
+      "Phase",
+      "EventID",
+      "HomeCompetitor",
+      "AwayCompetitor",
+      "Discipline",
+      "Division",
+      "EventName",
+      "Rounds",
+      "MaxDiff",
+      "MaxPen",
+      "TimingRound",
+      "TimingRest",
+      "TimingInjury",
+      "ThresholdBody",
+      "ThresholdHead",
+      "GoldenPoint",
+      "GPTime",
+      "HomeCountry",
+      "HomeOrgId",
+      "HomeOrg",
+      "AwayCountry",
+      "AwayOrgId",
+      "AwayOrg",
+      "Gender",
+      "WeightCategory",
+      "HomeId",
+      "HomeCompetitorId",
+      "AwayId",
+      "AwayCompetitorId",
+      "VideoReplayHome",
+      "VideoReplayAway",
+      "Role",
+      "Status",
+      "MatchConfigId",
+    ];
+
+    // Obtenir les matchs filtrés
+    const allMatches = getFilteredMatches();
+
+    // Fonction pour obtenir les informations du groupe pour un match
+    const getGroupInfo = async (groupId) => {
+      // Si le groupe est déjà dans groups, l'utiliser directement
+      if (groups.length > 0) {
+        const foundGroup = groups.find((g) => g.id === groupId);
+        if (foundGroup) {
+          return foundGroup;
+        }
+      }
+
+      // Sinon, essayer de le récupérer via une requête API
+      try {
+        const response = await fetch(`${API_URL}/group/${groupId}`);
+        if (response.ok) {
+          const groupData = await response.json();
+          return groupData;
+        }
+      } catch (error) {
+        console.error(
+          `Erreur lors de la récupération du groupe ${groupId}:`,
+          error
+        );
+      }
+
+      return null;
+    };
+
+    // Fonction pour obtenir les données de la compétition depuis l'API
+    const getCompetitionData = async () => {
+      try {
+        const response = await fetch(`${API_URL}/competition/${competitionId}`);
+        if (response.ok) {
+          const data = await response.json();
+          console.log("Données de compétition récupérées:", data);
+          return data;
+        }
+      } catch (error) {
+        console.error(
+          "Erreur lors de la récupération des données de compétition:",
+          error
+        );
+      }
+
+      // Si échec, essayer de récupérer depuis localStorage comme fallback
+      try {
+        const localData = JSON.parse(localStorage.getItem("competition"));
+        return localData;
+      } catch (e) {
+        console.error("Erreur lors de la récupération des données locales:", e);
+      }
+
+      return null;
+    };
+
+    // Fonction pour récupérer le seuil PSS directement depuis le backend
+    const getPssThresholdForMatch = async (
+      matchId,
+      groupId,
+      ageCategory,
+      gender,
+      weightCategory
+    ) => {
+      // Essayer d'abord d'obtenir les informations PSS pour ce match spécifique
+      try {
+        const response = await fetch(`${API_URL}/match/${matchId}/pssInfo`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.hitLevel) {
+            console.log(
+              `Seuil hitLevel récupéré pour le match #${matchId}:`,
+              data.hitLevel
+            );
+            return data.hitLevel.toString();
+          }
+        }
+      } catch (error) {
+        console.log(
+          `Pas d'info PSS directe pour match #${matchId}, utilisation des infos de groupe.`
+        );
+      }
+
+      // Si nous avons les informations du groupe, utiliser findPssInfo
+      try {
+        if (ageCategory && gender && weightCategory) {
+          // Utiliser les fonctions existantes pour trouver le seuil PSS
+          const pssInfo = findPssInfo(ageCategory, gender, weightCategory);
+          if (pssInfo && pssInfo.hitLevel) {
+            console.log(
+              `PSS hitLevel trouvé pour ${ageCategory}/${gender}/${weightCategory}:`,
+              pssInfo.hitLevel
+            );
+            return pssInfo.hitLevel.toString();
+          }
+
+          // Fallback sur findPowerThreshold si findPssInfo n'a pas retourné de résultat
+          const powerThreshold = findPowerThreshold(
+            ageCategory,
+            gender,
+            weightCategory
+          );
+          if (powerThreshold && powerThreshold.hitLevel) {
+            console.log(
+              `hitLevel trouvé pour ${ageCategory}/${gender}/${weightCategory}:`,
+              powerThreshold.hitLevel
+            );
+            return powerThreshold.hitLevel.toString();
+          }
+        }
+      } catch (error) {
+        console.error("Erreur lors de la recherche du seuil PSS:", error);
+      }
+
+      // Si nous n'avons toujours pas d'information, récupérer directement via groupId
+      try {
+        if (groupId) {
+          const response = await fetch(`${API_URL}/group/${groupId}/pssInfo`);
+          if (response.ok) {
+            const data = await response.json();
+            if (data && data.hitLevel) {
+              console.log(
+                `Seuil hitLevel récupéré pour le groupe #${groupId}:`,
+                data.hitLevel
+              );
+              return data.hitLevel.toString();
+            }
+          }
+        }
+      } catch (error) {
+        console.log(`Pas d'info PSS pour le groupe #${groupId}.`);
+      }
+
+      // Valeur par défaut si rien d'autre n'a fonctionné
+      return "11";
+    };
+
+    // Traiter les matches de manière synchrone
+    const processMatches = async () => {
+      const rows = [];
+
+      // Récupérer les données de compétition en premier pour avoir roundDuration et breakDuration
+      const competitionData = await getCompetitionData();
+      console.log("Données de compétition pour l'export:", competitionData);
+
+      // Extraire les durées de round et de pause
+      const roundDuration = competitionData?.roundDuration || "120";
+      const breakDuration = competitionData?.breakDuration || "60";
+
+      console.log(
+        `Valeurs extraites - Round: ${roundDuration}s, Pause: ${breakDuration}s`
+      );
+
+      for (let index = 0; index < allMatches.length; index++) {
+        const match = allMatches[index];
+
+        // Obtenir les infos des participants
+        const participantA =
+          match.participants && match.participants[0]
+            ? match.participants[0]
+            : {};
+        const participantB =
+          match.participants && match.participants[1]
+            ? match.participants[1]
+            : {};
+
+        // Récupérer les informations du groupe
+        let ageCategory =
+          participantA.ageCategory || participantA.categoryAgeAbbr || "Senior";
+        let weightCategory = "";
+        let gender =
+          (participantA.gender || participantA.sexe || "").toLowerCase() ===
+          "female"
+            ? "Female"
+            : "Male";
+
+        // Obtenir les informations précises du groupe
+        let groupInfo = null;
+        if (match.groupId) {
+          groupInfo = await getGroupInfo(match.groupId);
+        }
+
+        if (groupInfo) {
+          // Utiliser explicitement les valeurs du groupe
+          ageCategory = groupInfo.ageCategoryName || ageCategory;
+          weightCategory = groupInfo.weightCategoryName || "";
+          gender = groupInfo.gender === "female" ? "Female" : "Male";
+          console.log(
+            `Match #${match.matchNumber} - Groupe: ${match.groupId}`,
+            {
+              ageCategory,
+              weightCategory,
+              gender,
+            }
+          );
+        } else {
+          // Fallback sur les données des participants
+          weightCategory = String(
+            participantA.weightCategory ||
+              participantA.categoryWeightAbbr ||
+              participantA.poids ||
+              participantA.weight ||
+              ""
+          ).replace(/^-/, "");
+        }
+
+        // Construire le nom de l'événement
+        const eventName = `${ageCategory}-${weightCategory}-${gender}`;
+
+        // Déterminer les régions
+        const homeOrg = participantA.ligue || "";
+        const awayOrg = participantB.ligue || "";
+
+        // Formater les IDs selon les règles demandées
+        // 1. Enlever les lettres et garder les 4 premiers chiffres pour les IDs de compétiteurs
+        const homeCompetitorId = (participantA.id || "")
+          .replace(/[^0-9]/g, "")
+          .substring(0, 4);
+        const awayCompetitorId = (participantB.id || "")
+          .replace(/[^0-9]/g, "")
+          .substring(0, 4);
+
+        // 2. Créer les IDs finaux en ajoutant H/A devant les IDs des compétiteurs
+        const homeId = homeCompetitorId ? `H${homeCompetitorId}` : "";
+        const awayId = awayCompetitorId ? `A${awayCompetitorId}` : "";
+
+        // Obtenir le seuil PSS pour ce match spécifique
+        console.log(
+          `Récupération du seuil PSS pour match #${match.matchNumber}`
+        );
+        const thresholdBody = await getPssThresholdForMatch(
+          match.id,
+          match.groupId,
+          ageCategory,
+          gender,
+          weightCategory
+        );
+        console.log(
+          `Seuil PSS déterminé pour match #${match.matchNumber}:`,
+          thresholdBody
+        );
+
+        // Construction du MatchConfigId
+        const matchConfigId = `BESTOF3-${thresholdBody}-3-${roundDuration}-${breakDuration}-3-${roundDuration}-${breakDuration}-3-${roundDuration}-${breakDuration}-R16`;
+
+        // Générer un ID à 3 chiffres
+        const formattedId = String(index + 1).padStart(3, "0");
+
+        // Récupérer le numéro d'aire de combat
+        const mat = match.area?.areaNumber || match.areaNumber || "1";
+
+        // Formater weightCategory pour l'export
+        const formattedWeightCategory = weightCategory
+          ? `-${weightCategory}`.replace(/--/g, "-")
+          : "";
+
+        // Créer la ligne CSV
+        const row = [
+          formattedId, // ID
+          mat, // Mat - utiliser l'aire de combat
+          match.matchNumber || index + 1, // Number
+          "R16", // Phase
+          "1", // EventID
+          getParticipantName(match, "A"), // HomeCompetitor
+          getParticipantName(match, "B"), // AwayCompetitor
+          "Taekwondo Kyorugi", // Discipline
+          ageCategory, // Division - utiliser ageCategoryName
+          eventName, // EventName - format modifié
+          "3", // Rounds
+          "99", // MaxDiff
+          "5", // MaxPen
+          roundDuration, // TimingRound - directement de l'API
+          breakDuration, // TimingRest - directement de l'API
+          "60", // TimingInjury
+          thresholdBody, // ThresholdBody - valeur spécifique au match
+          "0", // ThresholdHead
+          "False", // GoldenPoint
+          "60", // GPTime
+          "FRA", // HomeCountry
+          getRegionId(homeOrg), // HomeOrgId
+          homeOrg, // HomeOrg
+          "FRA", // AwayCountry
+          getRegionId(awayOrg), // AwayOrgId
+          awayOrg, // AwayOrg
+          gender, // Gender
+          formattedWeightCategory, // WeightCategory - utiliser directement weightCategoryName du groupe
+          homeId, // HomeId - format modifié
+          homeCompetitorId, // HomeCompetitorId - format modifié
+          awayId, // AwayId - format modifié
+          awayCompetitorId, // AwayCompetitorId - format modifié
+          "0", // VideoReplayHome
+          "0", // VideoReplayAway
+          "ATHLETE", // Role
+          "SCHEDULED", // Status
+          matchConfigId, // MatchConfigId
+        ];
+
+        rows.push(row.join(","));
+      }
+
+      return rows;
+    };
+
+    // Exécuter le traitement et créer le fichier CSV
+    processMatches()
+      .then((rows) => {
+        // Combiner toutes les lignes
+        const csvString = [headers.join(","), ...rows].join("\n");
+
+        // Créer un objet blob pour le téléchargement
+        const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+
+        // Créer un lien de téléchargement
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", "matches_export.csv");
+        link.style.visibility = "hidden";
+
+        // Ajouter le lien à la page, cliquer dessus, puis le supprimer
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      })
+      .catch((error) => {
+        console.error("Erreur lors de la création du CSV:", error);
+        alert("Une erreur est survenue lors de l'exportation CSV");
+      });
+  };
+
   // Ajouter un onglet de navigation pour les combats terminés
   const renderTabs = () => (
-    <div className="tabs">
-      <button
-        className={`tab-btn ${!showCompleted ? "active" : ""}`}
-        onClick={() => setShowCompleted(false)}
-      >
-        Combats en cours
-      </button>
-      <button
-        className={`tab-btn ${showCompleted ? "active" : ""}`}
-        onClick={() => setShowCompleted(true)}
-      >
-        Combats terminés ({completedMatches.length})
-      </button>
-    </div>
+    <>
+      <div className="tabs">
+        <button
+          className={`tab-btn ${!showCompleted ? "active" : ""}`}
+          onClick={() => setShowCompleted(false)}
+        >
+          Combats en cours
+        </button>
+        <button
+          className={`tab-btn ${showCompleted ? "active" : ""}`}
+          onClick={() => setShowCompleted(true)}
+        >
+          Combats terminés ({completedMatches.length})
+        </button>
+      </div>
+      <div className="export-buttons">
+        <button
+          className="secondary-button"
+          onClick={handleExportPoolSheetsPDF}
+        >
+          Exporter en PDF
+        </button>
+        <button className="secondary-button" onClick={exportToCsv}>
+          Exporter en CSV
+        </button>
+      </div>
+    </>
   );
 
   const filteredMatches = getFilteredMatches();
@@ -1549,6 +2031,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
               <tr>
                 <th>N° Combat</th>
                 <th>Aire</th>
+                <th>Catégorie</th>
                 <th>Athlète A</th>
                 <th>Score</th>
                 <th>Athlète B</th>
@@ -1584,6 +2067,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                     <tr key={match.id} className="editing">
                       <td>{match.matchNumber}</td>
                       <td>{match.area.areaNumber}</td>
+                      <td>{getCategoryInfo(match)}</td>
                       <td>{`${participantA.prenom} ${participantA.nom}`}</td>
                       <td>
                         {editedScores.rounds.map((round, i) => (
@@ -1637,6 +2121,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                   <tr key={match.id}>
                     <td>{match.matchNumber}</td>
                     <td>{match.area.areaNumber}</td>
+                    <td>{getCategoryInfo(match)}</td>
                     <td className={isWinnerA ? "winner" : ""}>
                       {`${participantA.prenom} ${participantA.nom}`}
                     </td>
@@ -2214,6 +2699,49 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
         <div className="refresh-indicator">Mise à jour des données...</div>
       )}
 
+      <style>
+        {`
+          /* Style pour les informations de catégorie */
+          .match-category-info {
+            font-size: 0.85rem;
+            color: #555;
+            background-color: #f8f8f8;
+            border-radius: 4px;
+            padding: 2px 6px;
+            margin-top: 4px;
+            border: 1px solid #ddd;
+            display: inline-block;
+            font-weight: 600;
+          }
+          
+          /* Ajustement pour le tableau des matchs complétés */
+          .completed-matches-table th:nth-child(3),
+          .completed-matches-table td:nth-child(3) {
+            font-size: 0.85rem;
+          }
+          
+          /* Style pour les éléments d'en-tête du match */
+          .match-header {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            padding-bottom: 8px;
+          }
+          
+          .match-number {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+          }
+          
+          .match-area, .match-time {
+            font-size: 0.9rem;
+            color: #555;
+          }
+        `}
+      </style>
+
       {/* Header fixe avec informations de retard */}
       <div className="fixed-header-delay-info">
         <div className="header-content">
@@ -2382,15 +2910,18 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                       >
                         <div className="match-header">
                           <div className="match-number">
-                            Combat #{match.matchNumber}
-                          </div>
-                          <div className="match-time">
-                            <span className="area">
-                              Aire {match.areaNumber || "?"}
+                            <span>Match #{match.matchNumber}</span>
+                            <span className="match-area">
+                              Aire {match.areaNumber}
                             </span>
-                            <span className="time">
+                            <span className="match-time">
                               {formatTime(match.startTime)}
                             </span>
+                          </div>
+
+                          {/* Ajout des informations de catégorie */}
+                          <div className="match-category-info">
+                            {getCategoryInfo(match)}
                           </div>
                         </div>
 

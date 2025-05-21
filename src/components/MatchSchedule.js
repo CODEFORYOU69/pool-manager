@@ -15,6 +15,9 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { findPssInfo } from "../utils/categories";
 import { findPowerThreshold } from "../utils/constants";
+// Import du gestionnaire de phases
+import { assignAreasBasedOnPhases } from "../utils/phaseManager";
+import PhaseEditor from "./PhaseEditor";
 
 const MatchSchedule = ({
   groups,
@@ -55,6 +58,9 @@ const MatchSchedule = ({
   const [matchesPssInfo, setMatchesPssInfo] = useState({});
   // Référence pour éviter les appels multiples à la génération des matchs
   const isLoadingOrGenerating = useRef(false);
+  // Nouvel état pour les phases
+  const [phases, setPhases] = useState([]);
+  const [usePhases, setUsePhases] = useState(false);
 
   useEffect(() => {
     if (groups && groups.length > 0 && tournamentConfig && competitionId) {
@@ -298,7 +304,7 @@ const MatchSchedule = ({
     await loadExistingMatches();
   };
 
-  // Fonction pour générer le planning et les matchs
+  // Fonction pour générer le planning et les matchs avec prise en compte des phases
   const handleGenerateSchedule = async () => {
     // Vérifier si on est déjà en train de charger/générer des matchs
     if (isLoadingOrGenerating.current) {
@@ -329,12 +335,17 @@ const MatchSchedule = ({
           const existingMatches = await matchesResponse.json();
 
           if (existingMatches && existingMatches.length > 0) {
+            console.log(`${existingMatches.length} matchs existants trouvés`);
+
             // Des matchs existent déjà, charger ces matchs au lieu d'en générer de nouveaux
             try {
               const { matches: loadedMatches, schedule: loadedSchedule } =
                 await fetchFormattedMatches(competitionId);
 
               if (loadedMatches && loadedMatches.length > 0) {
+                console.log(
+                  "Utilisation des matchs existants au lieu d'en générer de nouveaux"
+                );
                 setGeneratedMatches(loadedMatches);
                 setGeneratedSchedule(loadedSchedule);
                 setDataSource("existing");
@@ -342,6 +353,14 @@ const MatchSchedule = ({
                 setMatchesAlreadyLoaded(true);
                 setIsLoading(false);
                 isLoadingOrGenerating.current = false;
+
+                // Afficher un message d'information à l'utilisateur
+                setInfo({
+                  type: "info",
+                  message:
+                    "Des matchs existants ont été chargés au lieu d'en générer de nouveaux. Si vous souhaitez régénérer les matchs, utilisez le bouton 'Régénérer les matchs'.",
+                });
+
                 return; // Sortir de la fonction, pas besoin de générer de nouveaux matchs
               }
             } catch (loadError) {
@@ -351,6 +370,10 @@ const MatchSchedule = ({
               );
               // Continuer avec la génération
             }
+          } else {
+            console.log(
+              "Aucun match existant trouvé, génération de nouveaux matchs"
+            );
           }
         }
       } catch (checkError) {
@@ -361,15 +384,36 @@ const MatchSchedule = ({
         // Continuer avec la génération
       }
 
+      console.log("Début de la génération des matchs");
       // Générer tous les combats pour toutes les poules
       const allMatches = generateMatches(groups);
+      console.log(`${allMatches.length} matchs générés`);
+
+      // Si on utilise les phases, appliquer la répartition par phase
+      let matchesForSchedule = allMatches;
+      if (usePhases && phases.length > 0) {
+        console.log("Application de la répartition par phases:", phases);
+        matchesForSchedule = assignAreasBasedOnPhases(
+          allMatches,
+          groups,
+          phases,
+          tournamentConfig
+        );
+        console.log(
+          `${matchesForSchedule.length} matchs après application des phases`
+        );
+      }
 
       // Créer le planning des combats
       const {
         schedule: generatedSchedule,
         updatedMatches,
         stats,
-      } = createSchedule(allMatches, tournamentConfig);
+      } = createSchedule(matchesForSchedule, tournamentConfig);
+
+      console.log(
+        `Planning créé avec ${generatedSchedule.length} éléments et ${updatedMatches.length} matchs`
+      );
 
       // Utiliser les matchs mis à jour avec leurs numéros et aires attribués
       const matchesWithSchedule = updatedMatches;
@@ -1746,7 +1790,12 @@ const MatchSchedule = ({
                           const powerInfo = getPowerThresholdInfo(match);
 
                           return (
-                            <tr key={scheduleIndex}>
+                            <tr
+                              key={scheduleIndex}
+                              className={
+                                match.phase ? `phase-${match.phase}` : ""
+                              }
+                            >
                               <td>{scheduleItem.matchNumber}</td>
                               <td>
                                 {formatTime(new Date(scheduleItem.startTime))}
@@ -1827,20 +1876,45 @@ const MatchSchedule = ({
 
         if (deleteResponse.ok) {
           const result = await deleteResponse.json();
+          console.log(`${result.count || 0} matchs supprimés avec succès`);
 
           setMatchesAlreadyLoaded(false);
           setGeneratedMatches([]);
           setGeneratedSchedule([]);
 
           // Après avoir supprimé les matchs, générer de nouveaux matchs
+          console.log("Début de la génération de nouveaux matchs");
           const allMatches = generateMatches(groups);
+          console.log(`${allMatches.length} matchs générés`);
+
+          // MODIFICATION: Appliquer la répartition par phase si activée
+          let matchesForSchedule = allMatches;
+          if (usePhases && phases.length > 0) {
+            console.log(
+              "Régénération: Application de la répartition par phases:",
+              phases
+            );
+            matchesForSchedule = assignAreasBasedOnPhases(
+              allMatches,
+              groups,
+              phases,
+              tournamentConfig
+            );
+            console.log(
+              `${matchesForSchedule.length} matchs après application des phases`
+            );
+          }
 
           // Créer le planning des combats
           const {
             schedule: generatedSchedule,
             updatedMatches,
             stats,
-          } = createSchedule(allMatches, tournamentConfig);
+          } = createSchedule(matchesForSchedule, tournamentConfig);
+
+          console.log(
+            `Planning créé avec ${generatedSchedule.length} éléments et ${updatedMatches.length} matchs`
+          );
 
           // Sauvegarder les nouveaux matchs
           await handleSaveNewMatches(
@@ -1851,6 +1925,12 @@ const MatchSchedule = ({
           );
 
           setMatchesAlreadyLoaded(true);
+
+          // Afficher un message de succès
+          setInfo({
+            type: "success",
+            message: "Les matchs ont été régénérés avec succès.",
+          });
         } else {
           console.error(
             "Erreur lors de la suppression des matchs:",
@@ -2115,6 +2195,49 @@ const MatchSchedule = ({
     }
   `;
 
+  // Ajouter une section pour l'éditeur de phases
+  const renderPhaseEditor = () => {
+    // Créer une version enrichie de tournamentConfig avec les scheduleStats
+    // et s'assurer que numAreas est un nombre
+    const enrichedConfig = {
+      ...tournamentConfig,
+      numAreas: parseInt(tournamentConfig.numAreas, 10) || 1, // Forcer la conversion en nombre
+      scheduleStats: scheduleStats,
+    };
+
+    console.log("Configuration enrichie pour PhaseEditor:", {
+      numAreas: enrichedConfig.numAreas,
+      typeOf: typeof enrichedConfig.numAreas,
+      original: tournamentConfig.numAreas,
+      originalType: typeof tournamentConfig.numAreas,
+    });
+
+    return (
+      <div className="phase-editor-section">
+        <div className="section-header">
+          <h3>Configuration des phases de combat</h3>
+          <div className="toggle-container">
+            <label htmlFor="usePhases">Utiliser les phases:</label>
+            <input
+              type="checkbox"
+              id="usePhases"
+              checked={usePhases}
+              onChange={(e) => setUsePhases(e.target.checked)}
+            />
+          </div>
+        </div>
+
+        {usePhases && (
+          <PhaseEditor
+            groups={groups}
+            tournamentConfig={enrichedConfig}
+            onPhasesChange={setPhases}
+          />
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="match-schedule-container">
       <style>{styles}</style>
@@ -2147,6 +2270,9 @@ const MatchSchedule = ({
         </div>
       ) : (
         <>
+          {/* Ajouter l'éditeur de phases avant la génération des matchs */}
+          {renderPhaseEditor()}
+
           {generatedMatches.length === 0 ? (
             <div className="no-matches-container">
               <div className="info-message">
@@ -2278,7 +2404,14 @@ const MatchSchedule = ({
                                     getPowerThresholdInfo(match);
 
                                   return (
-                                    <tr key={matchIndex}>
+                                    <tr
+                                      key={matchIndex}
+                                      className={
+                                        match.phase
+                                          ? `phase-${match.phase}`
+                                          : ""
+                                      }
+                                    >
                                       <td>
                                         {scheduledMatch
                                           ? scheduledMatch.matchNumber
@@ -2524,7 +2657,14 @@ const MatchSchedule = ({
                                       getPowerThresholdInfo(match);
 
                                     return (
-                                      <tr key={index}>
+                                      <tr
+                                        key={index}
+                                        className={
+                                          match.phase
+                                            ? `phase-${match.phase}`
+                                            : ""
+                                        }
+                                      >
                                         <td>
                                           {scheduleItem.matchNumber ||
                                             index + 1}

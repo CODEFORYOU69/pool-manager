@@ -1,6 +1,7 @@
 "use client";
 
 import { Competition } from "@/types";
+import Image from "next/image";
 
 type TournamentHeaderProps = {
   competitionId: string | null;
@@ -20,14 +21,30 @@ export default function TournamentHeader({
   formatTime,
 }: TournamentHeaderProps) {
   return (
-    <header className="bg-blue-800 text-white shadow-lg">
+    <header className="bg-white text-blue-800 shadow-lg">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="flex flex-col md:flex-row justify-between items-center">
-          <div className="text-center md:text-left mb-4 md:mb-0">
-            <h1 className="text-3xl font-extrabold">Tournoi de Taekwondo</h1>
-            <p className="text-white text-sm font-medium mt-1">
-              Dernière mise à jour: {formatTime(lastUpdate.toISOString())}
-            </p>
+          <div className="flex items-center space-x-4">
+            <Image
+              src="/logo-fftda.png"
+              alt="Logo FFTDA"
+              width={80}
+              height={80}
+              className="object-contain"
+            />
+            <Image
+              src="/30ansfftda.jpeg"
+              alt="30 ans FFTDA"
+              width={80}
+              height={80}
+              className="object-contain"
+            />
+            <div className="text-center md:text-left mb-4 md:mb-0">
+              <h1 className="text-3xl font-extrabold">Competition Live</h1>
+              <p className="text-white text-sm font-medium mt-1">
+                Dernière mise à jour: {formatTime(lastUpdate.toISOString())}
+              </p>
+            </div>
           </div>
 
           <div className="w-full md:w-auto">

@@ -5,6 +5,29 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { useEffect, useState } from "react";
 
+// Interfaces étendues pour les propriétés additionnelles
+interface ExtendedMatch extends Match {
+  poolIndex?: number;
+  participants?: ExtendedParticipant[];
+}
+
+interface ExtendedParticipant {
+  id?: string;
+  prenom?: string;
+  nom?: string;
+  gender?: string;
+  sexe?: string;
+  ageCategory?: string;
+  categoryAgeAbbr?: string;
+  weightCategory?: string;
+  categoryWeightAbbr?: string;
+  poids?: string;
+  weight?: string;
+  category?: string;
+  club?: string;
+  ligue?: string;
+}
+
 interface AllMatchesProps {
   matches: Match[];
   filters: {
@@ -30,6 +53,75 @@ export default function AllMatches({
 }: AllMatchesProps) {
   const [filteredMatches, setFilteredMatches] = useState<Match[]>([]);
   const [isExporting, setIsExporting] = useState(false);
+
+  // Fonction pour récupérer les informations de catégorie
+  const getCategoryInfo = (match: Match): string => {
+    try {
+      if (!match) return "";
+
+      // Chercher les informations dans le premier participant
+      const participant = match.matchParticipants?.[0]?.participant;
+
+      if (!participant) return "";
+
+      // Utiliser les interfaces étendues
+      const extMatch = match as ExtendedMatch;
+      const extParticipant = participant as ExtendedParticipant;
+
+      // Récupérer les informations de genre, catégorie d'âge, poids et poule
+      const gender = extParticipant.gender || extParticipant.sexe || "";
+      const ageCategory =
+        extParticipant.ageCategory || extParticipant.categoryAgeAbbr || "";
+
+      // Amélioration pour la catégorie de poids - essayer plusieurs propriétés possibles
+      const weightCategory =
+        extParticipant.weightCategory ||
+        extParticipant.categoryWeightAbbr ||
+        extParticipant.poids ||
+        extParticipant.weight ||
+        (extParticipant.category && extParticipant.category.includes("kg")
+          ? extParticipant.category
+          : "") ||
+        "";
+
+      const poolIndex =
+        extMatch.poolIndex !== undefined ? extMatch.poolIndex + 1 : "";
+
+      // Déterminer le sexe abrégé
+      const genderAbbr = String(gender).toLowerCase().startsWith("f")
+        ? "F"
+        : "M";
+
+      // Formater la catégorie d'âge en abrégé
+      let ageCatAbbr = "";
+      if (ageCategory) {
+        // Si déjà en abrégé, utiliser tel quel
+        if (String(ageCategory).length <= 3) {
+          ageCatAbbr = String(ageCategory).toLowerCase();
+        } else {
+          // Sinon utiliser les trois premières lettres
+          ageCatAbbr = String(ageCategory).toLowerCase().substring(0, 3);
+        }
+      }
+
+      // Ajouter un tiret devant le poids si ce n'est pas déjà le cas
+      const formattedWeight =
+        weightCategory &&
+        !String(weightCategory).startsWith("-") &&
+        !String(weightCategory).startsWith("+")
+          ? `-${weightCategory}`
+          : weightCategory;
+
+      // Formater les informations dans le format souhaité
+      return `${genderAbbr}-${ageCatAbbr} ${formattedWeight} P${poolIndex}`.trim();
+    } catch (error) {
+      console.error(
+        "Erreur lors de l'accès aux informations de catégorie:",
+        error
+      );
+      return "";
+    }
+  };
 
   // Appliquer les filtres quand ils changent
   useEffect(() => {
@@ -205,6 +297,7 @@ export default function AllMatches({
         return [
           match.matchNumber,
           match.area?.areaNumber || match.areaNumber || "-",
+          getCategoryInfo(match),
           getParticipantName(match, "A"),
           participantA?.participant?.club || "Inconnu",
           participantA?.participant?.ligue || "Inconnue",
@@ -225,6 +318,7 @@ export default function AllMatches({
           [
             "N° Match",
             "Aire",
+            "Catégorie",
             "Bleu",
             "Club (Bleu)",
             "Ligue (Bleu)",
@@ -431,6 +525,12 @@ export default function AllMatches({
                     scope="col"
                     className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
                   >
+                    Catégorie
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
+                  >
                     Bleu
                   </th>
                   <th
@@ -486,6 +586,9 @@ export default function AllMatches({
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {match.area?.areaNumber || match.areaNumber || "-"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {getCategoryInfo(match)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-700">
                         {getParticipantName(match, "A")}

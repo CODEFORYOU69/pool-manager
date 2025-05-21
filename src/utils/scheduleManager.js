@@ -32,6 +32,18 @@ const createSchedule = (matches, config) => {
   // Heure de début (commune à toutes les aires)
   const startTime = config.startTime || new Date();
 
+  // MODIFICATION: Vérifier si les matchs ont déjà des attributions d'aires (via phaseManager)
+  const hasPreAssignedAreas = matches.some(
+    (match) => match.areaNumber !== undefined
+  );
+  console.log(
+    `Matchs avec aires pré-assignées: ${hasPreAssignedAreas ? "OUI" : "NON"}`
+  );
+
+  // MODIFICATION: Vérifier si les matchs ont des phases attribuées
+  const hasPhases = matches.some((match) => match.phase !== undefined);
+  console.log(`Matchs avec phases attribuées: ${hasPhases ? "OUI" : "NON"}`);
+
   // Regrouper les matchs par poule
   const poolsWithMatches = groupMatchesByGroupAndPool(matches);
   console.log(`Nombre de poules trouvées: ${poolsWithMatches.length}`);
@@ -40,12 +52,55 @@ const createSchedule = (matches, config) => {
   const poolSizes = analyzePoolSizes(poolsWithMatches);
   console.log("Tailles des poules identifiées:", poolSizes);
 
-  // Distribuer les poules entre les aires
-  const poolsPerArea = distributePoolsWithSmartAssignment(
-    poolsWithMatches,
-    numAreas,
-    poolSizes
-  );
+  // MODIFICATION: Distribution des poules selon les aires déjà assignées ou la méthode standard
+  let poolsPerArea;
+
+  if (hasPreAssignedAreas) {
+    // Si les aires sont déjà assignées, regrouper les poules par aire assignée
+    poolsPerArea = Array(numAreas)
+      .fill()
+      .map(() => []);
+
+    // Pour chaque poule
+    poolsWithMatches.forEach((pool) => {
+      // Vérifier si les matchs de cette poule ont une aire assignée
+      const areaNumbers = new Set();
+      pool.matches.forEach((match) => {
+        if (match.areaNumber !== undefined) {
+          areaNumbers.add(match.areaNumber);
+        }
+      });
+
+      if (areaNumbers.size > 0) {
+        // Utiliser la première aire assignée à cette poule (devrait être la même pour tous les matchs)
+        const assignedArea = Array.from(areaNumbers)[0];
+
+        if (assignedArea >= 1 && assignedArea <= numAreas) {
+          poolsPerArea[assignedArea - 1].push(pool);
+          console.log(
+            `Poule ${pool.groupId}-${pool.poolIndex} assignée à l'aire ${assignedArea} (selon phase)`
+          );
+        } else {
+          console.warn(
+            `Aire assignée invalide (${assignedArea}) pour la poule ${pool.groupId}-${pool.poolIndex}, ignorée`
+          );
+        }
+      } else {
+        // Si aucune aire n'est assignée, utiliser l'aire 1 par défaut
+        poolsPerArea[0].push(pool);
+        console.log(
+          `Poule ${pool.groupId}-${pool.poolIndex} assignée à l'aire 1 (par défaut)`
+        );
+      }
+    });
+  } else {
+    // Si aucune aire n'est assignée, utiliser la méthode standard
+    poolsPerArea = distributePoolsWithSmartAssignment(
+      poolsWithMatches,
+      numAreas,
+      poolSizes
+    );
+  }
 
   // Vérifier la répartition des poules par aire
   poolsPerArea.forEach((pools, index) => {
@@ -56,111 +111,331 @@ const createSchedule = (matches, config) => {
     );
   });
 
-  // Créer le planning pour chaque aire
+  // NOUVELLE LOGIQUE POUR ORGANISER PAR PHASE
+  // Créer le planning en organisant d'abord par phase, puis par aire
   const schedule = [];
   const updatedMatches = []; // Liste des matchs avec leurs numéros et aires attribués
 
-  // Pour chaque aire
-  for (let areaIndex = 0; areaIndex < numAreas; areaIndex++) {
-    const areaNumber = areaIndex + 1;
-    const poolsForThisArea = poolsPerArea[areaIndex] || [];
+  if (hasPhases) {
+    console.log("Organisation du planning phase par phase");
 
-    // Si aucune poule n'est attribuée à cette aire, passer à la suivante
-    if (poolsForThisArea.length === 0) {
-      console.log(
-        `Aucune poule attribuée à l'aire ${areaNumber}, passage à la suivante`
-      );
-      continue;
+    // Trouver le nombre total de phases
+    const maxPhase = Math.max(...matches.map((m) => m.phase || 0));
+    console.log(`Nombre total de phases détectées: ${maxPhase}`);
+
+    // Variables pour suivre les numéros de match par aire
+    const matchNumberCounters = {};
+    for (let i = 1; i <= numAreas; i++) {
+      matchNumberCounters[i] = 1;
     }
 
-    // Pour cette aire, on commence avec le numéro de match selon l'aire
-    // Par exemple: Aire 1 = 101, Aire 2 = 201, etc.
-    let matchNumberCounter = 1;
-    let currentMatchTime = new Date(startTime);
-    let matchCount = 0;
+    // Variables pour suivre l'heure actuelle par aire
+    const currentTimes = {};
+    for (let i = 1; i <= numAreas; i++) {
+      currentTimes[i] = new Date(startTime);
+    }
 
-    // Ensemble pour suivre les combattants récents et éviter les combats consécutifs
-    const recentFighters = new Set();
+    // Variables pour suivre le nombre de matchs par aire
+    const matchCounts = {};
+    for (let i = 1; i <= numAreas; i++) {
+      matchCounts[i] = 0;
+    }
 
-    // Organisez intelligemment les matchs pour éviter que le même combattant combat deux fois de suite
-    const allMatches = organizePoolMatchesWithSpacing(
-      poolsForThisArea,
-      poolSizes
-    );
+    // Pour chaque phase
+    for (let phaseIndex = 1; phaseIndex <= maxPhase; phaseIndex++) {
+      console.log(`Planification de la phase ${phaseIndex}`);
 
-    // Planifier chaque match
-    for (const match of allMatches) {
-      const matchNumber = areaNumber * 100 + matchNumberCounter;
-
-      // Extraire les IDs des combattants pour les ajouter à la liste des récents
-      const fighterIds = [];
-      if (match.participants && match.participants.length >= 2) {
-        fighterIds.push(match.participants[0].id);
-        fighterIds.push(match.participants[1].id);
-      }
-
-      // Calculer l'heure de fin du match
-      const matchEndTime = new Date(currentMatchTime);
-      matchEndTime.setSeconds(matchEndTime.getSeconds() + matchDurationSeconds);
-
-      // Créer l'objet de planification
-      const scheduleItem = {
-        id: uuidv4(),
-        type: "match",
-        matchId: match.id,
-        areaNumber: areaNumber,
-        startTime: currentMatchTime.toISOString(),
-        endTime: matchEndTime.toISOString(),
-        matchNumber: matchNumber,
-      };
-
-      // Ajouter au planning global
-      schedule.push(scheduleItem);
-
-      // Ajouter le match mis à jour à la liste
-      updatedMatches.push({
-        ...match,
-        matchNumber,
-        startTime: currentMatchTime.toISOString(),
-        areaNumber,
-      });
-
-      // Incrémenter le compteur de match
-      matchNumberCounter++;
-
-      // Mettre à jour l'heure pour le prochain match
-      currentMatchTime = new Date(matchEndTime);
-      currentMatchTime.setSeconds(
-        currentMatchTime.getSeconds() + breakBetweenMatchesSeconds
+      // Filtrer les matchs pour cette phase
+      const matchesInPhase = matches.filter(
+        (match) => (match.phase || 0) === phaseIndex
+      );
+      console.log(
+        `Nombre de matchs dans la phase ${phaseIndex}: ${matchesInPhase.length}`
       );
 
-      // Ajouter une pause après un certain nombre de combats
-      matchCount++;
-      if (matchCount % breakFrequency === 0) {
-        const breakEndTime = new Date(currentMatchTime);
-        breakEndTime.setSeconds(
-          breakEndTime.getSeconds() + breakDurationSeconds
+      if (matchesInPhase.length === 0) continue;
+
+      // Regrouper les matchs par aire
+      const matchesByArea = {};
+      for (let i = 1; i <= numAreas; i++) {
+        matchesByArea[i] = [];
+      }
+
+      matchesInPhase.forEach((match) => {
+        const area = match.areaNumber || 1;
+        if (area >= 1 && area <= numAreas) {
+          matchesByArea[area].push(match);
+        } else {
+          // Si l'aire est invalide, mettre sur l'aire 1
+          matchesByArea[1].push(match);
+        }
+      });
+
+      // Pour chaque aire contenant des matchs pour cette phase
+      for (let areaNumber = 1; areaNumber <= numAreas; areaNumber++) {
+        const matchesForThisArea = matchesByArea[areaNumber];
+
+        if (matchesForThisArea.length === 0) continue;
+
+        console.log(
+          `Planification de ${matchesForThisArea.length} matchs pour l'aire ${areaNumber} dans la phase ${phaseIndex}`
         );
 
-        // Créer l'objet de planification de la pause
-        const breakItem = {
+        // Regrouper les matchs par poule pour cette aire
+        const poolsForThisArea = [];
+        const poolMap = {};
+
+        matchesForThisArea.forEach((match) => {
+          const key = `${match.groupId}-${match.poolIndex}`;
+          if (!poolMap[key]) {
+            poolMap[key] = {
+              groupId: match.groupId,
+              poolIndex: match.poolIndex,
+              matches: [],
+            };
+            poolsForThisArea.push(poolMap[key]);
+          }
+          poolMap[key].matches.push(match);
+        });
+
+        // Organiser les matchs de cette aire pour cette phase
+        const organizedMatches = organizePoolMatchesWithSpacing(
+          poolsForThisArea,
+          poolSizes
+        );
+
+        // Planifier chaque match
+        for (const match of organizedMatches) {
+          const matchNumber =
+            areaNumber * 100 + matchNumberCounters[areaNumber];
+
+          // Extraire les IDs des combattants
+          const fighterIds = [];
+          if (match.participants && match.participants.length >= 2) {
+            fighterIds.push(match.participants[0].id);
+            fighterIds.push(match.participants[1].id);
+          }
+
+          // Calculer l'heure de fin du match
+          const currentMatchTime = currentTimes[areaNumber];
+          const matchEndTime = new Date(currentMatchTime);
+          matchEndTime.setSeconds(
+            matchEndTime.getSeconds() + matchDurationSeconds
+          );
+
+          // Créer l'objet de planification
+          const scheduleItem = {
+            id: uuidv4(),
+            type: "match",
+            matchId: match.id,
+            areaNumber: areaNumber,
+            startTime: currentMatchTime.toISOString(),
+            endTime: matchEndTime.toISOString(),
+            matchNumber: matchNumber,
+            phase: phaseIndex,
+          };
+
+          // Ajouter au planning global
+          schedule.push(scheduleItem);
+
+          // Ajouter le match mis à jour à la liste
+          updatedMatches.push({
+            ...match,
+            matchNumber,
+            startTime: currentMatchTime.toISOString(),
+            areaNumber: areaNumber,
+            phase: phaseIndex,
+          });
+
+          // Incrémenter le compteur de match
+          matchNumberCounters[areaNumber]++;
+
+          // Mettre à jour l'heure pour le prochain match
+          currentTimes[areaNumber] = new Date(matchEndTime);
+          currentTimes[areaNumber].setSeconds(
+            currentTimes[areaNumber].getSeconds() + breakBetweenMatchesSeconds
+          );
+
+          // Ajouter une pause après un certain nombre de combats
+          matchCounts[areaNumber]++;
+          if (matchCounts[areaNumber] % breakFrequency === 0) {
+            const breakEndTime = new Date(currentTimes[areaNumber]);
+            breakEndTime.setSeconds(
+              breakEndTime.getSeconds() + breakDurationSeconds
+            );
+
+            // Créer l'objet de planification de la pause
+            const breakItem = {
+              id: uuidv4(),
+              type: "break",
+              areaNumber: areaNumber,
+              startTime: currentTimes[areaNumber].toISOString(),
+              endTime: breakEndTime.toISOString(),
+              phase: phaseIndex,
+            };
+
+            schedule.push(breakItem);
+
+            // Mettre à jour l'heure après la pause
+            currentTimes[areaNumber] = new Date(breakEndTime);
+          }
+        }
+      }
+
+      // Ajouter une séparation entre les phases (pause sur toutes les aires)
+      if (phaseIndex < maxPhase) {
+        console.log(
+          `Ajout d'une pause entre la phase ${phaseIndex} et la phase ${
+            phaseIndex + 1
+          }`
+        );
+
+        for (let areaNumber = 1; areaNumber <= numAreas; areaNumber++) {
+          // Ne pas ajouter de pause si aucun match n'a été planifié sur cette aire
+          if (matchCounts[areaNumber] === 0) continue;
+
+          const phaseBreakEndTime = new Date(currentTimes[areaNumber]);
+          phaseBreakEndTime.setSeconds(
+            phaseBreakEndTime.getSeconds() + breakDurationSeconds * 2 // Pause plus longue entre les phases
+          );
+
+          // Créer l'objet de planification de la pause
+          const phaseBreakItem = {
+            id: uuidv4(),
+            type: "phase_break",
+            areaNumber: areaNumber,
+            startTime: currentTimes[areaNumber].toISOString(),
+            endTime: phaseBreakEndTime.toISOString(),
+            phase: phaseIndex,
+            label: `Fin de la phase ${phaseIndex}`,
+          };
+
+          schedule.push(phaseBreakItem);
+
+          // Mettre à jour l'heure après la pause
+          currentTimes[areaNumber] = new Date(phaseBreakEndTime);
+        }
+      }
+    }
+  } else {
+    // ANCIENNE LOGIQUE (si pas de phases configurées)
+    console.log(
+      "Organisation du planning aire par aire (pas de phases configurées)"
+    );
+
+    // Pour chaque aire
+    for (let areaIndex = 0; areaIndex < numAreas; areaIndex++) {
+      const areaNumber = areaIndex + 1;
+      const poolsForThisArea = poolsPerArea[areaIndex] || [];
+
+      // Si aucune poule n'est attribuée à cette aire, passer à la suivante
+      if (poolsForThisArea.length === 0) {
+        console.log(
+          `Aucune poule attribuée à l'aire ${areaNumber}, passage à la suivante`
+        );
+        continue;
+      }
+
+      // Pour cette aire, on commence avec le numéro de match selon l'aire
+      // Par exemple: Aire 1 = 101, Aire 2 = 201, etc.
+      let matchNumberCounter = 1;
+      let currentMatchTime = new Date(startTime);
+      let matchCount = 0;
+
+      // Ensemble pour suivre les combattants récents et éviter les combats consécutifs
+      const recentFighters = new Set();
+
+      // Organisez intelligemment les matchs pour éviter que le même combattant combat deux fois de suite
+      const allMatches = organizePoolMatchesWithSpacing(
+        poolsForThisArea,
+        poolSizes
+      );
+
+      // Planifier chaque match
+      for (const match of allMatches) {
+        const matchNumber = areaNumber * 100 + matchNumberCounter;
+
+        // Extraire les IDs des combattants pour les ajouter à la liste des récents
+        const fighterIds = [];
+        if (match.participants && match.participants.length >= 2) {
+          fighterIds.push(match.participants[0].id);
+          fighterIds.push(match.participants[1].id);
+        }
+
+        // Calculer l'heure de fin du match
+        const matchEndTime = new Date(currentMatchTime);
+        matchEndTime.setSeconds(
+          matchEndTime.getSeconds() + matchDurationSeconds
+        );
+
+        // Créer l'objet de planification
+        const scheduleItem = {
           id: uuidv4(),
-          type: "break",
+          type: "match",
+          matchId: match.id,
           areaNumber: areaNumber,
           startTime: currentMatchTime.toISOString(),
-          endTime: breakEndTime.toISOString(),
+          endTime: matchEndTime.toISOString(),
+          matchNumber: matchNumber,
         };
 
-        schedule.push(breakItem);
+        // Ajouter au planning global
+        schedule.push(scheduleItem);
 
-        // Mettre à jour l'heure après la pause
-        currentMatchTime = new Date(breakEndTime);
+        // MODIFICATION: Conserver l'aire assignée par phaseManager si elle existe
+        const finalAreaNumber =
+          hasPreAssignedAreas && match.areaNumber
+            ? match.areaNumber
+            : areaNumber;
+
+        // Ajouter le match mis à jour à la liste
+        updatedMatches.push({
+          ...match,
+          matchNumber,
+          startTime: currentMatchTime.toISOString(),
+          areaNumber: finalAreaNumber,
+        });
+
+        // Incrémenter le compteur de match
+        matchNumberCounter++;
+
+        // Mettre à jour l'heure pour le prochain match
+        currentMatchTime = new Date(matchEndTime);
+        currentMatchTime.setSeconds(
+          currentMatchTime.getSeconds() + breakBetweenMatchesSeconds
+        );
+
+        // Ajouter une pause après un certain nombre de combats
+        matchCount++;
+        if (matchCount % breakFrequency === 0) {
+          const breakEndTime = new Date(currentMatchTime);
+          breakEndTime.setSeconds(
+            breakEndTime.getSeconds() + breakDurationSeconds
+          );
+
+          // Créer l'objet de planification de la pause
+          const breakItem = {
+            id: uuidv4(),
+            type: "break",
+            areaNumber: areaNumber,
+            startTime: currentMatchTime.toISOString(),
+            endTime: breakEndTime.toISOString(),
+          };
+
+          schedule.push(breakItem);
+
+          // Mettre à jour l'heure après la pause
+          currentMatchTime = new Date(breakEndTime);
+        }
       }
     }
   }
 
   // Trier le planning global par aire puis par heure de début
   schedule.sort((a, b) => {
+    if (a.phase !== b.phase && a.phase !== undefined && b.phase !== undefined) {
+      return a.phase - b.phase;
+    }
     if (a.areaNumber !== b.areaNumber) {
       return a.areaNumber - b.areaNumber;
     }
