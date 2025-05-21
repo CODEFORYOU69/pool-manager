@@ -9,6 +9,13 @@ import { useEffect, useState } from "react";
 interface ExtendedMatch extends Match {
   poolIndex?: number;
   participants?: ExtendedParticipant[];
+  group?: {
+    id?: string;
+    gender?: string;
+    ageCategoryName?: string;
+    weightCategoryName?: string;
+  };
+  groupId?: string;
 }
 
 interface ExtendedParticipant {
@@ -59,13 +66,53 @@ export default function AllMatches({
     try {
       if (!match) return "";
 
-      // Chercher les informations dans le premier participant
-      const participant = match.matchParticipants?.[0]?.participant;
+      // Utiliser des interfaces étendues pour accéder aux propriétés optionnelles
+      const extMatch = match as ExtendedMatch;
+
+      // Si nous avons les données du groupe, les utiliser en priorité
+      if (extMatch.group) {
+        const group = extMatch.group;
+        const gender = group.gender || "";
+        const ageCategory = group.ageCategoryName || "";
+        const weightCategory = group.weightCategoryName || "";
+        const poolIndex =
+          extMatch.poolIndex !== undefined ? extMatch.poolIndex + 1 : "";
+
+        // Déterminer le sexe abrégé
+        const genderAbbr = String(gender).toLowerCase().startsWith("f")
+          ? "F"
+          : "M";
+
+        // Formater la catégorie d'âge en abrégé
+        let ageCatAbbr = "";
+        if (ageCategory) {
+          // Si déjà en abrégé, utiliser tel quel
+          if (String(ageCategory).length <= 3) {
+            ageCatAbbr = String(ageCategory).toLowerCase();
+          } else {
+            // Sinon utiliser les trois premières lettres
+            ageCatAbbr = String(ageCategory).toLowerCase().substring(0, 3);
+          }
+        }
+
+        // Ajouter un tiret devant le poids si ce n'est pas déjà le cas
+        const formattedWeight =
+          weightCategory &&
+          !String(weightCategory).startsWith("-") &&
+          !String(weightCategory).startsWith("+")
+            ? `-${weightCategory}`
+            : weightCategory;
+
+        return `${genderAbbr}-${ageCatAbbr} ${formattedWeight} P${poolIndex}`.trim();
+      }
+
+      // Chercher les informations dans le premier participant si le groupe n'est pas disponible
+      const participant =
+        match.matchParticipants?.[0]?.participant || extMatch.participants?.[0];
 
       if (!participant) return "";
 
       // Utiliser les interfaces étendues
-      const extMatch = match as ExtendedMatch;
       const extParticipant = participant as ExtendedParticipant;
 
       // Récupérer les informations de genre, catégorie d'âge, poids et poule
