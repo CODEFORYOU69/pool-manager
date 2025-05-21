@@ -1046,3 +1046,29 @@
     flex: 0 0 100%;
   }
 }
+
+/* Styles pour les boutons d'exportation */
+.export-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+  margin-bottom: 20px;
+}
+
+.export-buttons button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  color: white;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.export-buttons .secondary-button {
+  background-color: #2196f3;
+}
+
+.export-buttons .secondary-button:hover {
+  background-color: #1976d2;
+}

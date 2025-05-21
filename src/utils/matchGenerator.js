@@ -17,11 +17,15 @@ export const generateMatches = (groups) => {
       return [];
     }
 
+    console.log(`Génération des matchs pour ${groups.length} groupes`);
+
     const allMatches = [];
     const errors = [];
 
     // Créer un registre pour suivre les combinaisons de participants déjà traitées
     const processedCombinations = new Set();
+    // Créer un registre pour suivre les matchs uniques par paire de participants
+    const uniqueMatchesByParticipants = new Map();
 
     // Pour chaque groupe
     groups.forEach((group, groupIndex) => {
@@ -52,6 +56,14 @@ export const generateMatches = (groups) => {
           return;
         }
 
+        console.log(
+          `Traitement du groupe ${groupIndex + 1}/${groups.length}: ${group.id}`
+        );
+        console.log(`  - ${group.pools.length} poules dans ce groupe`);
+        console.log(
+          `  - ${group.participants.length} participants dans ce groupe`
+        );
+
         // Pour chaque poule dans le groupe
         group.pools.forEach((pool, poolIndex) => {
           try {
@@ -63,17 +75,25 @@ export const generateMatches = (groups) => {
               return;
             }
 
+            console.log(
+              `  - Traitement de la poule ${poolIndex + 1}/${
+                group.pools.length
+              } avec ${pool.length} participants`
+            );
+
             // Créer un identifiant unique pour cette poule basé sur ses participants
             // Ceci nous permettra d'éviter de créer les mêmes matchs plusieurs fois
             const poolParticipantIds = [...pool].sort().join("|");
+            const poolIdentifier = `${group.id}|${poolIndex}|${poolParticipantIds}`;
 
             // Si cette combinaison de participants a déjà été traitée, ne pas générer à nouveau
-            if (processedCombinations.has(poolParticipantIds)) {
+            if (processedCombinations.has(poolIdentifier)) {
+              console.log(`    - Poule déjà traitée, éviter la duplication`);
               return;
             }
 
             // Marquer cette combinaison comme traitée
-            processedCombinations.add(poolParticipantIds);
+            processedCombinations.add(poolIdentifier);
 
             // Générer les combats pour cette poule
             const poolMatches = generatePoolMatches(
@@ -83,8 +103,44 @@ export const generateMatches = (groups) => {
               group.participants
             );
 
-            // Ajouter les combats à la liste globale
-            allMatches.push(...poolMatches);
+            console.log(
+              `    - ${poolMatches.length} matchs générés pour cette poule`
+            );
+
+            // Vérifier que chaque match est unique (même au sein de différentes poules)
+            const uniquePoolMatches = [];
+
+            poolMatches.forEach((match) => {
+              if (!match.participants || match.participants.length !== 2) {
+                return; // Ignorer les matchs invalides
+              }
+
+              // Créer une clé unique pour ce match
+              const participant1Id = match.participants[0].id;
+              const participant2Id = match.participants[1].id;
+              const matchKey = [participant1Id, participant2Id]
+                .sort()
+                .join("|");
+
+              // Vérifier si ce match existe déjà
+              if (uniqueMatchesByParticipants.has(matchKey)) {
+                console.log(
+                  `    - Match ${participant1Id} vs ${participant2Id} déjà généré, éviter le doublon`
+                );
+                return;
+              }
+
+              // Ajouter ce match à la liste des matchs uniques
+              uniqueMatchesByParticipants.set(matchKey, match);
+              uniquePoolMatches.push(match);
+            });
+
+            console.log(
+              `    - ${uniquePoolMatches.length} matchs uniques retenus après vérification`
+            );
+
+            // Ajouter les combats uniques à la liste globale
+            allMatches.push(...uniquePoolMatches);
           } catch (poolError) {
             console.error(
               `Erreur lors de la génération des matchs pour la poule ${poolIndex} du groupe ${group.id}:`,
@@ -116,6 +172,9 @@ export const generateMatches = (groups) => {
       );
     }
 
+    console.log(
+      `Génération terminée: ${allMatches.length} matchs uniques générés`
+    );
     return allMatches;
   } catch (error) {
     console.error("Erreur lors de la génération des matchs:", error);

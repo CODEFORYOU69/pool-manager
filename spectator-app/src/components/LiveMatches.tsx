@@ -2,6 +2,36 @@
 
 import { Match } from "@/types";
 
+// Interfaces étendues pour les propriétés additionnelles
+interface ExtendedMatch extends Match {
+  poolIndex?: number;
+  participants?: ExtendedParticipant[];
+  group?: {
+    id?: string;
+    gender?: string;
+    ageCategoryName?: string;
+    weightCategoryName?: string;
+  };
+  groupId?: string;
+}
+
+interface ExtendedParticipant {
+  id?: string;
+  prenom?: string;
+  nom?: string;
+  gender?: string;
+  sexe?: string;
+  ageCategory?: string;
+  categoryAgeAbbr?: string;
+  weightCategory?: string;
+  categoryWeightAbbr?: string;
+  poids?: string;
+  weight?: string;
+  category?: string;
+  club?: string;
+  ligue?: string;
+}
+
 interface DelayInfo {
   delayInMinutes: number;
   lastCompletedMatch: number | null;
@@ -26,6 +56,126 @@ export default function LiveMatches({
   const areaNumbers = Object.keys(upcomingMatchesByArea)
     .map(Number)
     .sort((a, b) => a - b);
+
+  // Fonction pour récupérer les informations de catégorie
+  const getCategoryInfo = (match: Match): string => {
+    try {
+      if (!match) return "";
+
+      // Utiliser des interfaces étendues pour accéder aux propriétés optionnelles
+      const extMatch = match as ExtendedMatch;
+
+      // Si nous avons les données du groupe, les utiliser en priorité
+      if (extMatch.group) {
+        const group = extMatch.group;
+        const gender = group.gender || "";
+        const ageCategory = group.ageCategoryName || "";
+        const weightCategory = group.weightCategoryName || "";
+        const poolIndex =
+          extMatch.poolIndex !== undefined ? extMatch.poolIndex + 1 : "";
+
+        // Déterminer le sexe abrégé
+        const genderAbbr = String(gender).toLowerCase().startsWith("f")
+          ? "F"
+          : "M";
+
+        // Formater la catégorie d'âge en abrégé
+        let ageCatAbbr = "";
+        if (ageCategory) {
+          // Si déjà en abrégé, utiliser tel quel
+          if (String(ageCategory).length <= 3) {
+            ageCatAbbr = String(ageCategory).toLowerCase();
+          } else {
+            // Sinon utiliser les trois premières lettres
+            ageCatAbbr = String(ageCategory).toLowerCase().substring(0, 3);
+          }
+        }
+
+        // Ajouter un tiret devant le poids si ce n'est pas déjà le cas
+        const formattedWeight =
+          weightCategory &&
+          !String(weightCategory).startsWith("-") &&
+          !String(weightCategory).startsWith("+")
+            ? `-${weightCategory}`
+            : weightCategory;
+
+        return `${genderAbbr}-${ageCatAbbr} ${formattedWeight} P${poolIndex}`.trim();
+      }
+
+      // Fallback sur les informations du participant si le groupe n'est pas disponible
+      const participant =
+        match.matchParticipants?.[0]?.participant || extMatch.participants?.[0];
+
+      if (!participant) return "";
+
+      const extParticipant = participant as ExtendedParticipant;
+
+      // Récupérer les informations de genre, catégorie d'âge, poids et poule
+      const gender = extParticipant.gender || extParticipant.sexe || "";
+      const ageCategory =
+        extParticipant.ageCategory || extParticipant.categoryAgeAbbr || "";
+
+      // Essayer de récupérer la catégorie de poids, en favorisant les propriétés les plus spécifiques
+      let weightCategory = "";
+
+      // Si on a un ID de groupe, essayer de récupérer les infos du groupe (asynchrone)
+      if (extMatch.groupId && !weightCategory) {
+        // On ne peut pas faire de requête asynchrone ici, mais on peut indiquer qu'il faudrait
+        // implémenter un système de cache pour les données de groupe
+        console.log(
+          `Pour une meilleure précision, implémenter un cache pour le groupe ${extMatch.groupId}`
+        );
+      }
+
+      // Fallback sur les propriétés du participant
+      weightCategory =
+        extParticipant.weightCategory ||
+        extParticipant.categoryWeightAbbr ||
+        extParticipant.poids ||
+        extParticipant.weight ||
+        (extParticipant.category && extParticipant.category.includes("kg")
+          ? extParticipant.category
+          : "") ||
+        "";
+
+      const poolIndex =
+        extMatch.poolIndex !== undefined ? extMatch.poolIndex + 1 : "";
+
+      // Déterminer le sexe abrégé
+      const genderAbbr = String(gender).toLowerCase().startsWith("f")
+        ? "F"
+        : "M";
+
+      // Formater la catégorie d'âge en abrégé
+      let ageCatAbbr = "";
+      if (ageCategory) {
+        // Si déjà en abrégé, utiliser tel quel
+        if (String(ageCategory).length <= 3) {
+          ageCatAbbr = String(ageCategory).toLowerCase();
+        } else {
+          // Sinon utiliser les trois premières lettres
+          ageCatAbbr = String(ageCategory).toLowerCase().substring(0, 3);
+        }
+      }
+
+      // Ajouter un tiret devant le poids si ce n'est pas déjà le cas
+      const formattedWeight =
+        weightCategory &&
+        !String(weightCategory).startsWith("-") &&
+        !String(weightCategory).startsWith("+")
+          ? `-${weightCategory}`
+          : weightCategory;
+
+      // Formater les informations dans le format souhaité
+      return `${genderAbbr}-${ageCatAbbr} ${formattedWeight} P${poolIndex}`.trim();
+    } catch (error) {
+      console.error(
+        "Erreur lors de l'accès aux informations de catégorie:",
+        error
+      );
+      return "";
+    }
+  };
 
   if (areaNumbers.length === 0) {
     return (
@@ -69,27 +219,26 @@ export default function LiveMatches({
   };
 
   return (
-    <div className="space-y-8 p-2 sm:p-0">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-3 p-2 sm:p-0">
       {areaNumbers.map((areaNumber) => (
         <div
           key={areaNumber}
-          className="mb-8 bg-white rounded-lg shadow-sm p-4"
+          className="mb-4 bg-white rounded-lg shadow-sm p-3 h-full flex flex-col"
         >
-          <h2 className="text-2xl font-bold text-gray-900 mb-4 flex flex-wrap items-center">
+          <h2 className="text-xl font-bold text-gray-900 mb-2 flex flex-wrap items-center">
             Aire {areaNumber}{" "}
             <span className="text-sm font-medium text-gray-700 ml-2">
-              ({upcomingMatchesByArea[areaNumber].length} matchs)
+              ({upcomingMatchesByArea[areaNumber].length})
             </span>
             {delayInfoByArea[areaNumber] && getDelayIndicator(areaNumber)}
-            {delayInfoByArea[areaNumber]?.lastCompletedMatch && (
-              <span className="ml-2 text-xs text-gray-500 mt-1 sm:mt-0">
-                Dernier match terminé: #
-                {delayInfoByArea[areaNumber].lastCompletedMatch}
-              </span>
-            )}
           </h2>
+          {delayInfoByArea[areaNumber]?.lastCompletedMatch && (
+            <div className="text-xs text-gray-500 mb-2">
+              Dernier match: #{delayInfoByArea[areaNumber].lastCompletedMatch}
+            </div>
+          )}
 
-          <div className="space-y-4">
+          <div className="space-y-3 flex-grow overflow-y-auto">
             {upcomingMatchesByArea[areaNumber].map((match, index) => {
               const isFirstMatch = index === 0;
               const isPending = match.status === "pending";
@@ -108,18 +257,18 @@ export default function LiveMatches({
                   }`}
                 >
                   <div
-                    className={`px-4 py-3 flex justify-between items-center border-b ${
+                    className={`px-3 py-2 flex flex-wrap justify-between items-center border-b ${
                       isFirstMatch
                         ? "bg-yellow-50 border-yellow-200"
                         : "bg-gray-50 border-gray-200"
                     }`}
                   >
-                    <div className="flex items-center">
-                      <span className="font-bold text-gray-900">
-                        Match #{match.matchNumber}
+                    <div className="flex items-center flex-wrap">
+                      <span className="font-bold text-gray-900 text-sm">
+                        #{match.matchNumber}
                       </span>
                       <span
-                        className={`ml-2 px-2 py-0.5 text-xs rounded ${
+                        className={`ml-1 px-1.5 py-0.5 text-xs rounded ${
                           isInProgress
                             ? "bg-green-100 text-green-800"
                             : isPending
@@ -134,15 +283,19 @@ export default function LiveMatches({
                           : "En attente"}
                       </span>
                     </div>
+                    <span className="text-xs bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded">
+                      {getCategoryInfo(match)}
+                    </span>
                   </div>
 
-                  <div className="p-4">
-                    <div className="flex flex-col sm:flex-row gap-3 mb-3">
-                      <div className="flex-1 flex flex-col border-l-4 border-blue-500 bg-blue-50 rounded-r pl-3 py-2">
-                        <span className="font-medium text-blue-700">
+                  <div className="p-2">
+                    {/* Combattant BLEU en haut */}
+                    <div className="flex flex-col gap-1 mb-2">
+                      <div className="flex-1 flex flex-col border-l-4 border-blue-500 bg-blue-50 rounded-r pl-2 py-1.5">
+                        <span className="font-medium text-blue-700 text-sm line-clamp-1">
                           {getParticipantName(match, "A")}
                         </span>
-                        <span className="text-xs text-gray-600 mt-1">
+                        <span className="text-xs text-gray-600 line-clamp-1">
                           {match.matchParticipants?.find(
                             (mp) => mp.position === "A"
                           )?.participant?.club || "Club inconnu"}{" "}
@@ -157,11 +310,13 @@ export default function LiveMatches({
                             : ""}
                         </span>
                       </div>
-                      <div className="flex-1 flex flex-col border-l-4 border-rose-500 bg-rose-50 rounded-r pl-3 py-2">
-                        <span className="font-medium text-rose-700">
+
+                      {/* Combattant ROUGE en bas */}
+                      <div className="flex-1 flex flex-col border-l-4 border-rose-500 bg-rose-50 rounded-r pl-2 py-1.5">
+                        <span className="font-medium text-rose-700 text-sm line-clamp-1">
                           {getParticipantName(match, "B")}
                         </span>
-                        <span className="text-xs text-gray-600 mt-1">
+                        <span className="text-xs text-gray-600 line-clamp-1">
                           {match.matchParticipants?.find(
                             (mp) => mp.position === "B"
                           )?.participant?.club || "Club inconnu"}{" "}
@@ -178,12 +333,12 @@ export default function LiveMatches({
                       </div>
                     </div>
 
-                    <div className="flex justify-between items-center">
+                    <div className="flex justify-between items-center text-xs">
                       {isPending ? (
                         <div>
                           <div className="text-gray-700">
                             {/* Afficher l'heure originale prévue */}
-                            Prévu à: {formatTime(match.startTime)}
+                            Prévu: {formatTime(match.startTime)}
                           </div>
                           {/* Afficher l'heure ajustée si différente de l'originale */}
                           {adjustedStartTime !== match.startTime &&
@@ -198,7 +353,7 @@ export default function LiveMatches({
                                     : "text-blue-700"
                                 }
                               >
-                                Estimation: {formatTime(adjustedStartTime)}
+                                Est.: {formatTime(adjustedStartTime)}
                               </div>
                             )}
                         </div>

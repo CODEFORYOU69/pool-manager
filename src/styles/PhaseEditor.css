@@ -1,0 +1,344 @@
+.phase-editor {
+  margin: 20px 0;
+  padding: 15px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.debug-info {
+  padding: 8px 12px;
+  margin-bottom: 15px;
+  background-color: #e2e3e5;
+  border-left: 4px solid #41464b;
+  border-radius: 4px;
+  color: #41464b;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.debug-areas-count {
+  margin-bottom: 8px;
+}
+
+.source-info {
+  font-size: 12px;
+  color: #6c757d;
+  margin-top: 3px;
+}
+
+.auto-detection-note {
+  margin-top: 8px;
+  font-style: italic;
+  color: #198754;
+  font-size: 13px;
+  font-weight: normal;
+}
+
+.debug-area-selector {
+  display: flex;
+  align-items: center;
+  margin-top: 5px;
+  gap: 10px;
+}
+
+.phase-editor h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  color: #333;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 10px;
+}
+
+.error-message {
+  color: #721c24;
+  background-color: #f8d7da;
+  border: 1px solid #f5c6cb;
+  padding: 10px;
+  margin-bottom: 15px;
+  border-radius: 4px;
+}
+
+.phases-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.phase-card {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background-color: white;
+  padding: 15px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.phase-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 10px;
+}
+
+.phase-header h4 {
+  margin: 0;
+  color: #495057;
+}
+
+.phase-controls {
+  display: flex;
+  gap: 5px;
+}
+
+.phase-controls button {
+  background-color: #f8f9fa;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.phase-controls button.delete-phase-btn {
+  width: auto;
+  padding: 0 10px;
+  background-color: #dc3545;
+  color: white;
+  border-color: #dc3545;
+  font-size: 14px;
+  margin-left: 8px;
+}
+
+.phase-controls button.delete-phase-btn:hover {
+  background-color: #c82333;
+  border-color: #bd2130;
+}
+
+.phase-controls button:hover {
+  background-color: #e9ecef;
+}
+
+.phase-controls button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.delete-btn {
+  color: #dc3545;
+  font-weight: bold;
+}
+
+.delete-btn:hover {
+  background-color: #f8d7da !important;
+}
+
+.phase-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.phase-group {
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  padding: 12px;
+  background-color: #f8f9fa;
+}
+
+.group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.group-header h5 {
+  margin: 0;
+  color: #495057;
+}
+
+.delete-group-btn {
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.delete-group-btn:hover {
+  background-color: #c82333;
+}
+
+.group-selection,
+.group-aires {
+  margin-bottom: 10px;
+}
+
+.group-selection label,
+.group-aires label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 500;
+  color: #495057;
+}
+
+.group-selection select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+/* Styles pour les boutons d'aires */
+.area-buttons-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 5px;
+  margin-bottom: 10px;
+}
+
+.area-button {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  background-color: #f1f3f5;
+  color: #495057;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.area-button:hover {
+  background-color: #e9ecef;
+  transform: scale(1.05);
+}
+
+.area-button.selected {
+  background-color: #007bff;
+  color: white;
+  border-color: #0069d9;
+}
+
+.area-button.selected:hover {
+  background-color: #0069d9;
+}
+
+.select-all-button {
+  padding: 0 12px;
+  height: 40px;
+  background-color: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.select-all-button:hover {
+  background-color: #5a6268;
+}
+
+.aires-help {
+  font-size: 12px;
+  color: #6c757d;
+  margin-top: 5px;
+}
+
+.add-group-btn {
+  background-color: #e9ecef;
+  border: 1px dashed #adb5bd;
+  border-radius: 4px;
+  padding: 10px;
+  cursor: pointer;
+  color: #495057;
+  font-size: 14px;
+  width: 100%;
+  text-align: center;
+  transition: all 0.2s;
+}
+
+.add-group-btn:hover {
+  background-color: #dae0e5;
+}
+
+.add-group-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.phase-editor-controls {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.add-phase-btn {
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 10px 15px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.add-phase-btn:hover {
+  background-color: #0069d9;
+}
+
+.reset-btn {
+  background-color: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 10px 15px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.reset-btn:hover {
+  background-color: #5a6268;
+}
+
+.unused-groups {
+  margin-top: 20px;
+  padding: 15px;
+  background-color: #fff3cd;
+  border: 1px solid #ffeeba;
+  border-radius: 4px;
+}
+
+.unused-groups h4 {
+  margin-top: 0;
+  margin-bottom: 10px;
+  color: #856404;
+}
+
+.unused-groups ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.unused-groups li {
+  margin-bottom: 5px;
+}
