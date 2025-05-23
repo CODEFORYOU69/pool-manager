@@ -285,7 +285,7 @@ export default function Home() {
             );
 
             // Prendre uniquement les 5 premiers matchs non complétés
-            matchesByArea[areaNum] = nonCompletedMatches.slice(0, 5);
+            matchesByArea[areaNum] = nonCompletedMatches.slice(0, 3);
           }
         });
 
@@ -826,7 +826,7 @@ export default function Home() {
             </div>
           </div>
         ) : (
-          <div className="max-w-7xl mx-auto">
+          <div className="max-w-7xl lg:mx-auto ">
             {activeTab === "live" && (
               <LiveMatches
                 upcomingMatchesByArea={upcomingMatchesByArea}
