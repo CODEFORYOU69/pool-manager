@@ -390,8 +390,8 @@ export default function AllMatches({
         },
         columnStyles: {
           0: { fontStyle: "bold" }, // Numéro de match en gras
-          2: { textColor: [41, 128, 185] }, // Bleu en bleu
-          3: { textColor: [192, 57, 43] }, // Rouge en rouge
+          3: { textColor: [41, 128, 185] }, // Bleu en bleu
+          6: { textColor: [192, 57, 43] }, // Rouge en rouge
         },
       });
 
