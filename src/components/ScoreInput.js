@@ -1503,9 +1503,46 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   // Obtenir les informations de catégorie dans un format abrégé
   const getCategoryInfo = (match) => {
     try {
-      if (!match || !match.groupId) return "";
+      if (!match) return "";
 
-      // Chercher les informations du groupe dans les participants
+      // Si nous avons les données du groupe, les utiliser en priorité
+      if (match.group) {
+        const group = match.group;
+        const gender = group.gender || "";
+        const ageCategory = group.ageCategoryName || "";
+        const weightCategory = group.weightCategoryName || "";
+        const poolIndex =
+          match.poolIndex !== undefined ? match.poolIndex + 1 : "";
+
+        // Déterminer le sexe abrégé
+        const genderAbbr = String(gender).toLowerCase().startsWith("f")
+          ? "F"
+          : "M";
+
+        // Formater la catégorie d'âge en abrégé
+        let ageCatAbbr = "";
+        if (ageCategory) {
+          // Si déjà en abrégé, utiliser tel quel
+          if (String(ageCategory).length <= 3) {
+            ageCatAbbr = String(ageCategory).toLowerCase();
+          } else {
+            // Sinon utiliser les trois premières lettres
+            ageCatAbbr = String(ageCategory).toLowerCase().substring(0, 3);
+          }
+        }
+
+        // Ajouter un tiret devant le poids si ce n'est pas déjà le cas
+        const formattedWeight =
+          weightCategory &&
+          !String(weightCategory).startsWith("-") &&
+          !String(weightCategory).startsWith("+")
+            ? `-${weightCategory}`
+            : weightCategory;
+
+        return `${genderAbbr}-${ageCatAbbr} ${formattedWeight} P${poolIndex}`.trim();
+      }
+
+      // Fallback sur les informations du participant si le groupe n'est pas disponible
       const participant =
         match.matchParticipants?.[0]?.participant || match.participants?.[0];
 
@@ -1599,43 +1636,42 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   const exportToCsv = () => {
     // Définir les en-têtes du CSV
     const headers = [
-      "ID",
+      "MatchId",
       "Mat",
       "Number",
       "Phase",
-      "EventID",
-      "HomeCompetitor",
-      "AwayCompetitor",
-      "Discipline",
-      "Division",
-      "EventName",
+      "Status",
+      "HomeName",
+      "HomeCountry",
+      "HomeOrgId",
+      "HomeCompetitorType",
+      "HomeCompetitorId",
+      "AwayName",
+      "AwayCountry",
+      "AwayOrgId",
+      "AwayCompetitorType",
+      "AwayCompetitorId",
+      "Rules",
       "Rounds",
-      "MaxDiff",
-      "MaxPen",
+      "MaxDifference",
+      "MaxPenalties",
       "TimingRound",
       "TimingRest",
       "TimingInjury",
       "ThresholdBody",
       "ThresholdHead",
-      "GoldenPoint",
-      "GPTime",
-      "HomeCountry",
-      "HomeOrgId",
+      "GoldenPointEnabled",
+      "GoldenPointTime",
       "HomeOrg",
-      "AwayCountry",
-      "AwayOrgId",
       "AwayOrg",
+      "Discipline",
+      "Division",
       "Gender",
       "WeightCategory",
-      "HomeId",
-      "HomeCompetitorId",
-      "AwayId",
-      "AwayCompetitorId",
+      "Role",
+      "EventID",
       "VideoReplayHome",
       "VideoReplayAway",
-      "Role",
-      "Status",
-      "MatchConfigId",
     ];
 
     // Obtenir les matchs filtrés
@@ -1792,6 +1828,13 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
         `Valeurs extraites - Round: ${roundDuration}s, Pause: ${breakDuration}s`
       );
 
+      //DETERMINER EventID en incrementant de 1 par match commencant à 100
+      let indexEventId = 100;
+
+      //DETERMINER HomeOrgId en commencant à 200 et AwayOrgId en commencant à 300 et en incrementant de 1 par match
+      let homeOrgId = 200;
+      let awayOrgId = 300;
+
       for (let index = 0; index < allMatches.length; index++) {
         const match = allMatches[index];
 
@@ -1846,7 +1889,6 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
         }
 
         // Construire le nom de l'événement
-        const eventName = `${ageCategory}-${weightCategory}-${gender}`;
 
         // Déterminer les régions
         const homeOrg = participantA.ligue || "";
@@ -1860,10 +1902,6 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
         const awayCompetitorId = (participantB.id || "")
           .replace(/[^0-9]/g, "")
           .substring(0, 4);
-
-        // 2. Créer les IDs finaux en ajoutant H/A devant les IDs des compétiteurs
-        const homeId = homeCompetitorId ? `H${homeCompetitorId}` : "";
-        const awayId = awayCompetitorId ? `A${awayCompetitorId}` : "";
 
         // Obtenir le seuil PSS pour ce match spécifique
         console.log(
@@ -1881,9 +1919,6 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
           thresholdBody
         );
 
-        // Construction du MatchConfigId
-        const matchConfigId = `BESTOF3-${thresholdBody}-3-${roundDuration}-${breakDuration}-3-${roundDuration}-${breakDuration}-3-${roundDuration}-${breakDuration}-R16`;
-
         // Générer un ID à 3 chiffres
         const formattedId = String(index + 1).padStart(3, "0");
 
@@ -1895,18 +1930,29 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
           ? `-${weightCategory}`.replace(/--/g, "-")
           : "";
 
+        // Incrémenter les IDs pour ce match
+        indexEventId = indexEventId + 1;
+        homeOrgId = homeOrgId + 1;
+        awayOrgId = awayOrgId + 1;
+
         // Créer la ligne CSV
         const row = [
-          formattedId, // ID
+          formattedId, // MatchId
           mat, // Mat - utiliser l'aire de combat
           match.matchNumber || index + 1, // Number
           "R16", // Phase
-          "1", // EventID
-          getParticipantName(match, "A"), // HomeCompetitor
-          getParticipantName(match, "B"), // AwayCompetitor
-          "Taekwondo Kyorugi", // Discipline
-          ageCategory, // Division - utiliser ageCategoryName
-          eventName, // EventName - format modifié
+          "SCHEDULED", // Status
+          getParticipantName(match, "A"), // HomeName
+          "FRA", // HomeCountry
+          homeOrgId, // HomeOrgId - incrémenté pour chaque match
+          "A", // HomeCompetitorType - format modifié
+          homeCompetitorId, // HomeCompetitorId - format modifié
+          getParticipantName(match, "B"), // AwayName
+          "FRA", // AwayCountry
+          awayOrgId, // AwayOrgId - incrémenté pour chaque match
+          "A", // AwayCompetitorType - format modifié
+          awayCompetitorId, // AwayCompetitorId - format modifié
+          "BESTOF3", // Rules
           "3", // Rounds
           "99", // MaxDiff
           "5", // MaxPen
@@ -1915,25 +1961,18 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
           "60", // TimingInjury
           thresholdBody, // ThresholdBody - valeur spécifique au match
           "0", // ThresholdHead
-          "False", // GoldenPoint
-          "60", // GPTime
-          "FRA", // HomeCountry
-          getRegionId(homeOrg), // HomeOrgId
+          "False", // GoldenPointEnabled
+          "60", // GoldenPointTime
           homeOrg, // HomeOrg
-          "FRA", // AwayCountry
-          getRegionId(awayOrg), // AwayOrgId
           awayOrg, // AwayOrg
+          "Taekwondo Kyorugi", // Discipline
+          ageCategory, // Division
           gender, // Gender
           formattedWeightCategory, // WeightCategory - utiliser directement weightCategoryName du groupe
-          homeId, // HomeId - format modifié
-          homeCompetitorId, // HomeCompetitorId - format modifié
-          awayId, // AwayId - format modifié
-          awayCompetitorId, // AwayCompetitorId - format modifié
-          "0", // VideoReplayHome
-          "0", // VideoReplayAway
           "ATHLETE", // Role
-          "SCHEDULED", // Status
-          matchConfigId, // MatchConfigId
+          indexEventId, // EventID - incrémenté pour chaque match
+          "1", // VideoReplayHome
+          "1", // VideoReplayAway
         ];
 
         rows.push(row.join(","));

@@ -1271,6 +1271,125 @@ const MatchSchedule = ({
           yPosition += 10;
         }
       }
+      // Si l'affichage est par groupe
+      else if (viewMode === "byGroup") {
+        // Génération par groupe
+        groups.forEach((group, groupIndex) => {
+          // Vérifier si on a besoin d'une nouvelle page
+          if (yPosition > pageHeight - 100) {
+            doc.addPage();
+            yPosition = 20;
+          }
+
+          // Titre du groupe
+          yPosition += 10;
+          doc.setFontSize(14);
+          const groupTitle = `Groupe: ${
+            group.gender === "male" ? "Hommes" : "Femmes"
+          } ${group.ageCategory.name} ${group.weightCategory.name}`;
+          doc.text(groupTitle, margin, yPosition);
+          yPosition += 10;
+
+          // Pour chaque poule de ce groupe
+          group.pools.forEach((pool, poolIndex) => {
+            // Vérifier si on a besoin d'une nouvelle page
+            if (yPosition > pageHeight - 80) {
+              doc.addPage();
+              yPosition = 20;
+              doc.setFontSize(12);
+              doc.text(`${groupTitle} (suite)`, margin, yPosition);
+              yPosition += 10;
+            }
+
+            // Titre de la poule
+            doc.setFontSize(12);
+            doc.text(`Poule ${poolIndex + 1}`, margin, yPosition);
+            yPosition += 5;
+
+            // Récupérer les matchs de cette poule
+            const poolMatches = generatedMatches.filter(
+              (match) =>
+                match.groupId === group.id && match.poolIndex === poolIndex
+            );
+
+            // Préparation des données du tableau pour cette poule
+            const tableData = [];
+            poolMatches.forEach((match) => {
+              // Trouver le match dans le planning
+              const scheduledMatch = generatedSchedule.find(
+                (s) => s.matchId === match.id
+              );
+
+              // Récupérer les informations de seuil de puissance
+              const powerInfo = getPowerThresholdInfo(match);
+              const plastronText = powerInfo ? powerInfo.pss : "-";
+              const hitLevelText = powerInfo ? powerInfo.hitLevel : "-";
+
+              const blueAthlete = getParticipantName(match, "A");
+              const redAthlete = getParticipantName(match, "B");
+
+              tableData.push([
+                scheduledMatch ? scheduledMatch.matchNumber : "-",
+                scheduledMatch
+                  ? formatTime(new Date(scheduledMatch.startTime))
+                  : "-",
+                scheduledMatch ? scheduledMatch.areaNumber : "-",
+                blueAthlete,
+                redAthlete,
+                plastronText,
+                hitLevelText,
+              ]);
+            });
+
+            if (tableData.length > 0) {
+              // Générer le tableau pour cette poule
+              doc.setFontSize(9);
+              autoTable(doc, {
+                startY: yPosition,
+                head: [
+                  [
+                    "N° Combat",
+                    "Horaire",
+                    "Aire",
+                    "Athlète BLEU",
+                    "Athlète ROUGE",
+                    "Plastron",
+                    "Niveau de Frappe",
+                  ],
+                ],
+                body: tableData,
+                theme: "grid",
+                styles: {
+                  fontSize: 8,
+                  cellPadding: 2,
+                },
+                columnStyles: {
+                  0: { cellWidth: 20 }, // N° Combat
+                  1: { cellWidth: 25 }, // Horaire
+                  2: { cellWidth: 15 }, // Aire
+                  3: { cellWidth: 50 }, // Athlète BLEU
+                  4: { cellWidth: 50 }, // Athlète ROUGE
+                  5: { cellWidth: 25 }, // Plastron
+                  6: { cellWidth: 30 }, // Niveau de Frappe
+                },
+                headStyles: {
+                  fillColor: [66, 66, 66],
+                },
+              });
+
+              yPosition = (doc.lastAutoTable.finalY || yPosition) + 10;
+            } else {
+              // Si pas de matchs dans cette poule
+              doc.setFontSize(8);
+              doc.text("Aucun match dans cette poule", margin + 10, yPosition);
+              yPosition += 10;
+            }
+          });
+
+          // Espace entre les groupes
+          yPosition += 15;
+        });
+      }
 
       // Numéro de page
       const pageCount = doc.internal.getNumberOfPages();

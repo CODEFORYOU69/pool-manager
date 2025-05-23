@@ -32,7 +32,7 @@ function createWindow() {
         responseHeaders: {
           ...details.responseHeaders,
           "Content-Security-Policy": [
-            "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:3001 http://192.168.1.18:3001 http://* https://*;",
+            "default-src 'self'; script-src 'self' 'unsafe-eval'; img-src style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:3001 http://192.168.1.18:3001 http://* https://*;",
           ],
         },
       });
