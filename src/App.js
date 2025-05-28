@@ -7,11 +7,17 @@ import Results from "./components/Results";
 import ScoreInput from "./components/ScoreInput";
 import Sidebar from "./components/Sidebar";
 import TournamentSetup from "./components/TournamentSetup";
-import { CompetitionProvider } from "./context/CompetitionContext";
+import {
+  CompetitionProvider,
+  useCompetition,
+} from "./context/CompetitionContext";
 import "./styles/App.css";
 import "./styles/common.css"; // Importer les styles communs
 
-function App() {
+// Composant interne qui utilise le contexte
+function AppContent() {
+  const { setCompetitionId, setCompetitionName } = useCompetition();
+
   // États globaux de l'application
   const [participants, setParticipants] = useState([]);
   const [tournamentConfig, setTournamentConfig] = useState(null);
@@ -48,6 +54,11 @@ function App() {
   const handleSelectCompetition = async (competition) => {
     try {
       console.log("Chargement de la compétition:", competition.id);
+
+      // Mettre à jour le contexte de compétition
+      setCompetitionId(competition.id);
+      setCompetitionName(competition.name);
+
       setSelectedCompetition(competition);
 
       // Charger les données pour tous les composants
@@ -141,7 +152,28 @@ function App() {
 
   // Gérer la création d'une nouvelle compétition
   const handleNewCompetition = () => {
+    // Réinitialiser le contexte de compétition
+    setCompetitionId(null);
+    setCompetitionName("Compétition de Taekwondo");
+
+    // Réinitialiser la compétition sélectionnée
     setSelectedCompetition(null);
+
+    // Réinitialiser tous les états liés à la compétition
+    setParticipants([]);
+    setGroups([]);
+    setMatches([]);
+    setSchedule([]);
+    setResults([]);
+    setTournamentConfig({
+      numAreas: 1,
+      roundDuration: 90,
+      breakDuration: 300,
+      breakFrequency: 10,
+      startTime: new Date(),
+      poolSize: 4,
+    });
+
     // Commencer à l'étape 1 (import CSV) pour une nouvelle compétition
     setCurrentStep(1);
   };
@@ -226,31 +258,36 @@ function App() {
   const shouldShowSidebar = currentStep > 0;
 
   return (
-    <CompetitionProvider>
-      <div className="app-container">
-        {shouldShowSidebar && (
-          <Sidebar
-            currentStep={currentStep}
-            setCurrentStep={setCurrentStep}
-            steps={steps}
-            competitionName={
-              selectedCompetition?.name || "Nouvelle compétition"
-            }
-          />
-        )}
-        <div className="main-content">
-          <header className="App-header">
-            {currentStep > 0 && (
-              <h1>
-                {selectedCompetition
-                  ? selectedCompetition.name
-                  : "Nouvelle compétition"}
-              </h1>
-            )}
-          </header>
-          <main className="App-main">{renderStep()}</main>
-        </div>
+    <div className="app-container">
+      {shouldShowSidebar && (
+        <Sidebar
+          currentStep={currentStep}
+          setCurrentStep={setCurrentStep}
+          steps={steps}
+          competitionName={selectedCompetition?.name || "Nouvelle compétition"}
+        />
+      )}
+      <div className="main-content">
+        <header className="App-header">
+          {currentStep > 0 && (
+            <h1>
+              {selectedCompetition
+                ? selectedCompetition.name
+                : "Nouvelle compétition"}
+            </h1>
+          )}
+        </header>
+        <main className="App-main">{renderStep()}</main>
       </div>
+    </div>
+  );
+}
+
+// Composant App principal qui enveloppe AppContent dans le provider
+function App() {
+  return (
+    <CompetitionProvider>
+      <AppContent />
     </CompetitionProvider>
   );
 }
