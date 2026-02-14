@@ -65,6 +65,7 @@ type ParticipantResult = {
   pointsGained: number;
   pointsLost: number;
   pointsDiff: number;
+  gamjeonReceived: number;
   rank: number;
 };
 
@@ -168,6 +169,21 @@ const extractScore = (
   }
 
   // Dernier recours: retourner 0
+  return 0;
+};
+
+// Fonction utilitaire pour extraire les pénalités (gamjeon) d'un round
+const extractPenalty = (
+  round: ExtendedRound,
+  position: string | number | null
+): number => {
+  if (!round || !position) return 0;
+  if (position === "A" || position === 0) {
+    return Number(round.penaltyA || 0);
+  }
+  if (position === "B" || position === 1) {
+    return Number(round.penaltyB || 0);
+  }
   return 0;
 };
 
@@ -409,6 +425,7 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
                       let roundsLost = 0;
                       let pointsGained = 0;
                       let pointsLost = 0;
+                      let gamjeonReceived = 0;
 
                       // Pour chaque match complété où le participant a joué
                       participantMatches.forEach((match) => {
@@ -469,22 +486,31 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
                                   ? 0
                                   : null;
 
-                              // Extraire les scores avec notre fonction robuste
-                              const pointsGagnes = extractScore(
+                              // Extraire les scores bruts
+                              const scoreGagnes = extractScore(
                                 round,
                                 position
                               );
-                              const pointsConcedes = extractScore(
+                              const scoreConcedes = extractScore(
                                 round,
                                 positionOpposee
                               );
 
+                              // Extraire les pénalités (gamjeon)
+                              const myPenalty = extractPenalty(round, position);
+                              const oppPenalty = extractPenalty(round, positionOpposee);
+
+                              // Points réels = score - gamjeon de l'adversaire (car chaque gamjeon adverse donne 1pt)
+                              const pointsGagnes = scoreGagnes - oppPenalty;
+                              const pointsConcedes = scoreConcedes - myPenalty;
+
                               // Ajouter aux totaux
                               pointsGained += pointsGagnes;
                               pointsLost += pointsConcedes;
+                              gamjeonReceived += myPenalty;
 
                               console.log(
-                                `Points pour ce round: gagnés +${pointsGagnes}, perdus +${pointsConcedes}`
+                                `Points pour ce round: gagnés +${pointsGagnes}, perdus +${pointsConcedes}, gamjeon reçus: ${myPenalty}`
                               );
                             }
                           });
@@ -513,6 +539,7 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
                         pointsGained,
                         pointsLost,
                         pointsDiff,
+                        gamjeonReceived,
                         rank: 0, // Sera calculé plus tard
                       });
 
@@ -522,6 +549,7 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
                         pointsGained,
                         pointsLost,
                         pointsDiff,
+                        gamjeonReceived,
                       });
                     }
                   });
@@ -593,6 +621,7 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
                             // Calculer les points marqués et concédés
                             let pointsGained = 0;
                             let pointsLost = 0;
+                            let gamjeonReceived = 0;
 
                             poolMatches.forEach((m) => {
                               if (
@@ -606,53 +635,26 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
                                 )?.position;
 
                                 if (participantPosition) {
+                                  const oppPosition =
+                                    participantPosition === "A" || participantPosition === 0
+                                      ? (participantPosition === "A" ? "B" : 1)
+                                      : (participantPosition === "B" ? "A" : 0);
+
                                   (m as ExtendedMatch).rounds?.forEach(
                                     (round) => {
-                                      // Si le participant est en position A
                                       if (
-                                        participantPosition === "A" ||
-                                        participantPosition === 0
+                                        round.scores ||
+                                        round.scoreA !== undefined ||
+                                        round.scoreB !== undefined
                                       ) {
-                                        if (
-                                          round.scores ||
-                                          round.scoreA !== undefined ||
-                                          round.scoreB !== undefined
-                                        ) {
-                                          // Utiliser extractScore pour les points
-                                          pointsGained += extractScore(
-                                            round,
-                                            participantPosition
-                                          );
-                                          pointsLost += extractScore(
-                                            round,
-                                            participantPosition === "A"
-                                              ? "B"
-                                              : 1
-                                          );
-                                        }
-                                      }
-                                      // Si le participant est en position B
-                                      else if (
-                                        participantPosition === "B" ||
-                                        participantPosition === 1
-                                      ) {
-                                        if (
-                                          round.scores ||
-                                          round.scoreA !== undefined ||
-                                          round.scoreB !== undefined
-                                        ) {
-                                          // Utiliser extractScore pour les points
-                                          pointsGained += extractScore(
-                                            round,
-                                            participantPosition
-                                          );
-                                          pointsLost += extractScore(
-                                            round,
-                                            participantPosition === "B"
-                                              ? "A"
-                                              : 0
-                                          );
-                                        }
+                                        const scoreGagnes = extractScore(round, participantPosition);
+                                        const scoreConcedes = extractScore(round, oppPosition);
+                                        const myPenalty = extractPenalty(round, participantPosition);
+                                        const oppPenalty = extractPenalty(round, oppPosition);
+
+                                        pointsGained += scoreGagnes - oppPenalty;
+                                        pointsLost += scoreConcedes - myPenalty;
+                                        gamjeonReceived += myPenalty;
                                       }
                                     }
                                   );
@@ -679,6 +681,7 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
                               pointsGained,
                               pointsLost,
                               pointsDiff,
+                              gamjeonReceived,
                               rank: 0, // Sera calculé plus tard
                             });
                           }
@@ -705,6 +708,10 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
                   // 4. Différence de points
                   if (a.pointsDiff !== b.pointsDiff)
                     return b.pointsDiff - a.pointsDiff;
+
+                  // 5. Moins de gamjeon reçus = mieux classé
+                  if (a.gamjeonReceived !== b.gamjeonReceived)
+                    return a.gamjeonReceived - b.gamjeonReceived;
 
                   // Si tout est égal, garder l'ordre
                   return 0;
@@ -961,7 +968,7 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
 
                 {/* Vue desktop : tableau complet */}
                 <div className="hidden md:block overflow-x-auto px-2 py-1">
-                  <table className="w-full min-w-[650px]">
+                  <table className="w-full min-w-[720px]">
                     <thead>
                       <tr className="bg-gray-700 text-white">
                         <th className="px-2 sm:px-4 py-2 sm:py-3 text-left">
@@ -996,6 +1003,9 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
                         </th>
                         <th className="px-2 sm:px-4 py-2 sm:py-3 text-center">
                           Diff
+                        </th>
+                        <th className="px-2 sm:px-4 py-2 sm:py-3 text-center">
+                          Gam
                         </th>
                       </tr>
                     </thead>
@@ -1053,6 +1063,9 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
                             >
                               {participant.pointsDiff >= 0 ? "+" : ""}
                               {participant.pointsDiff}
+                            </td>
+                            <td className="px-2 sm:px-4 py-2 sm:py-3 text-center font-medium text-orange-600">
+                              {participant.gamjeonReceived}
                             </td>
                           </tr>
                         );
@@ -1117,15 +1130,15 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
                         </div>
                       </div>
 
-                      <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                      <div className="mt-2 grid grid-cols-4 gap-2 text-center">
                         <div className="flex flex-col p-1 rounded bg-white shadow-sm">
-                          <span className="text-xs text-gray-500">Points+</span>
+                          <span className="text-xs text-gray-500">P+</span>
                           <span className="font-medium text-green-700">
                             {participant.pointsGained}
                           </span>
                         </div>
                         <div className="flex flex-col p-1 rounded bg-white shadow-sm">
-                          <span className="text-xs text-gray-500">Points-</span>
+                          <span className="text-xs text-gray-500">P-</span>
                           <span className="font-medium text-red-700">
                             {participant.pointsLost}
                           </span>
@@ -1141,6 +1154,12 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
                           >
                             {participant.pointsDiff >= 0 ? "+" : ""}
                             {participant.pointsDiff}
+                          </span>
+                        </div>
+                        <div className="flex flex-col p-1 rounded bg-white shadow-sm">
+                          <span className="text-xs text-gray-500">Gam</span>
+                          <span className="font-medium text-orange-600">
+                            {participant.gamjeonReceived}
                           </span>
                         </div>
                       </div>

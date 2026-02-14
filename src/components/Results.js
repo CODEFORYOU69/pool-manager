@@ -32,7 +32,7 @@ const Results = ({
     try {
       // Créer le contenu du CSV
       let csvContent =
-        "Catégorie,Poule,Place,Nom,Prénom,Club,Points,Victoires,Défaites,Rounds+,Rounds-,Points+,Points-,Différence\n";
+        "Catégorie,Poule,Place,Nom,Prénom,Club,Points,Victoires,Défaites,Rounds+,Rounds-,Points+,Points-,Différence,Gamjeon\n";
 
       // Ajouter les données de chaque poule
       poolResults.forEach((pool) => {
@@ -52,6 +52,7 @@ const Results = ({
             participant.pointsGained,
             participant.pointsLost,
             participant.pointsDiff,
+            participant.gamjeonReceived || 0,
           ].join(",");
           csvContent += row + "\n";
         });
@@ -168,7 +169,7 @@ const Results = ({
 
       // Créer le contenu du CSV
       let csvContent =
-        "Catégorie,Poule,Place,Nom,Prénom,Club,Points,Victoires,Défaites,Rounds+,Rounds-,Points+,Points-,Différence\n";
+        "Catégorie,Poule,Place,Nom,Prénom,Club,Points,Victoires,Défaites,Rounds+,Rounds-,Points+,Points-,Différence,Gamjeon\n";
 
       // Ajouter les données des qualifiés
       Object.values(qualifiésParGroupe).forEach((groupe) => {
@@ -188,6 +189,7 @@ const Results = ({
             qualifié.pointsGained || 0,
             qualifié.pointsLost || 0,
             qualifié.pointsDiff || 0,
+            qualifié.gamjeonReceived || 0,
           ].join(",");
           csvContent += row + "\n";
         });
@@ -582,6 +584,7 @@ const Results = ({
                       <th>P+</th>
                       <th>P-</th>
                       <th>Diff</th>
+                      <th>Gam</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -608,6 +611,9 @@ const Results = ({
                         >
                           {participant.pointsDiff >= 0 ? "+" : ""}
                           {participant.pointsDiff}
+                        </td>
+                        <td className="gamjeon">
+                          {participant.gamjeonReceived || 0}
                         </td>
                       </tr>
                     ))}

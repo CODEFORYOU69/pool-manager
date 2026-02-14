@@ -63,14 +63,17 @@ export const calculatePoolStandings = (poolFighters, poolMatches) => {
     rounds.forEach((round) => {
       const scoreA = round.scoreA || 0;
       const scoreB = round.scoreB || 0;
+      const penaltyA = round.penaltyA || 0;
+      const penaltyB = round.penaltyB || 0;
 
-      standings[aId].totalPoints += scoreA;
-      standings[aId].totalPointsAgainst += scoreB;
-      standings[bId].totalPoints += scoreB;
-      standings[bId].totalPointsAgainst += scoreA;
+      // Points réels = score brut - gamjeon de l'adversaire
+      standings[aId].totalPoints += scoreA - penaltyB;
+      standings[aId].totalPointsAgainst += scoreB - penaltyA;
+      standings[bId].totalPoints += scoreB - penaltyA;
+      standings[bId].totalPointsAgainst += scoreA - penaltyB;
 
-      standings[aId].penalties += round.penaltyA || 0;
-      standings[bId].penalties += round.penaltyB || 0;
+      standings[aId].penalties += penaltyA;
+      standings[bId].penalties += penaltyB;
 
       if (round.winnerPosition === "A" || (scoreA > scoreB && !round.winnerPosition)) {
         standings[aId].roundsWon++;
@@ -471,6 +474,7 @@ const compileParticipantStats = (
         pointsGained: 0, // Ajout pour le tableau de résultats
         pointsLost: 0, // Ajout pour le tableau de résultats
         pointsDiff: 0, // Ajout pour le tableau de résultats
+        gamjeonReceived: 0, // Total de gamjeon reçus
         wins: 0, // Pour compatibilité avec le composant Results
         matches: 0, // Pour compatibilité avec le composant Results
         rank: 0, // Sera défini plus tard
@@ -558,13 +562,25 @@ const compileParticipantStats = (
           stats[participantAId].roundsLost++;
         }
 
-        // Ajouter les scores et les points concédés
-        stats[participantAId].scoreTotal += scoreA;
-        stats[participantBId].scoreTotal += scoreB;
+        // Gamjeon (pénalités)
+        const penaltyA = round.penaltyA || 0;
+        const penaltyB = round.penaltyB || 0;
 
-        // Points concédés (ce que l'adversaire a marqué contre vous)
-        stats[participantAId].pointsLost += scoreB;
-        stats[participantBId].pointsLost += scoreA;
+        // Points réels = score brut - gamjeon de l'adversaire
+        // (car chaque gamjeon adverse donne 1 point inclus dans le score)
+        const realPointsA = scoreA - penaltyB;
+        const realPointsB = scoreB - penaltyA;
+
+        stats[participantAId].scoreTotal += realPointsA;
+        stats[participantBId].scoreTotal += realPointsB;
+
+        // Points concédés réels
+        stats[participantAId].pointsLost += realPointsB;
+        stats[participantBId].pointsLost += realPointsA;
+
+        // Comptabiliser les gamjeon reçus
+        stats[participantAId].gamjeonReceived += penaltyA;
+        stats[participantBId].gamjeonReceived += penaltyB;
       });
     }
   });
@@ -846,7 +862,11 @@ const calculateRankings = (participantStats, matches, matchResults) => {
     // 4. Différentiel de points (points marqués - points encaissés)
     if (a.pointsDiff !== b.pointsDiff) return b.pointsDiff - a.pointsDiff;
 
-    // 5. Si tout est égal, pas de changement d'ordre
+    // 5. Moins de gamjeon reçus = mieux classé
+    if (a.gamjeonReceived !== b.gamjeonReceived)
+      return a.gamjeonReceived - b.gamjeonReceived;
+
+    // 6. Si tout est égal, pas de changement d'ordre
     return 0;
   });
 
