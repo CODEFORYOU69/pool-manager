@@ -927,13 +927,22 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
       <h2 className="text-2xl font-bold mb-4 text-blue-800">
         Résultats par poules (v3)
       </h2>
-      {/* Debug: afficher les données brutes du premier participant */}
-      {poolResults.length > 0 && poolResults[0].participants.length > 0 && (
-        <div className="bg-yellow-100 p-2 mb-4 text-xs font-mono">
-          DEBUG: {poolResults[0].participants[0].nom} -
-          P+={poolResults[0].participants[0].pointsGained}
-          P-={poolResults[0].participants[0].pointsLost}
-          Gam={poolResults[0].participants[0].gamjeonReceived}
+      {/* Debug: afficher les données brutes du premier match complété */}
+      {poolResults.length > 0 && poolResults[0].matches.length > 0 && (
+        <div className="bg-yellow-100 p-2 mb-4 text-xs font-mono whitespace-pre-wrap">
+          {(() => {
+            const m = poolResults[0].matches.find(m => m.result?.completed);
+            if (!m) return "No completed match";
+            const r = m.rounds || m.result?.rounds || [];
+            return `v3 Match ${m.matchNumber} rounds: ${JSON.stringify(r.map((rd: ExtendedRound) => ({
+              rn: rd.roundNumber,
+              sA: rd.scoreA,
+              sB: rd.scoreB,
+              pA: rd.penaltyA,
+              pB: rd.penaltyB,
+              keys: Object.keys(rd).filter(k => k.includes('penalty') || k.includes('Penalty'))
+            })))}`;
+          })()}
         </div>
       )}
 
