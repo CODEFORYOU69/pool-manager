@@ -3,6 +3,7 @@ const { PrismaClient } = require("@prisma/client");
 const cors = require("cors");
 
 const prisma = new PrismaClient();
+const { triggerSync } = require("./neonSync");
 const app = express();
 
 app.use(cors());
@@ -62,6 +63,7 @@ app.post("/api/competition", async (req, res) => {
     }
 
     console.log("Compétition créée:", result);
+    triggerSync(prisma, result.id);
     res.json(result);
   } catch (error) {
     console.error("Erreur lors de la création de la compétition:", error);
@@ -159,6 +161,7 @@ app.put("/api/competition/:id", async (req, res) => {
     }
 
     console.log("Compétition mise à jour:", result);
+    triggerSync(prisma, id);
     res.json(result);
   } catch (error) {
     console.error("Erreur lors de la mise à jour de la compétition:", error);
@@ -263,6 +266,7 @@ app.post("/api/group", async (req, res) => {
     });
 
     console.log("Groupe créé:", result);
+    triggerSync(prisma, groupData.competitionId);
     res.json(result);
   } catch (error) {
     console.error("Erreur lors de la création du groupe:", error);
@@ -1860,6 +1864,9 @@ app.post("/api/match/:id/results", async (req, res) => {
     };
 
     console.log("Résultats sauvegardés avec succès:", response);
+    // Sync vers Neon - récupérer le competitionId via le group
+    const matchGroup = await prisma.group.findUnique({ where: { id: existingMatch.groupId }, select: { competitionId: true } });
+    if (matchGroup) triggerSync(prisma, matchGroup.competitionId);
     res.json(response);
   } catch (error) {
     console.error("Erreur lors de la sauvegarde des résultats:", error);
@@ -2329,6 +2336,7 @@ app.post("/api/pool/:id/draw", async (req, res) => {
       data: { phase: "pool", fightsPerPerson },
     });
 
+    triggerSync(prisma, pool.group.competition.id);
     res.json({ matches: createdMatches, totalMatches: createdMatches.length });
   } catch (error) {
     console.error("Erreur lors du tirage:", error);
@@ -2541,6 +2549,7 @@ app.post("/api/pool/:id/generateFinals", async (req, res) => {
       data: { phase: "finals" },
     });
 
+    triggerSync(prisma, pool.group.competition.id);
     res.json({ matches: createdMatches });
   } catch (error) {
     console.error("Erreur lors de la génération des finales:", error);

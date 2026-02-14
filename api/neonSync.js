@@ -1,0 +1,285 @@
+const { PrismaClient } = require("@prisma/client");
+
+// Second Prisma client for Neon (remote database)
+let neonPrisma = null;
+
+const NEON_DATABASE_URL = process.env.NEON_DATABASE_URL;
+
+function getNeonPrisma() {
+  if (!NEON_DATABASE_URL) return null;
+  if (!neonPrisma) {
+    neonPrisma = new PrismaClient({
+      datasources: { db: { url: NEON_DATABASE_URL } },
+    });
+    console.log("[NeonSync] Client Neon initialisé");
+  }
+  return neonPrisma;
+}
+
+/**
+ * Sync an entire competition (and all its related data) to Neon.
+ * Uses upsert for idempotency.
+ */
+async function syncCompetitionToNeon(localPrisma, competitionId) {
+  const neon = getNeonPrisma();
+  if (!neon) return; // Neon not configured, skip silently
+
+  try {
+    console.log(`[NeonSync] Début sync compétition ${competitionId}`);
+
+    // 1. Fetch full competition data from local DB
+    const competition = await localPrisma.competition.findUnique({
+      where: { id: competitionId },
+      include: {
+        areas: true,
+        participants: true,
+        groups: {
+          include: {
+            pools: {
+              include: {
+                poolParticipants: true,
+                matches: {
+                  include: {
+                    matchParticipants: true,
+                    rounds: true,
+                  },
+                },
+              },
+            },
+            participants: true, // ParticipantGroup
+          },
+        },
+      },
+    });
+
+    if (!competition) {
+      console.log(`[NeonSync] Compétition ${competitionId} non trouvée localement`);
+      return;
+    }
+
+    // 2. Upsert competition
+    await neon.competition.upsert({
+      where: { id: competition.id },
+      update: {
+        name: competition.name,
+        date: competition.date,
+        startTime: competition.startTime,
+        endTime: competition.endTime,
+        roundDuration: competition.roundDuration,
+        breakDuration: competition.breakDuration,
+        breakFrequency: competition.breakFrequency,
+        poolSize: competition.poolSize,
+        updatedAt: competition.updatedAt,
+      },
+      create: {
+        id: competition.id,
+        name: competition.name,
+        date: competition.date,
+        startTime: competition.startTime,
+        endTime: competition.endTime,
+        roundDuration: competition.roundDuration,
+        breakDuration: competition.breakDuration,
+        breakFrequency: competition.breakFrequency,
+        poolSize: competition.poolSize,
+        createdAt: competition.createdAt,
+        updatedAt: competition.updatedAt,
+      },
+    });
+
+    // 3. Upsert areas
+    for (const area of competition.areas) {
+      await neon.area.upsert({
+        where: { id: area.id },
+        update: { areaNumber: area.areaNumber },
+        create: {
+          id: area.id,
+          areaNumber: area.areaNumber,
+          competitionId: competition.id,
+        },
+      });
+    }
+
+    // 4. Upsert participants
+    for (const p of competition.participants) {
+      await neon.participant.upsert({
+        where: { id: p.id },
+        update: {
+          nom: p.nom, prenom: p.prenom, sexe: p.sexe,
+          age: p.age, poids: p.poids, ligue: p.ligue, club: p.club,
+        },
+        create: {
+          id: p.id, nom: p.nom, prenom: p.prenom, sexe: p.sexe,
+          age: p.age, poids: p.poids, ligue: p.ligue, club: p.club,
+          competitionId: competition.id,
+        },
+      });
+    }
+
+    // 5. Upsert groups, pools, participants, matches
+    for (const group of competition.groups) {
+      await neon.group.upsert({
+        where: { id: group.id },
+        update: {
+          gender: group.gender,
+          ageCategoryName: group.ageCategoryName,
+          ageCategoryMin: group.ageCategoryMin,
+          ageCategoryMax: group.ageCategoryMax,
+          weightCategoryName: group.weightCategoryName,
+          weightCategoryMax: group.weightCategoryMax,
+        },
+        create: {
+          id: group.id,
+          gender: group.gender,
+          ageCategoryName: group.ageCategoryName,
+          ageCategoryMin: group.ageCategoryMin,
+          ageCategoryMax: group.ageCategoryMax,
+          weightCategoryName: group.weightCategoryName,
+          weightCategoryMax: group.weightCategoryMax,
+          competitionId: competition.id,
+        },
+      });
+
+      // ParticipantGroups
+      for (const pg of group.participants) {
+        await neon.participantGroup.upsert({
+          where: { id: pg.id },
+          update: {},
+          create: {
+            id: pg.id,
+            participantId: pg.participantId,
+            groupId: pg.groupId,
+          },
+        });
+      }
+
+      // Pools
+      for (const pool of group.pools) {
+        await neon.pool.upsert({
+          where: { id: pool.id },
+          update: {
+            poolIndex: pool.poolIndex,
+            phase: pool.phase,
+            bronzeMatch: pool.bronzeMatch,
+            fightsPerPerson: pool.fightsPerPerson,
+          },
+          create: {
+            id: pool.id,
+            poolIndex: pool.poolIndex,
+            groupId: pool.groupId,
+            phase: pool.phase,
+            bronzeMatch: pool.bronzeMatch,
+            fightsPerPerson: pool.fightsPerPerson,
+          },
+        });
+
+        // PoolParticipants
+        for (const pp of pool.poolParticipants) {
+          await neon.poolParticipant.upsert({
+            where: { id: pp.id },
+            update: {},
+            create: {
+              id: pp.id,
+              poolId: pp.poolId,
+              participantId: pp.participantId,
+            },
+          });
+        }
+
+        // Matches
+        for (const match of pool.matches) {
+          await neon.match.upsert({
+            where: { id: match.id },
+            update: {
+              matchNumber: match.matchNumber,
+              status: match.status,
+              startTime: match.startTime,
+              endTime: match.endTime,
+              winner: match.winner,
+              poolIndex: match.poolIndex,
+              pointMatch: match.pointMatch,
+              phase: match.phase,
+              tour: match.tour,
+            },
+            create: {
+              id: match.id,
+              matchNumber: match.matchNumber,
+              status: match.status,
+              startTime: match.startTime,
+              endTime: match.endTime,
+              winner: match.winner,
+              groupId: match.groupId,
+              poolId: match.poolId,
+              areaId: match.areaId,
+              poolIndex: match.poolIndex,
+              pointMatch: match.pointMatch,
+              phase: match.phase,
+              tour: match.tour,
+            },
+          });
+
+          // MatchParticipants
+          for (const mp of match.matchParticipants) {
+            await neon.matchParticipant.upsert({
+              where: { id: mp.id },
+              update: { position: mp.position },
+              create: {
+                id: mp.id,
+                position: mp.position,
+                matchId: mp.matchId,
+                participantId: mp.participantId,
+              },
+            });
+          }
+
+          // Rounds
+          for (const round of match.rounds) {
+            await neon.round.upsert({
+              where: { id: round.id },
+              update: {
+                scoreA: round.scoreA,
+                scoreB: round.scoreB,
+                winner: round.winner,
+                winnerPosition: round.winnerPosition,
+                penaltyA: round.penaltyA,
+                penaltyB: round.penaltyB,
+                updatedAt: round.updatedAt,
+              },
+              create: {
+                id: round.id,
+                roundNumber: round.roundNumber,
+                scoreA: round.scoreA,
+                scoreB: round.scoreB,
+                winner: round.winner,
+                winnerPosition: round.winnerPosition,
+                penaltyA: round.penaltyA,
+                penaltyB: round.penaltyB,
+                matchId: round.matchId,
+                createdAt: round.createdAt,
+                updatedAt: round.updatedAt,
+              },
+            });
+          }
+        }
+      }
+    }
+
+    console.log(`[NeonSync] Sync terminée pour compétition ${competitionId}`);
+  } catch (error) {
+    console.error(`[NeonSync] Erreur sync compétition ${competitionId}:`, error.message);
+    // Ne pas faire planter l'app principale si la sync échoue
+  }
+}
+
+/**
+ * Fire-and-forget sync: call this after write operations.
+ * Does not block the response.
+ */
+function triggerSync(localPrisma, competitionId) {
+  if (!NEON_DATABASE_URL || !competitionId) return;
+  // Run in background, don't await
+  syncCompetitionToNeon(localPrisma, competitionId).catch((err) => {
+    console.error("[NeonSync] Background sync failed:", err.message);
+  });
+}
+
+module.exports = { syncCompetitionToNeon, triggerSync, getNeonPrisma };

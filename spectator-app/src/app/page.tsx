@@ -10,7 +10,7 @@ import { Competition, Match } from "@/types";
 import { useEffect, useState } from "react";
 
 // URL de l'API
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
 
 // Types pour les retards
 interface DelayInfo {

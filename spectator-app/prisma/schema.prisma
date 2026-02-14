@@ -1,0 +1,175 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Competition {
+  id             String        @id @default(uuid())
+  name           String
+  date           DateTime
+  startTime      DateTime
+  endTime        DateTime?
+  roundDuration  Int
+  breakDuration  Int
+  breakFrequency Int
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  poolSize       Int           @default(4)
+  areas          Area[]
+  groups         Group[]
+  participants   Participant[]
+}
+
+model Group {
+  id                 String             @id @default(uuid())
+  gender             String
+  ageCategoryName    String
+  ageCategoryMin     Int
+  ageCategoryMax     Int
+  weightCategoryName String
+  weightCategoryMax  Int
+  competitionId      String
+  competition        Competition        @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  matches            Match[]
+  participants       ParticipantGroup[]
+  pools              Pool[]
+
+  @@index([competitionId])
+}
+
+model Pool {
+  id               String            @id @default(uuid())
+  poolIndex        Int
+  groupId          String
+  phase            String            @default("config")
+  bronzeMatch      Boolean           @default(true)
+  fightsPerPerson  Int               @default(0)
+  matches          Match[]
+  group            Group             @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  poolParticipants PoolParticipant[]
+
+  @@index([groupId])
+}
+
+model Participant {
+  id                String             @id @default(uuid())
+  nom               String
+  prenom            String
+  sexe              String
+  age               Int
+  poids             Float
+  ligue             String
+  club              String
+  competitionId     String
+  matchParticipants MatchParticipant[]
+  competition       Competition        @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  participantGroups ParticipantGroup[]
+  poolParticipants  PoolParticipant[]
+
+  @@index([competitionId])
+}
+
+model ParticipantGroup {
+  id            String      @id @default(uuid())
+  participantId String
+  groupId       String
+  group         Group       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@unique([participantId, groupId])
+  @@index([participantId])
+  @@index([groupId])
+}
+
+model PoolParticipant {
+  id            String      @id @default(uuid())
+  poolId        String
+  participantId String
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  pool          Pool        @relation(fields: [poolId], references: [id], onDelete: Cascade)
+
+  @@unique([poolId, participantId])
+  @@index([poolId])
+  @@index([participantId])
+}
+
+model Area {
+  id            String      @id @default(uuid())
+  areaNumber    Int
+  competitionId String
+  competition   Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  breaks        Break[]
+  matches       Match[]
+
+  @@index([competitionId])
+}
+
+model Match {
+  id                String             @id @default(uuid())
+  matchNumber       Int
+  status            String
+  startTime         DateTime
+  endTime           DateTime?
+  winner            String?
+  groupId           String
+  poolId            String
+  areaId            String
+  poolIndex         Int
+  pointMatch        Int                @default(0)
+  phase             String             @default("pool")
+  tour              Int                @default(0)
+  area              Area               @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  group             Group              @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  pool              Pool               @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  matchParticipants MatchParticipant[]
+  rounds            Round[]
+
+  @@index([groupId])
+  @@index([poolId])
+  @@index([areaId])
+}
+
+model MatchParticipant {
+  id            String      @id @default(uuid())
+  position      String
+  matchId       String
+  participantId String
+  match         Match       @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, position])
+  @@index([matchId])
+  @@index([participantId])
+}
+
+model Round {
+  id             String   @id @default(uuid())
+  roundNumber    Int
+  scoreA         Int      @default(0)
+  scoreB         Int      @default(0)
+  winner         String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  matchId        String
+  winnerPosition String?
+  penaltyA       Int      @default(0)
+  penaltyB       Int      @default(0)
+  match          Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, roundNumber])
+  @@index([matchId])
+}
+
+model Break {
+  id        String   @id @default(uuid())
+  startTime DateTime
+  endTime   DateTime
+  areaId    String
+  area      Area     @relation(fields: [areaId], references: [id], onDelete: Cascade)
+
+  @@index([areaId])
+}
