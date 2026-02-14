@@ -925,8 +925,17 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
   return (
     <div className="p-4 sm:p-6">
       <h2 className="text-2xl font-bold mb-4 text-blue-800">
-        Résultats par poules (v2)
+        Résultats par poules (v3)
       </h2>
+      {/* Debug: afficher les données brutes du premier participant */}
+      {poolResults.length > 0 && poolResults[0].participants.length > 0 && (
+        <div className="bg-yellow-100 p-2 mb-4 text-xs font-mono">
+          DEBUG: {poolResults[0].participants[0].nom} -
+          P+={poolResults[0].participants[0].pointsGained}
+          P-={poolResults[0].participants[0].pointsLost}
+          Gam={poolResults[0].participants[0].gamjeonReceived}
+        </div>
+      )}
 
       <div className="flex justify-between items-center mb-6">
         <button
