@@ -925,7 +925,7 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
   return (
     <div className="p-4 sm:p-6">
       <h2 className="text-2xl font-bold mb-4 text-blue-800">
-        Résultats par poules
+        Résultats par poules (v2)
       </h2>
 
       <div className="flex justify-between items-center mb-6">
