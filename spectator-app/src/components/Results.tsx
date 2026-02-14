@@ -925,26 +925,8 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
   return (
     <div className="p-4 sm:p-6">
       <h2 className="text-2xl font-bold mb-4 text-blue-800">
-        Résultats par poules (v3)
+        Résultats par poules
       </h2>
-      {/* Debug: afficher les données brutes du premier match complété */}
-      {poolResults.length > 0 && poolResults[0].matches.length > 0 && (
-        <div className="bg-yellow-100 p-2 mb-4 text-xs font-mono whitespace-pre-wrap">
-          {(() => {
-            const m = poolResults[0].matches.find(m => m.result?.completed);
-            if (!m) return "No completed match";
-            const r = m.rounds || m.result?.rounds || [];
-            return `v3 Match ${m.matchNumber} rounds: ${JSON.stringify(r.map((rd: ExtendedRound) => ({
-              rn: rd.roundNumber,
-              sA: rd.scoreA,
-              sB: rd.scoreB,
-              pA: rd.penaltyA,
-              pB: rd.penaltyB,
-              keys: Object.keys(rd).filter(k => k.includes('penalty') || k.includes('Penalty'))
-            })))}`;
-          })()}
-        </div>
-      )}
 
       <div className="flex justify-between items-center mb-6">
         <button

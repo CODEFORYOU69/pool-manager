@@ -3254,7 +3254,6 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep, tournam
                                       />
                                     </div>
                                   </div>
-                                  {tournamentType === "poolFinals" && (
                                     <div className="gamjeon-inputs">
                                       <div className="gamjeon-group">
                                         <span className="gamjeon-label">Gamjeom {getParticipantName(match, "A")}:</span>
@@ -3293,7 +3292,6 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep, tournam
                                         />
                                       </div>
                                     </div>
-                                  )}
                                   {isTieWithoutWinner && (
                                     <div className="tie-actions">
                                       <button
