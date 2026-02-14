@@ -4,8 +4,8 @@ import Results from "@/components/Results";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-// URL de l'API
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
+// URL de l'API - toujours utiliser les routes internes Next.js
+const API_URL = "/api";
 
 type Competition = {
   id: string;

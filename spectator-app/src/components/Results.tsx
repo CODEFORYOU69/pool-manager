@@ -111,8 +111,8 @@ type Pool = {
   }[];
 };
 
-// URL de l'API
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
+// URL de l'API - toujours utiliser les routes internes Next.js
+const API_URL = "/api";
 
 // Fonction utilitaire pour extraire les scores d'un round de manière sécurisée
 const extractScore = (

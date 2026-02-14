@@ -42,8 +42,9 @@ export async function GET(
     return NextResponse.json(matches);
   } catch (error) {
     console.error("Error fetching matches:", error);
+    const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: "Failed to fetch matches" },
+      { error: "Failed to fetch matches", details: message },
       { status: 500 }
     );
   }

@@ -9,8 +9,9 @@ export async function GET() {
     return NextResponse.json(competitions);
   } catch (error) {
     console.error("Error fetching competitions:", error);
+    const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: "Failed to fetch competitions" },
+      { error: "Failed to fetch competitions", details: message },
       { status: 500 }
     );
   }

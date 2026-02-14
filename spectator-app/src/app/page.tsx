@@ -9,8 +9,8 @@ import TournamentHeader from "@/components/TournamentHeader";
 import { Competition, Match } from "@/types";
 import { useEffect, useState } from "react";
 
-// URL de l'API
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
+// URL de l'API - toujours utiliser les routes internes Next.js
+const API_URL = "/api";
 
 // Types pour les retards
 interface DelayInfo {
