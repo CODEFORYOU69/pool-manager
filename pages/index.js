@@ -65,7 +65,7 @@ export default function Home() {
         const matchesByArea = {};
 
         validMatches.forEach((match) => {
-          const areaNumber = match.areaNumber || 1;
+          const areaNumber = match.area?.areaNumber || match.areaNumber || 1;
 
           if (!matchesByArea[areaNumber]) {
             matchesByArea[areaNumber] = {
@@ -283,6 +283,11 @@ export default function Home() {
                                 {match.rounds?.map((round, idx) => (
                                   <div key={idx} className={styles.roundScore}>
                                     R{idx + 1}: {round.scoreA} - {round.scoreB}
+                                    {(round.penaltyA > 0 || round.penaltyB > 0) && (
+                                      <span style={{ color: '#e65100', fontSize: '0.75em', marginLeft: '4px' }}>
+                                        (G: {round.penaltyA || 0}-{round.penaltyB || 0})
+                                      </span>
+                                    )}
                                   </div>
                                 ))}
                               </div>

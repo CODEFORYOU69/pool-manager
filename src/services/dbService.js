@@ -83,6 +83,7 @@ export const saveCompetitionState = async (competitionData) => {
       breakDuration: competitionData.breakDuration,
       breakFrequency: competitionData.breakFrequency,
       poolSize: competitionData.poolSize,
+      numAreas: competitionData.numAreas || competitionData.numberOfAreas,
     };
 
     console.log("Données préparées pour la sauvegarde:", competitionToSave);
@@ -91,6 +92,12 @@ export const saveCompetitionState = async (competitionData) => {
       competitionToSave.poolSize,
       "type:",
       typeof competitionToSave.poolSize
+    );
+    console.log(
+      "numAreas envoyé à l'API:",
+      competitionToSave.numAreas,
+      "type:",
+      typeof competitionToSave.numAreas
     );
 
     // Déterminer si on crée une nouvelle compétition ou on met à jour une existante
@@ -899,6 +906,8 @@ export const saveMatchResult = async (matchId, results) => {
           scoreB: round.fighterB,
           winner: roundWinnerId,
           winnerPosition: round.winner,
+          penaltyA: round.penaltyA || 0,
+          penaltyB: round.penaltyB || 0,
         };
       }),
     };
@@ -1326,77 +1335,35 @@ export const saveGeneratedMatches = async (competitionId, matchesByPool) => {
           savedMatches.push(savedMatch);
 
           // Associer les participants au match avec une gestion améliorée des erreurs
-          const participantPromises = [];
-          for (let i = 0; i < 2; i++) {
-            const participant = match.participants[i];
-            const position = i === 0 ? "A" : "B"; // Index 0 correspond à A, Index 1 correspond à B
+          console.log(
+            `\n=== CRÉATION DES MATCHPARTICIPANTS POUR LE MATCH ${savedMatch.id} ===`
+          );
+          console.log(`Participants reçus:`, match.participants);
 
-            if (!participant || !participant.id) {
-              console.warn(
-                `Participant invalide à la position ${position} pour le match ${savedMatch.id}`
-              );
-              continue;
-            }
-
-            // Vérifier d'abord que le participant existe bien
-            const checkParticipantResponse = await fetch(
-              `${API_URL}/participant/${participant.id}`,
-              {
-                method: "GET",
-              }
+          if (match.participants && match.participants.length === 2) {
+            // Utiliser la nouvelle fonction simplifiée
+            const createResult = await createMatchParticipants(
+              savedMatch.id,
+              match.participants
             );
 
-            if (!checkParticipantResponse.ok) {
-              console.warn(
-                `Participant ${participant.id} non trouvé, ignoré pour le match ${savedMatch.id}`
+            if (!createResult.success) {
+              console.error(
+                `❌ Échec création matchParticipants pour match ${savedMatch.id}: ${createResult.error}`
               );
-              continue;
+              errors.push(
+                `Erreur matchParticipants pour match ${savedMatch.id}: ${createResult.error}`
+              );
+            } else {
+              console.log(
+                `✅ MatchParticipants créés avec succès pour le match ${savedMatch.id}`
+              );
             }
-
-            // Créer une promesse pour l'ajout du participant au match
-            participantPromises.push(
-              (async () => {
-                try {
-                  const matchParticipantResponse = await fetch(
-                    `${API_URL}/matchParticipant`,
-                    {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                      },
-                      body: JSON.stringify({
-                        matchId: savedMatch.id,
-                        participantId: participant.id,
-                        position: position,
-                      }),
-                    }
-                  );
-
-                  const responseText = await matchParticipantResponse.text();
-
-                  if (!matchParticipantResponse.ok) {
-                    console.warn(
-                      `Erreur lors de l'ajout du participant ${participant.id} au match ${savedMatch.id}: ${responseText}`
-                    );
-                    errors.push(
-                      `Erreur lors de l'ajout du participant ${participant.id} au match ${savedMatch.id}: ${responseText}`
-                    );
-                  }
-                } catch (error) {
-                  console.error(
-                    `Erreur lors de l'ajout du participant ${participant.id} au match ${savedMatch.id}:`,
-                    error
-                  );
-                  errors.push(
-                    `Erreur lors de l'ajout du participant ${participant.id} au match ${savedMatch.id}: ${error.message}`
-                  );
-                }
-              })()
+          } else {
+            console.warn(
+              `⚠️ Match ${savedMatch.id} n'a pas exactement 2 participants, ignoré pour matchParticipants`
             );
           }
-
-          // Attendre que toutes les associations de participants soient terminées
-          await Promise.all(participantPromises);
         } catch (error) {
           console.error(`Erreur lors du traitement d'un match:`, error);
           errors.push(`Erreur lors du traitement d'un match: ${error.message}`);
@@ -1721,11 +1688,19 @@ export const fetchFormattedMatches = async (competitionId) => {
         poolIndex: match.poolIndex,
         number: match.matchNumber,
         status: match.status,
+        winner: match.winner,
+        phase: match.phase || "pool",
+        tour: match.tour || 0,
         participants: match.matchParticipants.map((mp) => ({
           ...mp.participant,
-          position: mp.position, // Ajoutez la position ici
+          position: mp.position,
         })),
-        matchParticipants: match.matchParticipants, // Conserver aussi la structure originale
+        matchParticipants: match.matchParticipants,
+        rounds: match.rounds?.map((r) => ({
+          ...r,
+          penaltyA: r.penaltyA || 0,
+          penaltyB: r.penaltyB || 0,
+        })),
         areaNumber: match.area?.areaNumber || 1,
         startTime: match.startTime,
       };
@@ -2116,4 +2091,173 @@ export const deleteAllGroups = async (competitionId) => {
     console.error("Erreur lors de la suppression des groupes:", error);
     return { success: false, message: error.message };
   }
+};
+
+// Nouvelle fonction pour créer automatiquement les matchParticipants pour un match
+export const createMatchParticipants = async (matchId, participants) => {
+  try {
+    console.log(
+      `=== CRÉATION AUTOMATIQUE DES MATCHPARTICIPANTS POUR LE MATCH ${matchId} ===`
+    );
+    console.log(`Participants à créer:`, participants);
+
+    if (!participants || participants.length !== 2) {
+      throw new Error(
+        `Il faut exactement 2 participants, reçu: ${participants?.length || 0}`
+      );
+    }
+
+    const createdParticipants = [];
+
+    // ÉTAPE SIMPLIFIÉE: Créer directement les matchParticipants sans validation
+    console.log(
+      "=== CRÉATION DIRECTE DES MATCHPARTICIPANTS (SANS VALIDATION) ==="
+    );
+    for (let i = 0; i < participants.length; i++) {
+      const participant = participants[i];
+      const position = i === 0 ? "A" : "B"; // Premier = A (bleu), Deuxième = B (rouge)
+
+      console.log(`Création matchParticipant ${i + 1}:`, {
+        matchId: matchId,
+        participantId: participant.id,
+        position: position,
+        participant: participant,
+      });
+
+      try {
+        const response = await fetch(`${API_URL}/matchParticipant`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            matchId: matchId,
+            participantId: participant.id,
+            position: position,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response
+            .json()
+            .catch(() => ({ message: "Erreur inconnue" }));
+          throw new Error(
+            `Erreur ${response.status}: ${
+              errorData.message ||
+              "Erreur lors de la création du matchParticipant"
+            }`
+          );
+        }
+
+        const createdMatchParticipant = await response.json();
+        console.log(`✅ MatchParticipant créé:`, createdMatchParticipant);
+        createdParticipants.push(createdMatchParticipant);
+      } catch (error) {
+        console.error(
+          `❌ Erreur lors de la création du matchParticipant pour ${participant.id} en position ${position}:`,
+          error
+        );
+        throw new Error(
+          `Erreur lors de la création du matchParticipant pour ${participant.id} en position ${position}: ${error.message}`
+        );
+      }
+    }
+
+    console.log(
+      `✅ ${createdParticipants.length} matchParticipants créés avec succès`
+    );
+    return {
+      success: true,
+      participants: createdParticipants,
+    };
+  } catch (error) {
+    console.error(
+      `❌ Erreur lors de la création des matchParticipants pour le match ${matchId}:`,
+      error
+    );
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+};
+
+// ======== Pool Finals Functions ========
+
+/**
+ * Met à jour la phase d'une poule.
+ * @param {string} poolId
+ * @param {string} phase - 'config' | 'draw' | 'pool' | 'finals' | 'completed'
+ */
+export const updatePoolPhase = async (poolId, phase) => {
+  const response = await fetch(`${API_URL}/pool/${poolId}/phase`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phase }),
+  });
+  if (!response.ok) throw new Error(`Erreur lors de la mise à jour de la phase: ${response.status}`);
+  return response.json();
+};
+
+/**
+ * Récupère le classement d'une poule.
+ * @param {string} poolId
+ * @returns {Promise<Array>} PoolStanding[]
+ */
+export const fetchPoolStandings = async (poolId) => {
+  const response = await fetch(`${API_URL}/pool/${poolId}/standings`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!response.ok) throw new Error(`Erreur lors de la récupération du classement: ${response.status}`);
+  return response.json();
+};
+
+/**
+ * Effectue le tirage aléatoire et sauvegarde les matchs de poule.
+ * @param {string} poolId
+ * @param {Array} fights - Liste de paires {fighterA, fighterB}
+ * @param {Array} tours - Combats groupés par tour
+ * @param {number} fightsPerPerson
+ */
+export const performDraw = async (poolId, fights, tours, fightsPerPerson) => {
+  const response = await fetch(`${API_URL}/pool/${poolId}/draw`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fights, tours, fightsPerPerson }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.message || `Erreur lors du tirage: ${response.status}`);
+  }
+  return response.json();
+};
+
+/**
+ * Génère les matchs de finales pour une poule.
+ * @param {string} poolId
+ */
+export const generateAndSaveFinals = async (poolId) => {
+  const response = await fetch(`${API_URL}/pool/${poolId}/generateFinals`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.message || `Erreur lors de la génération des finales: ${response.status}`);
+  }
+  return response.json();
+};
+
+/**
+ * Récupère les matchs d'une poule spécifique avec détails.
+ * @param {string} poolId
+ */
+export const fetchPoolMatches = async (poolId) => {
+  const response = await fetch(`${API_URL}/pool/${poolId}`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!response.ok) throw new Error(`Erreur: ${response.status}`);
+  return response.json();
 };

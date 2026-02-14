@@ -1,4 +1,129 @@
 /**
+ * Calcule le classement conforme à l'interface PoolStanding pour le mode "Poule Unique + Finales".
+ *
+ * Critères de tri (priorité stricte) :
+ *   1. Victoires (desc)
+ *   2. Confrontation directe (si 2 combattants ex-aequo se sont affrontés)
+ *   3. Rounds gagnés (desc)
+ *   4. Total points marqués (desc)
+ *   5. Pénalités reçues (asc — moins = mieux)
+ *
+ * @param {Array} poolFighters - Liste des combattants [{id, nom, prenom, club, ...}]
+ * @param {Array} poolMatches - Matchs de poule complétés avec matchParticipants et rounds
+ * @returns {Array<PoolStanding>}
+ */
+export const calculatePoolStandings = (poolFighters, poolMatches) => {
+  const standings = {};
+
+  // Initialiser les standings pour chaque combattant
+  poolFighters.forEach((fighter) => {
+    standings[fighter.id] = {
+      participantId: fighter.id,
+      participant: fighter,
+      victories: 0,
+      defeats: 0,
+      roundsWon: 0,
+      roundsLost: 0,
+      totalPoints: 0,
+      totalPointsAgainst: 0,
+      penalties: 0,
+      rank: 0,
+    };
+  });
+
+  // Compiler les résultats des matchs
+  poolMatches.forEach((match) => {
+    if (match.status !== "completed" || !match.winner) return;
+
+    // Trouver participants A et B
+    let aId, bId;
+    if (match.matchParticipants) {
+      const pA = match.matchParticipants.find((mp) => mp.position === "A");
+      const pB = match.matchParticipants.find((mp) => mp.position === "B");
+      aId = pA?.participantId || pA?.participant?.id;
+      bId = pB?.participantId || pB?.participant?.id;
+    } else if (match.participants && match.participants.length >= 2) {
+      aId = match.participants[0]?.id;
+      bId = match.participants[1]?.id;
+    }
+
+    if (!aId || !bId || !standings[aId] || !standings[bId]) return;
+
+    // Victoires/Défaites
+    if (match.winner === aId) {
+      standings[aId].victories++;
+      standings[bId].defeats++;
+    } else if (match.winner === bId) {
+      standings[bId].victories++;
+      standings[aId].defeats++;
+    }
+
+    // Rounds et points
+    const rounds = match.rounds || [];
+    rounds.forEach((round) => {
+      const scoreA = round.scoreA || 0;
+      const scoreB = round.scoreB || 0;
+
+      standings[aId].totalPoints += scoreA;
+      standings[aId].totalPointsAgainst += scoreB;
+      standings[bId].totalPoints += scoreB;
+      standings[bId].totalPointsAgainst += scoreA;
+
+      standings[aId].penalties += round.penaltyA || 0;
+      standings[bId].penalties += round.penaltyB || 0;
+
+      if (round.winnerPosition === "A" || (scoreA > scoreB && !round.winnerPosition)) {
+        standings[aId].roundsWon++;
+        standings[bId].roundsLost++;
+      } else if (round.winnerPosition === "B" || (scoreB > scoreA && !round.winnerPosition)) {
+        standings[bId].roundsWon++;
+        standings[aId].roundsLost++;
+      }
+    });
+  });
+
+  // Convertir en tableau
+  const standingsArray = Object.values(standings);
+
+  // Fonction de confrontation directe
+  const getDirectWinner = (id1, id2) => {
+    const directMatch = poolMatches.find((m) => {
+      if (m.status !== "completed" || !m.winner) return false;
+      let mA, mB;
+      if (m.matchParticipants) {
+        mA = m.matchParticipants.find((mp) => mp.position === "A")?.participantId;
+        mB = m.matchParticipants.find((mp) => mp.position === "B")?.participantId;
+      }
+      return (mA === id1 && mB === id2) || (mA === id2 && mB === id1);
+    });
+    return directMatch ? directMatch.winner : null;
+  };
+
+  // Trier selon les critères
+  standingsArray.sort((a, b) => {
+    // 1. Victoires DESC
+    if (a.victories !== b.victories) return b.victories - a.victories;
+    // 2. Confrontation directe
+    const directWinner = getDirectWinner(a.participantId, b.participantId);
+    if (directWinner === a.participantId) return -1;
+    if (directWinner === b.participantId) return 1;
+    // 3. Rounds gagnés DESC
+    if (a.roundsWon !== b.roundsWon) return b.roundsWon - a.roundsWon;
+    // 4. Total points DESC
+    if (a.totalPoints !== b.totalPoints) return b.totalPoints - a.totalPoints;
+    // 5. Pénalités ASC (moins = mieux)
+    return a.penalties - b.penalties;
+  });
+
+  // Assigner les rangs
+  standingsArray.forEach((s, i) => {
+    s.rank = i + 1;
+  });
+
+  return standingsArray;
+};
+
+/**
  * Calcule les résultats et classements pour tous les groupes et poules
  * @param {Array} participants - Liste des participants
  * @param {Array} groups - Liste des groupes

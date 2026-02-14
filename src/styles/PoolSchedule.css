@@ -1,0 +1,287 @@
+/* PoolSchedule.css - Planning des combats de poule */
+
+.pool-schedule-container {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.pool-schedule-container h2 {
+  color: #3f51b5;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+/* Resume global */
+.schedule-summary-global {
+  background-color: #e8eaf6;
+  padding: 12px 20px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  text-align: center;
+  font-size: 1rem;
+  color: #333;
+}
+
+.schedule-summary-global strong {
+  color: #3f51b5;
+}
+
+/* Boutons d'export */
+.pool-schedule-container .export-buttons {
+  display: flex;
+  margin-bottom: 20px;
+  gap: 10px;
+}
+
+.pool-schedule-container .export-btn {
+  padding: 10px 20px;
+  font-weight: 600;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+}
+
+.pool-schedule-container .export-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.pool-schedule-container .csv-btn {
+  background-color: #27ae60;
+  color: white;
+}
+
+.pool-schedule-container .csv-btn:hover:not(:disabled) {
+  background-color: #219653;
+}
+
+/* Section par categorie */
+.category-schedule {
+  background-color: white;
+  border-radius: 8px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.category-header {
+  background-color: #3f51b5;
+  color: white;
+  padding: 14px 20px;
+}
+
+.category-header h3 {
+  margin: 0 0 4px 0;
+  font-size: 1.15rem;
+}
+
+.category-summary {
+  margin: 0;
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+
+/* Section par tour */
+.tour-section {
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.tour-section:last-child {
+  border-bottom: none;
+}
+
+.tour-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 20px;
+  background-color: #f5f5f5;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.tour-header h4 {
+  margin: 0;
+  color: #3f51b5;
+  font-size: 1rem;
+}
+
+.tour-match-count {
+  font-size: 0.85rem;
+  color: #666;
+  background-color: #e0e0e0;
+  padding: 2px 10px;
+  border-radius: 12px;
+}
+
+/* Liste des combats dans un tour */
+.tour-fights {
+  padding: 8px 20px;
+}
+
+/* Un combat */
+.fight-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  margin: 6px 0;
+  border-radius: 6px;
+  background-color: #fafafa;
+  border: 1px solid #e8e8e8;
+  transition: background-color 0.2s;
+}
+
+.fight-item:hover {
+  background-color: #f0f0f0;
+}
+
+.fight-item.completed {
+  background-color: #f1f8e9;
+  border-color: #c8e6c9;
+}
+
+.fight-number {
+  font-weight: 600;
+  color: #555;
+  min-width: 100px;
+  font-size: 0.9rem;
+}
+
+.fight-participants {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fighter {
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.fighter-club {
+  font-weight: 400;
+  color: #888;
+  font-size: 0.85rem;
+}
+
+.fighter-color-tag {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.red-tag {
+  background-color: #ffcdd2;
+  color: #c62828;
+}
+
+.blue-tag {
+  background-color: #bbdefb;
+  color: #1565c0;
+}
+
+.fighter-red {
+  color: #c62828;
+}
+
+.fighter-blue {
+  color: #1565c0;
+}
+
+.fight-vs {
+  font-weight: 600;
+  color: #999;
+  padding: 0 4px;
+  font-size: 0.85rem;
+}
+
+/* Indicateurs de statut */
+.fight-status {
+  min-width: 100px;
+  text-align: center;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.fight-status.pending {
+  background-color: #fff3e0;
+  color: #e65100;
+}
+
+.fight-status.completed {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+}
+
+/* Message aucun combat */
+.pool-schedule-container .no-matches-message {
+  text-align: center;
+  padding: 40px 20px;
+  background-color: #f8f8f8;
+  border-radius: 8px;
+  margin: 20px 0;
+  color: #666;
+  font-style: italic;
+  font-size: 1.05rem;
+}
+
+/* Boutons de navigation */
+.pool-schedule-container .navigation-buttons {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 30px;
+  padding: 20px 0;
+  border-top: 1px solid #e0e0e0;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .pool-schedule-container {
+    padding: 10px;
+  }
+
+  .fight-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .fight-number {
+    min-width: auto;
+  }
+
+  .fight-participants {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .fight-status {
+    align-self: flex-end;
+  }
+
+  .category-header {
+    padding: 10px 14px;
+  }
+
+  .tour-header {
+    padding: 8px 14px;
+  }
+
+  .tour-fights {
+    padding: 6px 14px;
+  }
+}

@@ -27,6 +27,8 @@ export interface Round {
   roundNumber: number;
   scoreA: number;
   scoreB: number;
+  penaltyA?: number;
+  penaltyB?: number;
   winnerPosition?: string;
 }
 
@@ -39,9 +41,16 @@ export interface Match {
   status: "pending" | "in_progress" | "completed";
   winner?: string;
   winnerPosition?: string;
+  phase?: string; // 'pool' | 'semi1' | 'semi2' | 'final' | 'bronze'
+  tour?: number;
   matchParticipants?: MatchParticipant[];
   rounds?: Round[];
   area?: {
     areaNumber: number;
+  };
+  pool?: {
+    id: string;
+    fightsPerPerson?: number;
+    phase?: string;
   };
 }

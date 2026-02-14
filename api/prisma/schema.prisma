@@ -45,6 +45,9 @@ model Pool {
   id               String            @id @default(uuid())
   poolIndex        Int
   groupId          String
+  phase            String            @default("config")
+  bronzeMatch      Boolean           @default(true)
+  fightsPerPerson  Int               @default(0)
   matches          Match[]
   group            Group             @relation(fields: [groupId], references: [id], onDelete: Cascade)
   poolParticipants PoolParticipant[]
@@ -117,6 +120,8 @@ model Match {
   areaId            String
   poolIndex         Int
   pointMatch        Int                @default(0)
+  phase             String             @default("pool")
+  tour              Int                @default(0)
   area              Area               @relation(fields: [areaId], references: [id], onDelete: Cascade)
   group             Group              @relation(fields: [groupId], references: [id], onDelete: Cascade)
   pool              Pool               @relation(fields: [poolId], references: [id], onDelete: Cascade)
@@ -151,6 +156,8 @@ model Round {
   updatedAt      DateTime @updatedAt
   matchId        String
   winnerPosition String?
+  penaltyA       Int      @default(0)
+  penaltyB       Int      @default(0)
   match          Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
 
   @@unique([matchId, roundNumber])

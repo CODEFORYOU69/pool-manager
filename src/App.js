@@ -1,8 +1,12 @@
 import React, { useState } from "react";
 import CompetitionList from "./components/CompetitionList";
+import EliminationBracket from "./components/EliminationBracket";
 import GroupDisplay from "./components/GroupDisplay";
 import ImportCSV from "./components/ImportCSV";
 import MatchSchedule from "./components/MatchSchedule";
+import PoolConfig from "./components/PoolConfig";
+import PoolFinals from "./components/PoolFinals";
+import PoolSchedule from "./components/PoolSchedule";
 import Results from "./components/Results";
 import ScoreInput from "./components/ScoreInput";
 import Sidebar from "./components/Sidebar";
@@ -27,17 +31,43 @@ function AppContent() {
   const [results, setResults] = useState({});
   const [currentStep, setCurrentStep] = useState(0); // Commencer à l'écran d'accueil (étape 0)
   const [selectedCompetition, setSelectedCompetition] = useState(null);
+  const [eliminationMatches, setEliminationMatches] = useState([]); // Pour stocker les matchs d'élimination
 
-  // Définir les noms des étapes pour la sidebar
-  const steps = [
-    "Liste des compétitions",
-    "Import des participants",
-    "Configuration",
-    "Groupes et poules",
-    "Planning des matchs",
-    "Saisie des scores",
-    "Résultats",
-  ];
+  // Définir les noms des étapes pour la sidebar (dynamique selon le type de tournoi)
+  const getSteps = () => {
+    const baseSteps = [
+      "Liste des compétitions",
+      "Import des participants",
+      "Configuration",
+    ];
+
+    if (tournamentConfig?.tournamentType === "elimination") {
+      return [
+        ...baseSteps,
+        "Tableaux d'élimination",
+        "Planning des matchs",
+        "Saisie des scores",
+        "Résultats",
+      ];
+    } else if (tournamentConfig?.tournamentType === "poolFinals") {
+      return [
+        ...baseSteps,
+        "Configuration des poules",
+        "Planning par tours",
+        "Saisie des scores",
+        "Classement & Finales",
+        "Résultats",
+      ];
+    } else {
+      return [
+        ...baseSteps,
+        "Groupes et poules",
+        "Planning des matchs",
+        "Saisie des scores",
+        "Résultats",
+      ];
+    }
+  };
 
   // Fonctions pour naviguer entre les étapes
   const nextStep = () => setCurrentStep(currentStep + 1);
@@ -48,6 +78,21 @@ function AppContent() {
     } else {
       setCurrentStep(currentStep - 1);
     }
+  };
+
+  // Navigation directe vers ScoreInput (étape 5) pour l'élimination
+  const goDirectlyToScoreInput = (eliminationMatchesData) => {
+    console.log(
+      "Navigation directe vers ScoreInput avec matchs d'élimination:",
+      eliminationMatchesData.length
+    );
+
+    // Les matchs venant de la BDD sont déjà au bon format, on les utilise directement
+    console.log("Utilisation des matchs de la BDD tels quels");
+    console.log("Premier match exemple:", eliminationMatchesData[0]);
+
+    setEliminationMatches(eliminationMatchesData);
+    setCurrentStep(5); // Aller directement à l'étape 5 (ScoreInput)
   };
 
   // Gérer la sélection d'une compétition existante
@@ -62,10 +107,25 @@ function AppContent() {
       setSelectedCompetition(competition);
 
       // Charger les données pour tous les composants
-      await loadCompetitionData(competition.id);
+      const loadedState = await loadCompetitionData(competition.id);
 
-      // Commencer à l'étape 1 (import CSV) lors de la sélection d'une compétition
-      setCurrentStep(1);
+      // Déterminer l'étape en fonction de l'état de la compétition
+      if (loadedState.hasMatches) {
+        // Des matchs existent -> aller directement à la saisie des scores
+        console.log("Matchs existants détectés, navigation vers Saisie des scores");
+        setCurrentStep(5);
+      } else if (loadedState.hasGroups) {
+        // Des groupes existent mais pas de matchs -> aller à la config des poules/groupes
+        console.log("Groupes existants détectés, navigation vers Configuration des poules");
+        setCurrentStep(3);
+      } else if (loadedState.hasParticipants) {
+        // Des participants existent mais pas de groupes -> aller à la configuration
+        console.log("Participants existants détectés, navigation vers Configuration");
+        setCurrentStep(2);
+      } else {
+        // Compétition vide -> commencer à l'import
+        setCurrentStep(1);
+      }
     } catch (error) {
       console.error("Erreur lors du chargement de la compétition:", error);
       alert(`Erreur lors du chargement de la compétition: ${error.message}`);
@@ -73,9 +133,11 @@ function AppContent() {
   };
 
   // Fonction pour charger toutes les données d'une compétition
+  // Retourne { hasParticipants, hasGroups, hasMatches } pour déterminer l'étape initiale
   const loadCompetitionData = async (competitionId) => {
+    const loadedState = { hasParticipants: false, hasGroups: false, hasMatches: false };
+
     try {
-      // Indiquer que nous sommes en train de charger
       const {
         fetchCompetitionDetails,
         fetchFormattedGroupsAndPools,
@@ -92,6 +154,7 @@ function AppContent() {
           `${competitionDetails.participants.length} participants chargés`
         );
         setParticipants(competitionDetails.participants);
+        loadedState.hasParticipants = true;
       }
 
       // 2. Charger les groupes et poules existants
@@ -99,6 +162,7 @@ function AppContent() {
       if (groupsData && groupsData.length > 0) {
         console.log(`${groupsData.length} groupes chargés`);
         setGroups(groupsData);
+        loadedState.hasGroups = true;
       }
 
       // 3. Charger les matchs et le planning
@@ -108,23 +172,10 @@ function AppContent() {
         console.log(`${matchesData.length} matchs chargés`);
         setMatches(matchesData);
         setSchedule(scheduleData);
+        loadedState.hasMatches = true;
       }
 
       // 4. Extraire la configuration du tournoi depuis les données de la compétition
-      console.log("Données de la compétition chargées:", competitionDetails);
-      console.log(
-        "Nombre d'aires dans areas:",
-        competitionDetails.areas?.length || "non défini"
-      );
-      console.log(
-        "Nombre d'aires dans numAreas:",
-        competitionDetails.numAreas || "non défini"
-      );
-      console.log(
-        "Nombre d'aires dans numberOfAreas:",
-        competitionDetails.numberOfAreas || "non défini"
-      );
-
       setTournamentConfig({
         numAreas:
           competitionDetails.numAreas ||
@@ -136,11 +187,15 @@ function AppContent() {
         breakFrequency: competitionDetails.breakFrequency || 10,
         startTime: new Date(competitionDetails.startTime),
         poolSize: competitionDetails.poolSize || 4,
+        tournamentType: competitionDetails.tournamentType || "pools",
       });
 
       console.log(
-        "Toutes les données de la compétition ont été chargées avec succès"
+        "Toutes les données de la compétition ont été chargées avec succès",
+        loadedState
       );
+
+      return loadedState;
     } catch (error) {
       console.error(
         "Erreur lors du chargement des données de la compétition:",
@@ -172,6 +227,7 @@ function AppContent() {
       breakFrequency: 10,
       startTime: new Date(),
       poolSize: 4,
+      tournamentType: "pools", // Ajouter le type par défaut
     });
 
     // Commencer à l'étape 1 (import CSV) pour une nouvelle compétition
@@ -208,16 +264,48 @@ function AppContent() {
           />
         );
       case 3:
-        return (
-          <GroupDisplay
-            participants={participants}
-            tournamentConfig={tournamentConfig}
-            setGroups={setGroups}
-            nextStep={nextStep}
-            prevStep={prevStep}
-          />
-        );
+        if (tournamentConfig?.tournamentType === "elimination") {
+          return (
+            <EliminationBracket
+              participants={participants}
+              tournamentConfig={tournamentConfig}
+              setGroups={setGroups}
+              nextStep={nextStep}
+              prevStep={prevStep}
+              goDirectlyToScoreInput={goDirectlyToScoreInput}
+            />
+          );
+        } else if (tournamentConfig?.tournamentType === "poolFinals") {
+          return (
+            <PoolConfig
+              participants={participants}
+              tournamentConfig={tournamentConfig}
+              setGroups={setGroups}
+              nextStep={nextStep}
+              prevStep={prevStep}
+            />
+          );
+        } else {
+          return (
+            <GroupDisplay
+              participants={participants}
+              tournamentConfig={tournamentConfig}
+              setGroups={setGroups}
+              nextStep={nextStep}
+              prevStep={prevStep}
+            />
+          );
+        }
       case 4:
+        if (tournamentConfig?.tournamentType === "poolFinals") {
+          return (
+            <PoolSchedule
+              tournamentConfig={tournamentConfig}
+              nextStep={nextStep}
+              prevStep={prevStep}
+            />
+          );
+        }
         return (
           <MatchSchedule
             groups={groups}
@@ -231,14 +319,28 @@ function AppContent() {
       case 5:
         return (
           <ScoreInput
-            matches={matches}
+            matches={
+              tournamentConfig?.tournamentType === "elimination"
+                ? eliminationMatches
+                : matches
+            }
             schedule={schedule}
             setResults={setResults}
             nextStep={nextStep}
             prevStep={prevStep}
+            tournamentType={tournamentConfig?.tournamentType}
           />
         );
       case 6:
+        if (tournamentConfig?.tournamentType === "poolFinals") {
+          return (
+            <PoolFinals
+              tournamentConfig={tournamentConfig}
+              nextStep={nextStep}
+              prevStep={prevStep}
+            />
+          );
+        }
         return (
           <Results
             participants={participants}
@@ -249,6 +351,20 @@ function AppContent() {
             prevStep={prevStep}
           />
         );
+      case 7:
+        if (tournamentConfig?.tournamentType === "poolFinals") {
+          return (
+            <Results
+              participants={participants}
+              groups={groups}
+              matches={matches}
+              results={results}
+              tournamentConfig={tournamentConfig}
+              prevStep={prevStep}
+            />
+          );
+        }
+        return null;
       default:
         return null;
     }
@@ -263,7 +379,7 @@ function AppContent() {
         <Sidebar
           currentStep={currentStep}
           setCurrentStep={setCurrentStep}
-          steps={steps}
+          steps={getSteps()}
           competitionName={selectedCompetition?.name || "Nouvelle compétition"}
         />
       )}

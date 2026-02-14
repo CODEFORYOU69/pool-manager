@@ -165,6 +165,11 @@ export default function MatchHistory({
                       >
                         <span className="font-bold">R{round.roundNumber}:</span>{" "}
                         {round.scoreA} - {round.scoreB}
+                        {((round.penaltyA ?? 0) > 0 || (round.penaltyB ?? 0) > 0) && (
+                          <span className="ml-1 text-orange-700">
+                            (G: {round.penaltyA || 0}-{round.penaltyB || 0})
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>

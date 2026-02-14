@@ -1,0 +1,474 @@
+/* PoolConfig.css - Configuration des poules et tirage */
+
+.pool-config-container {
+  background-color: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.pool-config-container h2 {
+  margin-top: 0;
+  color: #2c3e50;
+  border-bottom: 2px solid #3498db;
+  padding-bottom: 10px;
+  margin-bottom: 20px;
+}
+
+/* Global actions */
+.global-actions {
+  background-color: #e8eaf6;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 24px;
+  border: 1px solid #c5cae9;
+}
+
+.global-k-section {
+  margin-bottom: 16px;
+}
+
+.global-k-label {
+  display: block;
+  font-weight: 600;
+  color: #2c3e50;
+  margin-bottom: 10px;
+  font-size: 1rem;
+}
+
+.global-buttons {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.bulk-btn {
+  flex: 1;
+  min-width: 200px;
+  padding: 12px 24px !important;
+  font-size: 1rem !important;
+}
+
+.global-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.progress-text {
+  font-size: 0.95rem;
+  color: #555;
+  font-weight: 500;
+}
+
+.all-validated-badge {
+  background-color: #2ecc71;
+  color: white;
+  padding: 4px 14px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* Loading and empty states */
+.loading-message {
+  text-align: center;
+  padding: 40px;
+  color: #7f8c8d;
+  font-size: 1.1rem;
+}
+
+.no-categories {
+  text-align: center;
+  padding: 40px;
+  background-color: #f5f5f5;
+  border-radius: 4px;
+  color: #666;
+}
+
+/* Categories list */
+.categories-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin-bottom: 80px;
+}
+
+/* Category card */
+.category-card {
+  background-color: #f9f9f9;
+  padding: 20px;
+  border-radius: 6px;
+  border: 1px solid #e0e0e0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  transition: border-color 0.3s;
+}
+
+.category-card.validated {
+  border-color: #2ecc71;
+  border-left: 5px solid #2ecc71;
+}
+
+.category-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.category-title {
+  margin: 0;
+  color: #2c3e50;
+  font-size: 1.15rem;
+}
+
+.category-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fighters-count {
+  background-color: #3498db;
+  color: white;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.parity-badge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.parity-badge.even {
+  background-color: #d5f5e3;
+  color: #27ae60;
+}
+
+.parity-badge.odd {
+  background-color: #fadbd8;
+  color: #c0392b;
+}
+
+.validated-badge {
+  background-color: #2ecc71;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+/* Fighters table */
+.fighters-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 15px;
+  background-color: white;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.fighters-table th,
+.fighters-table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid #eee;
+}
+
+.fighters-table th {
+  background-color: #e8eaf6;
+  font-weight: 600;
+  color: #333;
+  font-size: 0.9rem;
+}
+
+.fighters-table td {
+  font-size: 0.9rem;
+  color: #444;
+}
+
+.fighters-table tbody tr:hover {
+  background-color: #f0f4ff;
+}
+
+.fighters-table th:first-child,
+.fighters-table td:first-child {
+  width: 40px;
+  text-align: center;
+}
+
+/* K selector section */
+.k-selector-section {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.k-label {
+  display: block;
+  font-weight: 500;
+  color: #555;
+  margin-bottom: 10px;
+}
+
+.k-selector {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.k-btn {
+  padding: 8px 20px;
+  border: 2px solid #3498db;
+  background-color: white;
+  color: #3498db;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: all 0.2s;
+}
+
+.k-btn:hover:not(.disabled) {
+  background-color: #ebf5fb;
+}
+
+.k-btn.active {
+  background-color: #3498db;
+  color: white;
+}
+
+.k-btn.disabled {
+  border-color: #bdc3c7;
+  color: #bdc3c7;
+  cursor: not-allowed;
+  background-color: #f5f5f5;
+}
+
+/* Error message */
+.error-message {
+  color: #c0392b;
+  background-color: #fdedec;
+  padding: 10px 14px;
+  border-radius: 4px;
+  border-left: 4px solid #c0392b;
+  margin: 10px 0;
+  font-size: 0.9rem;
+}
+
+/* Total fights info */
+.total-fights-info {
+  color: #2c3e50;
+  margin: 10px 0;
+  font-size: 0.95rem;
+}
+
+/* Draw button */
+.draw-btn {
+  background-color: #3498db;
+  color: white;
+  padding: 10px 24px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-top: 10px;
+  transition: background-color 0.2s;
+}
+
+.draw-btn:hover {
+  background-color: #2980b9;
+}
+
+/* Draw result section */
+.draw-result {
+  margin-top: 15px;
+  padding: 15px;
+  background-color: white;
+  border: 1px solid #d5f5e3;
+  border-radius: 6px;
+}
+
+.draw-result h4 {
+  margin-top: 0;
+  margin-bottom: 12px;
+  color: #27ae60;
+  font-size: 1.05rem;
+}
+
+.tours-summary {
+  margin-bottom: 12px;
+  color: #555;
+}
+
+.tours-summary strong {
+  color: #2c3e50;
+}
+
+/* Draw summary (per-fighter opponents) */
+.draw-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 15px;
+}
+
+.fighter-draw {
+  padding: 8px 12px;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  border-left: 3px solid #3498db;
+}
+
+.fighter-name {
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.vs-label {
+  color: #95a5a6;
+  margin: 0 4px;
+}
+
+.opponents-list {
+  color: #555;
+}
+
+/* Draw action buttons */
+.draw-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 15px;
+}
+
+.redraw-btn {
+  background-color: #e67e22;
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: background-color 0.2s;
+}
+
+.redraw-btn:hover {
+  background-color: #d35400;
+}
+
+.validate-draw-btn {
+  background-color: #2ecc71;
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: background-color 0.2s;
+}
+
+.validate-draw-btn:hover {
+  background-color: #27ae60;
+}
+
+.validate-draw-btn:disabled {
+  background-color: #a3d9b1;
+  cursor: not-allowed;
+}
+
+/* Validated message */
+.validated-message {
+  color: #27ae60;
+  font-weight: 600;
+  margin-top: 10px;
+  padding: 8px 12px;
+  background-color: #d5f5e3;
+  border-radius: 4px;
+}
+
+/* Navigation buttons */
+.pool-config-container .navigation-buttons {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: white;
+  padding: 15px;
+  display: flex;
+  justify-content: space-between;
+  box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1);
+  z-index: 100;
+}
+
+.pool-config-container .prev-btn {
+  background-color: #95a5a6;
+  color: white;
+  padding: 10px 24px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 600;
+  transition: background-color 0.2s;
+}
+
+.pool-config-container .prev-btn:hover {
+  background-color: #7f8c8d;
+}
+
+.pool-config-container .next-btn {
+  background-color: #3498db;
+  color: white;
+  padding: 10px 24px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 600;
+  transition: background-color 0.2s;
+}
+
+.pool-config-container .next-btn:hover {
+  background-color: #2980b9;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .category-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .category-info {
+    flex-wrap: wrap;
+  }
+
+  .k-selector {
+    flex-wrap: wrap;
+  }
+
+  .draw-actions {
+    flex-direction: column;
+  }
+
+  .draw-actions button {
+    width: 100%;
+  }
+
+  .fighters-table {
+    display: block;
+    overflow-x: auto;
+  }
+}

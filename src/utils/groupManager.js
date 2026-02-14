@@ -1,4 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
+import { KYORUGI_CATEGORIES } from "./categories";
+import { getCurrentSeasonCategories } from "./csvParser";
 
 /**
  * Crée des groupes à partir d'une liste de participants
@@ -192,16 +194,81 @@ const createGroups = (participants, config) => {
           }
 
           // Trouver la catégorie de poids
-          let weightCategory = null;
-          if (sexe === "male" || sexe === "female") {
-            const weightCats = config.weightCategories[sexe] || [];
-            weightCategory = weightCats.find((cat) => p.poids <= cat.max);
+          let weightCategories = [];
+
+          // Convertir les catégories de poids du format string vers le format objet
+          const convertWeightCategories = (categoriesArray) => {
+            if (!categoriesArray) return [];
+            return categoriesArray.map((category) => {
+              // Si category est déjà un objet avec une propriété 'name'
+              if (typeof category === "object" && category.name) {
+                return {
+                  max: category.name.startsWith("+")
+                    ? 999
+                    : parseInt(category.name.replace(/[^0-9]/g, ""), 10),
+                  name: category.name,
+                };
+              }
+
+              // Sinon, c'est une chaîne (ancien format)
+              const isPlus = category.startsWith("+");
+              const weight = parseInt(category.replace(/[^0-9]/g, ""), 10);
+
+              return {
+                max: isPlus ? 999 : weight,
+                name: category,
+              };
+            });
+          };
+
+          // Déterminer les catégories de poids selon l'âge du participant
+          const ageCategoryName = ageCategory.name.toUpperCase();
+
+          if (sexe === "male" && KYORUGI_CATEGORIES.MALE[ageCategoryName]) {
+            weightCategories = convertWeightCategories(
+              KYORUGI_CATEGORIES.MALE[ageCategoryName]
+            );
+            console.log(
+              `🎯 ${p.prenom} ${
+                p.nom
+              } (${ageCategoryName} ${sexe}) → Catégories: ${weightCategories
+                .map((c) => c.name)
+                .join(", ")}`
+            );
+          } else if (
+            sexe === "female" &&
+            KYORUGI_CATEGORIES.FEMALE[ageCategoryName]
+          ) {
+            weightCategories = convertWeightCategories(
+              KYORUGI_CATEGORIES.FEMALE[ageCategoryName]
+            );
+            console.log(
+              `🎯 ${p.prenom} ${
+                p.nom
+              } (${ageCategoryName} ${sexe}) → Catégories: ${weightCategories
+                .map((c) => c.name)
+                .join(", ")}`
+            );
+          } else {
+            // Fallback: utiliser les catégories de la configuration générale
+            weightCategories = config.weightCategories[sexe] || [];
+            console.log(
+              `⚠️ ${p.prenom} ${p.nom} (${ageCategoryName} ${sexe}) → Fallback config générale`
+            );
           }
+
+          // CORRECTION: Trouver la catégorie de poids la plus appropriée
+          // Au lieu de prendre la première catégorie où poids <= cat.max,
+          // on trouve la catégorie avec le plus petit max qui soit >= au poids du participant
+          const weightCategory = weightCategories
+            .filter((cat) => p.poids <= cat.max) // Catégories possibles
+            .sort((a, b) => a.max - b.max) // Trier par max croissant
+            .find(() => true); // Prendre la première (plus petite max qui convient)
 
           let categoryKey = "Sans catégorie";
 
-          if (ageCategory && weightCategory) {
-            categoryKey = `${sexe}-${ageCategory.name}-${weightCategory.name}`;
+          if (ageCategory && weightCategories.length > 0) {
+            categoryKey = `${sexe}-${ageCategory.name}-${weightCategories[0].name}`;
           }
 
           if (!unusedByCategory[categoryKey]) {
@@ -313,6 +380,23 @@ const categorizeParticipants = (participants, config) => {
   const categories = {};
   const unknownGenderParticipants = [];
 
+  // NOUVEAU: Logs de diagnostic pour comprendre les catégorisations
+  console.log(
+    `\n🔍 DÉBUT CATÉGORISATION - ${participants.length} participants`
+  );
+  console.log(
+    `Configuration des catégories d'âge:`,
+    config.ageCategories?.map((c) => `${c.name} (${c.min}-${c.max} ans)`)
+  );
+  console.log(
+    `Configuration catégories poids MALE:`,
+    config.weightCategories?.male?.map((c) => `${c.name} (max: ${c.max}kg)`)
+  );
+  console.log(
+    `Configuration catégories poids FEMALE:`,
+    config.weightCategories?.female?.map((c) => `${c.name} (max: ${c.max}kg)`)
+  );
+
   // Premier passage pour collecter les participants avec sexe inconnu
   participants.forEach((participant) => {
     if (participant.sexe !== "male" && participant.sexe !== "female") {
@@ -364,15 +448,38 @@ const categorizeParticipants = (participants, config) => {
     // Déterminer la catégorie d'âge
     let ageCategory;
 
-    // Si le participant a une catégorie d'âge prédéfinie (par exemple "Benjamin")
-    if (participant.ageCategory) {
+    // PRIORITÉ 1: Si le participant a une catégorie complète (ex: "male-Benjamin--24kg"), extraire l'âge de là
+    if (participant.categorie && typeof participant.categorie === "string") {
+      const parts = participant.categorie.split("-");
+      if (parts.length >= 3) {
+        const ageCatFromCategory = parts[1]; // Le deuxième élément est la catégorie d'âge
+        ageCategory = config.ageCategories.find(
+          (cat) => cat.name.toLowerCase() === ageCatFromCategory.toLowerCase()
+        );
+
+        if (ageCategory) {
+          console.log(
+            `🎯 PRIORITÉ CSV: ${participant.prenom} ${participant.nom} → Catégorie d'âge extraite de 'categorie': ${ageCategory.name}`
+          );
+        }
+      }
+    }
+
+    // PRIORITÉ 2: Si le participant a une catégorie d'âge prédéfinie directement (par exemple "Benjamin")
+    if (!ageCategory && participant.ageCategory) {
       ageCategory = config.ageCategories.find(
         (cat) =>
           cat.name.toLowerCase() === participant.ageCategory.toLowerCase()
       );
+
+      if (ageCategory) {
+        console.log(
+          `🎯 PRIORITÉ AGECATEGORY: ${participant.prenom} ${participant.nom} → Catégorie d'âge directe: ${ageCategory.name}`
+        );
+      }
     }
 
-    // Si pas de catégorie trouvée et que le participant a une année de naissance
+    // PRIORITÉ 3: Si pas de catégorie trouvée et que le participant a une année de naissance
     if (!ageCategory && participant.birthYear) {
       const birthYear = participant.birthYear;
 
@@ -401,13 +508,25 @@ const categorizeParticipants = (participants, config) => {
           (cat) => cat.name.toLowerCase() === "senior"
         );
       }
+
+      if (ageCategory) {
+        console.log(
+          `📅 CALCUL NAISSANCE: ${participant.prenom} ${participant.nom} → Catégorie d'âge calculée par année: ${ageCategory.name}`
+        );
+      }
     }
 
-    // Si toujours pas de catégorie, revenir à la méthode basée sur l'âge calculé
+    // PRIORITÉ 4: Si toujours pas de catégorie, revenir à la méthode basée sur l'âge calculé
     if (!ageCategory) {
       ageCategory = config.ageCategories.find(
         (cat) => participant.age >= cat.min && participant.age <= cat.max
       );
+
+      if (ageCategory) {
+        console.log(
+          `🔢 CALCUL ÂGE: ${participant.prenom} ${participant.nom} → Catégorie d'âge calculée par âge: ${ageCategory.name}`
+        );
+      }
     }
 
     if (!ageCategory) {
@@ -415,14 +534,92 @@ const categorizeParticipants = (participants, config) => {
     }
 
     // Déterminer la catégorie de poids
-    const weightCategories = config.weightCategories[sexe] || [];
-    const weightCategory = weightCategories.find(
-      (cat) => participant.poids <= cat.max
-    );
+    // CORRECTION: Utiliser les catégories de poids selon l'âge du participant
+    let weightCategories = [];
+
+    // Convertir les catégories de poids du format string vers le format objet
+    const convertWeightCategories = (categoriesArray) => {
+      if (!categoriesArray) return [];
+      return categoriesArray.map((category) => {
+        // Si category est déjà un objet avec une propriété 'name'
+        if (typeof category === "object" && category.name) {
+          return {
+            max: category.name.startsWith("+")
+              ? 999
+              : parseInt(category.name.replace(/[^0-9]/g, ""), 10),
+            name: category.name,
+          };
+        }
+
+        // Sinon, c'est une chaîne (ancien format)
+        const isPlus = category.startsWith("+");
+        const weight = parseInt(category.replace(/[^0-9]/g, ""), 10);
+
+        return {
+          max: isPlus ? 999 : weight,
+          name: category,
+        };
+      });
+    };
+
+    // Déterminer les catégories de poids selon l'âge du participant
+    const ageCategoryName = ageCategory.name.toUpperCase();
+
+    if (sexe === "male" && KYORUGI_CATEGORIES.MALE[ageCategoryName]) {
+      weightCategories = convertWeightCategories(
+        KYORUGI_CATEGORIES.MALE[ageCategoryName]
+      );
+      console.log(
+        `🎯 ${participant.prenom} ${
+          participant.nom
+        } (${ageCategoryName} ${sexe}) → Catégories: ${weightCategories
+          .map((c) => c.name)
+          .join(", ")}`
+      );
+    } else if (
+      sexe === "female" &&
+      KYORUGI_CATEGORIES.FEMALE[ageCategoryName]
+    ) {
+      weightCategories = convertWeightCategories(
+        KYORUGI_CATEGORIES.FEMALE[ageCategoryName]
+      );
+      console.log(
+        `🎯 ${participant.prenom} ${
+          participant.nom
+        } (${ageCategoryName} ${sexe}) → Catégories: ${weightCategories
+          .map((c) => c.name)
+          .join(", ")}`
+      );
+    } else {
+      // Fallback: utiliser les catégories de la configuration générale
+      weightCategories = config.weightCategories[sexe] || [];
+      console.log(
+        `⚠️ ${participant.prenom} ${participant.nom} (${ageCategoryName} ${sexe}) → Fallback config générale`
+      );
+    }
+
+    // CORRECTION: Trouver la catégorie de poids la plus appropriée
+    // Au lieu de prendre la première catégorie où poids <= cat.max,
+    // on trouve la catégorie avec le plus petit max qui soit >= au poids du participant
+    const weightCategory = weightCategories
+      .filter((cat) => participant.poids <= cat.max) // Catégories possibles
+      .sort((a, b) => a.max - b.max) // Trier par max croissant
+      .find(() => true); // Prendre la première (plus petite max qui convient)
 
     if (!weightCategory) {
+      console.log(
+        `❌ Aucune catégorie de poids trouvée pour ${participant.prenom} ${participant.nom} (${participant.poids}kg, ${sexe})`
+      );
+      console.log(
+        `Catégories disponibles pour ${sexe}:`,
+        weightCategories.map((c) => `${c.name} (max: ${c.max}kg)`)
+      );
       return;
     }
+
+    console.log(
+      `✅ Participant ${participant.prenom} ${participant.nom} (${participant.poids}kg) → Catégorie: ${weightCategory.name} (max: ${weightCategory.max}kg)`
+    );
 
     // Créer la clé de catégorie
     const key = `${sexe}-${ageCategory.name}-${weightCategory.name}`;
@@ -494,6 +691,41 @@ const categorizeParticipants = (participants, config) => {
         issues: issues,
       };
     });
+
+  // NOUVEAU: Fonction utilitaire pour afficher un résumé des catégories
+  const logCategorizationSummary = (categories) => {
+    console.log(`\n📊 RÉSUMÉ CATÉGORISATION`);
+    console.log(
+      `Nombre de catégories créées: ${Object.keys(categories).length}`
+    );
+
+    Object.keys(categories).forEach((categoryKey) => {
+      const participants = categories[categoryKey];
+      console.log(
+        `\n📂 Catégorie: ${categoryKey} (${participants.length} participants)`
+      );
+
+      // Afficher les détails des participants pour debug
+      participants.forEach((p, index) => {
+        console.log(
+          `  ${index + 1}. ${p.prenom} ${p.nom} - ${p.age} ans, ${p.poids}kg, ${
+            p.sexe
+          }`
+        );
+      });
+
+      // Statistiques de poids dans cette catégorie
+      const poids = participants.map((p) => p.poids).sort((a, b) => a - b);
+      console.log(
+        `  💪 Poids: min=${poids[0]}kg, max=${poids[poids.length - 1]}kg`
+      );
+    });
+
+    console.log(`📊 FIN RÉSUMÉ CATÉGORISATION\n`);
+  };
+
+  // Afficher le résumé avant de retourner
+  logCategorizationSummary(categories);
 
   return categories;
 };
@@ -776,8 +1008,147 @@ const createBalancedPool = (participants, targetPoolSize) => {
   }
 };
 
+/**
+ * Crée des groupes pour l'élimination directe (avec UNE poule par groupe)
+ * @param {Array} participants - Liste des participants
+ * @param {Object} config - Configuration du tournoi
+ * @returns {Object} - Groupes créés avec une poule unique par groupe
+ */
+const createGroupsForElimination = (participants, config) => {
+  try {
+    const groups = [];
+    const stats = {
+      totalGroups: 0,
+      totalPools: 0, // Comme pour les poules normales
+      unusedParticipants: 0,
+    };
+
+    // Valider les participants (exactement comme dans createGroups)
+    const validParticipants = participants.filter((p) => {
+      if (!p) {
+        return false;
+      }
+
+      // Générer un ID temporaire si nécessaire
+      if (!p.id) {
+        p.id = `temp_${p.nom}_${p.prenom}_${p.poids}_${Math.random()
+          .toString(36)
+          .substring(2, 10)}`;
+      }
+      return true;
+    });
+
+    if (validParticipants.length === 0 || !config) {
+      return { groups: [], stats };
+    }
+
+    // Utiliser exactement la même logique de catégorisation que les poules
+    const categories = categorizeParticipants(validParticipants, config);
+
+    // Créer un Set pour suivre les participants déjà utilisés
+    const usedParticipantIds = new Set();
+
+    // Utiliser exactement la même boucle que dans createGroups
+    for (const gender of ["male", "female"]) {
+      const weightCategories = config.weightCategories[gender] || [];
+      if (weightCategories.length === 0) {
+        continue;
+      }
+
+      for (const ageCategory of config.ageCategories) {
+        for (const weightCategory of weightCategories) {
+          const key = `${gender}-${ageCategory.name}-${weightCategory.name}`;
+          let categoryParticipants = categories[key] || [];
+
+          // Filtrer les participants déjà utilisés
+          categoryParticipants = categoryParticipants.filter(
+            (p) => !usedParticipantIds.has(p.id)
+          );
+
+          // Minimum 2 participants pour un bracket d'élimination
+          if (categoryParticipants.length >= 2) {
+            try {
+              // CORRECTION: Créer le groupe avec UNE seule poule contenant TOUS les participants
+              // Exactement comme pour les poules normales, mais avec une seule poule
+              const group = {
+                id: uuidv4(),
+                gender,
+                ageCategory: {
+                  ...ageCategory,
+                },
+                weightCategory: {
+                  ...weightCategory,
+                },
+                participants: categoryParticipants,
+                // NOUVELLE LOGIQUE: Créer UNE seule poule avec tous les participants
+                pools: [categoryParticipants.map((p) => p.id)], // Une seule poule avec tous les IDs des participants
+                type: "elimination", // Marquer comme groupe d'élimination
+              };
+
+              // Marquer les participants comme utilisés
+              categoryParticipants.forEach((participant) => {
+                usedParticipantIds.add(participant.id);
+              });
+
+              groups.push(group);
+              stats.totalGroups++;
+              stats.totalPools++; // Une poule par groupe
+            } catch (error) {
+              console.error(
+                `Erreur lors de la création du groupe ${key}:`,
+                error
+              );
+              stats.unusedParticipants += categoryParticipants.length;
+            }
+          } else {
+            // Pas assez de participants pour cette catégorie
+            stats.unusedParticipants += categoryParticipants.length;
+          }
+        }
+      }
+    }
+
+    // Compter le nombre total de participants non utilisés
+    stats.unusedParticipants =
+      validParticipants.length - usedParticipantIds.size;
+
+    console.log(
+      `Groupes d'élimination créés: ${groups.length} groupes, ${stats.totalPools} poules (une par groupe), ${stats.unusedParticipants} participants non utilisés`
+    );
+
+    // Log pour vérifier le format des groupes créés
+    if (groups.length > 0) {
+      console.log("Format du premier groupe d'élimination:", {
+        id: groups[0].id,
+        gender: groups[0].gender,
+        ageCategory: groups[0].ageCategory,
+        weightCategory: groups[0].weightCategory,
+        participantsCount: groups[0].participants.length,
+        poolsCount: groups[0].pools.length,
+        poolSize: groups[0].pools[0]?.length || 0,
+        type: groups[0].type,
+      });
+    }
+
+    return { groups, stats };
+  } catch (error) {
+    console.error(
+      "Erreur lors de la création des groupes d'élimination:",
+      error
+    );
+    return {
+      groups: [],
+      stats: {
+        totalGroups: 0,
+        totalPools: 0,
+        unusedParticipants: participants.length,
+      },
+    };
+  }
+};
+
 // Exporter la fonction nommée pour compatibilité rétroactive
-export { createGroups };
+export { categorizeParticipants, createGroups, createGroupsForElimination };
 
 // Exporter comme export par défaut pour être compatible avec les imports existants
 export default createGroups;

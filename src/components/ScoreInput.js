@@ -63,7 +63,7 @@ const queuedFetch = (url, options) => {
 // Définition de l'URL de l'API
 // const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3001/api";
 
-const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
+const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep, tournamentType }) => {
   const { competitionId } = useCompetition();
   const [currentMatches, setCurrentMatches] = useState([]);
   const [matchResults, setMatchResults] = useState({});
@@ -91,6 +91,10 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   // État pour indiquer un rafraîchissement en cours
   const [refreshing, setRefreshing] = useState(false);
 
+  // Filtres pour le mode poolFinals
+  const [currentTourFilter, setCurrentTourFilter] = useState("all");
+  const [currentPhaseFilter, setCurrentPhaseFilter] = useState("all");
+
   // Nouveaux états pour la gestion du vainqueur obligatoire
   const [showWinnerModal, setShowWinnerModal] = useState(false);
   const [currentTieData, setCurrentTieData] = useState(null);
@@ -108,18 +112,26 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
 
       // Charger les matchs avec les participants
       const matchesRes = await fetch(
-        `${API_URL}/competition/${competitionId}/matches?include=matchParticipants`
+        `${API_URL}/competition/${competitionId}/matchesWithDetails`
       );
       if (!matchesRes.ok) {
         throw new Error("Erreur lors du chargement des matchs");
       }
       const matchesData = await matchesRes.json();
 
-      if (matchesData && matchesData.data) {
-        const allMatches = matchesData.data.matches || [];
+      // L'API retourne un tableau direct ou un objet { data: { matches: [] } }
+      const allMatches = Array.isArray(matchesData)
+        ? matchesData
+        : (matchesData?.data?.matches || []);
 
+      if (allMatches.length > 0) {
         // S'assurer que les participants sont dans le bon ordre pour l'affichage
         const processedMatches = allMatches.map((match) => {
+          // Normaliser areaNumber depuis match.area.areaNumber
+          if (!match.areaNumber && match.area?.areaNumber) {
+            match.areaNumber = match.area.areaNumber;
+          }
+
           if (match.matchParticipants) {
             const participantA = match.matchParticipants.find(
               (p) => p.position === "A"
@@ -129,7 +141,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
             );
 
             // Créer un tableau participants dans le bon ordre
-            match.participants = new Array(2).fill(null); // Initialiser avec 2 éléments null
+            match.participants = new Array(2).fill(null);
             if (participantA?.participant) {
               match.participants[0] = participantA.participant;
             }
@@ -146,10 +158,6 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
         setAreasCount(
           Math.max(...processedMatches.map((m) => m.areaNumber || 1))
         );
-
-        if (matchesData.data.groups) {
-          setGroups(matchesData.data.groups);
-        }
       }
 
       // Charger les résultats
@@ -211,15 +219,24 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
           if (needsParticipants && competitionId) {
             // Charger les matchs avec les participants depuis l'API
             const matchesRes = await fetch(
-              `${API_URL}/competition/${competitionId}/matches?include=matchParticipants`
+              `${API_URL}/competition/${competitionId}/matchesWithDetails`
             );
             if (matchesRes.ok) {
               const matchesData = await matchesRes.json();
-              if (matchesData && matchesData.data && matchesData.data.matches) {
-                setCurrentMatches(matchesData.data.matches);
+              const allMatches = Array.isArray(matchesData)
+                ? matchesData
+                : (matchesData?.data?.matches || []);
+              if (allMatches.length > 0) {
+                // Normaliser areaNumber depuis match.area.areaNumber
+                allMatches.forEach((m) => {
+                  if (!m.areaNumber && m.area?.areaNumber) {
+                    m.areaNumber = m.area.areaNumber;
+                  }
+                });
+                setCurrentMatches(allMatches);
                 setAreasCount(
                   Math.max(
-                    ...matchesData.data.matches.map((m) => m.areaNumber || 1)
+                    ...allMatches.map((m) => m.areaNumber || 1)
                   )
                 );
               }
@@ -246,6 +263,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   }, [matches, competitionId]);
 
   // Charger les combats terminés depuis la base de données au chargement
+  // Note: useEffect dupliqué supprimé pour éviter les doubles chargements
   useEffect(() => {
     if (matches && matches.length > 0) {
       // Utiliser les matchs fournis en props
@@ -259,11 +277,6 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
       // Charger les matchs terminés
       loadCompletedMatches();
 
-      setIsLoading(false);
-    } else if (competitionId) {
-      // Si pas de matchs passés en props mais un ID de compétition, tenter de charger depuis la DB
-      loadMatchesAndResults();
-    } else {
       setIsLoading(false);
     }
   }, [matches, competitionId]);
@@ -338,6 +351,8 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
         rounds: match.rounds.map((round) => ({
           fighterA: round.scoreA,
           fighterB: round.scoreB,
+          penaltyA: round.penaltyA || 0,
+          penaltyB: round.penaltyB || 0,
           winner:
             round.winnerPosition ||
             (round.winner === participantA.participantId
@@ -596,7 +611,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
   }, [completedMatches, schedule]);
 
   useEffect(() => {
-    if (schedule) {
+    if (schedule && schedule.length > 0 && matches && matches.length > 0) {
       setIsLoading(true);
 
       // Création de la liste des matchs avec les infos de planification
@@ -615,10 +630,8 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
       setCurrentMatches(matchesWithSchedule);
 
       // Déterminer le nombre d'aires
-      if (schedule && schedule.length > 0) {
-        const maxArea = Math.max(...schedule.map((s) => s.areaNumber || 0));
-        setAreasCount(maxArea);
-      }
+      const maxArea = Math.max(...schedule.map((s) => s.areaNumber || 0));
+      setAreasCount(maxArea);
 
       setIsLoading(false);
     }
@@ -638,9 +651,9 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
       // Récupérer ou initialiser les résultats du match
       const matchResult = prev[matchId] || {
         rounds: [
-          { fighterA: 0, fighterB: 0, winner: null },
-          { fighterA: 0, fighterB: 0, winner: null },
-          { fighterA: 0, fighterB: 0, winner: null },
+          { fighterA: 0, fighterB: 0, penaltyA: 0, penaltyB: 0, winner: null },
+          { fighterA: 0, fighterB: 0, penaltyA: 0, penaltyB: 0, winner: null },
+          { fighterA: 0, fighterB: 0, penaltyA: 0, penaltyB: 0, winner: null },
         ],
         winner: null,
         completed: false,
@@ -683,7 +696,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
         // Si le même combattant a gagné les deux premiers rounds, désactiver le 3ème
         if (twoRoundsWonByA || twoRoundsWonByB) {
           // Réinitialiser le 3ème round
-          updatedRounds[2] = { fighterA: 0, fighterB: 0, winner: null };
+          updatedRounds[2] = { fighterA: 0, fighterB: 0, penaltyA: 0, penaltyB: 0, winner: null };
         }
       }
 
@@ -713,6 +726,37 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
     });
   };
 
+  // Fonction pour mettre à jour une pénalité (gamjeom) pendant la saisie
+  const handlePenaltyChange = (matchId, roundIndex, fighter, value) => {
+    if (fighter !== "A" && fighter !== "B") return;
+    const penaltyValue = parseInt(value, 10) || 0;
+
+    setMatchResults((prev) => {
+      const matchResult = prev[matchId] || {
+        rounds: [
+          { fighterA: 0, fighterB: 0, penaltyA: 0, penaltyB: 0, winner: null },
+          { fighterA: 0, fighterB: 0, penaltyA: 0, penaltyB: 0, winner: null },
+          { fighterA: 0, fighterB: 0, penaltyA: 0, penaltyB: 0, winner: null },
+        ],
+        winner: null,
+        completed: false,
+        positionsFixed: true,
+      };
+
+      const updatedRounds = [...matchResult.rounds];
+      if (fighter === "A") {
+        updatedRounds[roundIndex] = { ...updatedRounds[roundIndex], penaltyA: penaltyValue };
+      } else {
+        updatedRounds[roundIndex] = { ...updatedRounds[roundIndex], penaltyB: penaltyValue };
+      }
+
+      return {
+        ...prev,
+        [matchId]: { ...matchResult, rounds: updatedRounds },
+      };
+    });
+  };
+
   // Fonction pour sélectionner un vainqueur en cas d'égalité
   const handleTieWinnerSelection = (winner) => {
     if (!currentTieData) return;
@@ -738,7 +782,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
       // Si le même combattant a gagné les deux premiers rounds, désactiver le 3ème
       if (twoRoundsWonByA || twoRoundsWonByB) {
         // Réinitialiser le 3ème round
-        updatedRounds[2] = { fighterA: 0, fighterB: 0, winner: null };
+        updatedRounds[2] = { fighterA: 0, fighterB: 0, penaltyA: 0, penaltyB: 0, winner: null };
       }
 
       return {
@@ -1105,6 +1149,8 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
         return {
           scoreA: round.scoreA,
           scoreB: round.scoreB,
+          penaltyA: round.penaltyA || 0,
+          penaltyB: round.penaltyB || 0,
           winner:
             round.winnerPosition ||
             (round.winner === participantA?.id
@@ -1163,6 +1209,20 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
       newScores.winner = null;
     }
 
+    setEditedScores(newScores);
+  };
+
+  // Fonction pour mettre à jour une pénalité (gamjeom) pendant l'édition
+  const handleEditPenaltyChange = (roundIndex, fighter, value) => {
+    if (fighter !== "A" && fighter !== "B") return;
+    const newScores = { ...editedScores };
+    const round = { ...newScores.rounds[roundIndex] };
+    if (fighter === "A") {
+      round.penaltyA = parseInt(value) || 0;
+    } else {
+      round.penaltyB = parseInt(value) || 0;
+    }
+    newScores.rounds[roundIndex] = round;
     setEditedScores(newScores);
   };
 
@@ -1236,6 +1296,8 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
         return {
           scoreA: round.scoreA,
           scoreB: round.scoreB,
+          penaltyA: round.penaltyA || 0,
+          penaltyB: round.penaltyB || 0,
           winner: roundWinnerId, // ID du participant vainqueur
           winnerPosition: roundWinnerPosition, // Position du vainqueur (A ou B)
         };
@@ -1305,6 +1367,20 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
           match.areaNumber !== parseInt(currentArea, 10)
         ) {
           return false;
+        }
+
+        // Filtre par tour (poolFinals)
+        if (tournamentType === "poolFinals" && currentTourFilter !== "all") {
+          if (String(match.tour || 0) !== currentTourFilter) {
+            return false;
+          }
+        }
+
+        // Filtre par phase (poolFinals)
+        if (tournamentType === "poolFinals" && currentPhaseFilter !== "all") {
+          if ((match.phase || "pool") !== currentPhaseFilter) {
+            return false;
+          }
         }
 
         // Filtre par recherche
@@ -1428,9 +1504,9 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
 
       const matchNumber = match.matchNumber;
 
-      // Si nous avons déjà récupéré les infos pour ce match, les utiliser
-      if (matchesWithPssInfo[matchNumber]) {
-        return matchesWithPssInfo[matchNumber];
+      // Si nous avons déjà récupéré les infos pour ce match (y compris null = déjà tenté)
+      if (matchesWithPssInfo[matchNumber] !== undefined) {
+        return matchesWithPssInfo[matchNumber]; // peut être null si pas trouvé
       }
 
       // Sinon, lancer une requête asynchrone pour les récupérer
@@ -1449,9 +1525,9 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
 
   // Fonction pour récupérer et stocker les informations PSS d'un match
   const fetchPssInfoForMatch = async (matchNumber) => {
-    // Si nous avons déjà des infos ou une requête en cours pour ce match, sortir
+    // Si nous avons déjà des infos (y compris échec marqué) ou une requête en cours, sortir
     if (
-      matchesWithPssInfo[matchNumber] ||
+      matchesWithPssInfo[matchNumber] !== undefined ||
       pendingPssRequests.has(matchNumber)
     ) {
       return null;
@@ -1468,20 +1544,22 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
       // Récupérer les infos
       const pssInfo = await fetchPssInfoByMatchNumber(matchNumber);
 
-      if (pssInfo) {
-        // Mettre à jour l'état avec les nouvelles infos de manière persistante
-        setMatchesWithPssInfo((prev) => ({
-          ...prev,
-          [matchNumber]: pssInfo,
-        }));
-        return pssInfo;
-      }
-      return null;
+      // Stocker le résultat (ou null pour marquer comme tenté et éviter une boucle infinie)
+      setMatchesWithPssInfo((prev) => ({
+        ...prev,
+        [matchNumber]: pssInfo || null,
+      }));
+      return pssInfo;
     } catch (error) {
       console.error(
         `Erreur lors de la récupération des infos PSS pour le match #${matchNumber}:`,
         error
       );
+      // Marquer comme tenté même en cas d'erreur pour éviter une boucle infinie
+      setMatchesWithPssInfo((prev) => ({
+        ...prev,
+        [matchNumber]: null,
+      }));
       return null;
     } finally {
       // Retirer de la liste des requêtes en cours
@@ -2105,7 +2183,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                   return (
                     <tr key={match.id} className="editing">
                       <td>{match.matchNumber}</td>
-                      <td>{match.area.areaNumber}</td>
+                      <td>{match.area?.areaNumber || match.areaNumber}</td>
                       <td>{getCategoryInfo(match)}</td>
                       <td>{`${participantA.prenom} ${participantA.nom}`}</td>
                       <td>
@@ -2128,6 +2206,32 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                                 handleEditScoreChange(i, "B", e.target.value)
                               }
                             />
+                            {tournamentType === "poolFinals" && (
+                              <div className="penalty-edit">
+                                <span className="penalty-label">G:</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  className="penalty-input"
+                                  value={round.penaltyA || 0}
+                                  onChange={(e) =>
+                                    handleEditPenaltyChange(i, "A", e.target.value)
+                                  }
+                                  title="Gamjeom Rouge"
+                                />
+                                {" - "}
+                                <input
+                                  type="number"
+                                  min="0"
+                                  className="penalty-input"
+                                  value={round.penaltyB || 0}
+                                  onChange={(e) =>
+                                    handleEditPenaltyChange(i, "B", e.target.value)
+                                  }
+                                  title="Gamjeom Bleu"
+                                />
+                              </div>
+                            )}
                           </div>
                         ))}
                       </td>
@@ -2159,7 +2263,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                 return (
                   <tr key={match.id}>
                     <td>{match.matchNumber}</td>
-                    <td>{match.area.areaNumber}</td>
+                    <td>{match.area?.areaNumber || match.areaNumber}</td>
                     <td>{getCategoryInfo(match)}</td>
                     <td className={isWinnerA ? "winner" : ""}>
                       {`${participantA.prenom} ${participantA.nom}`}
@@ -2168,6 +2272,11 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                       {match.rounds.map((round, i) => (
                         <div key={i} className="round-score">
                           {round.scoreA} - {round.scoreB}
+                          {(round.penaltyA > 0 || round.penaltyB > 0) && (
+                            <span className="round-penalties">
+                              {" "}(G: {round.penaltyA || 0}-{round.penaltyB || 0})
+                            </span>
+                          )}
                         </div>
                       ))}
                     </td>
@@ -2519,7 +2628,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
       }
 
       // Vérifier d'abord si cette information n'a pas déjà été mise en cache par une autre requête
-      if (matchesWithPssInfo[matchNumber]) {
+      if (matchesWithPssInfo[matchNumber] !== undefined) {
         return matchesWithPssInfo[matchNumber];
       }
 
@@ -2913,6 +3022,43 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                   </select>
                 </div>
 
+                {tournamentType === "poolFinals" && (
+                  <>
+                    <div className="filter-group">
+                      <label htmlFor="tourFilter">Tour:</label>
+                      <select
+                        id="tourFilter"
+                        value={currentTourFilter}
+                        onChange={(e) => setCurrentTourFilter(e.target.value)}
+                      >
+                        <option value="all">Tous</option>
+                        {[...new Set(currentMatches.map((m) => m.tour || 0))]
+                          .sort((a, b) => a - b)
+                          .map((tour) => (
+                            <option key={tour} value={String(tour)}>
+                              {tour === 0 ? "Non assigné" : `Tour ${tour}`}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    <div className="filter-group">
+                      <label htmlFor="phaseFilter">Phase:</label>
+                      <select
+                        id="phaseFilter"
+                        value={currentPhaseFilter}
+                        onChange={(e) => setCurrentPhaseFilter(e.target.value)}
+                      >
+                        <option value="all">Toutes</option>
+                        <option value="pool">Poule</option>
+                        <option value="semi1">Demi-finale 1</option>
+                        <option value="semi2">Demi-finale 2</option>
+                        <option value="final">Finale</option>
+                        <option value="bronze">Petite finale</option>
+                      </select>
+                    </div>
+                  </>
+                )}
+
                 <div className="filter-group search">
                   <input
                     type="text"
@@ -2932,9 +3078,9 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                   filteredMatches.map((match) => {
                     const matchResult = matchResults[match.id] || {
                       rounds: [
-                        { fighterA: 0, fighterB: 0, winner: null },
-                        { fighterA: 0, fighterB: 0, winner: null },
-                        { fighterA: 0, fighterB: 0, winner: null },
+                        { fighterA: 0, fighterB: 0, penaltyA: 0, penaltyB: 0, winner: null },
+                        { fighterA: 0, fighterB: 0, penaltyA: 0, penaltyB: 0, winner: null },
+                        { fighterA: 0, fighterB: 0, penaltyA: 0, penaltyB: 0, winner: null },
                       ],
                       winner: null,
                       completed: false,
@@ -3108,6 +3254,46 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep }) => {
                                       />
                                     </div>
                                   </div>
+                                  {tournamentType === "poolFinals" && (
+                                    <div className="gamjeon-inputs">
+                                      <div className="gamjeon-group">
+                                        <span className="gamjeon-label">Gamjeom {getParticipantName(match, "A")}:</span>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          className="gamjeon-input"
+                                          value={round.penaltyA || 0}
+                                          onChange={(e) =>
+                                            handlePenaltyChange(
+                                              match.id,
+                                              roundIndex,
+                                              "A",
+                                              e.target.value
+                                            )
+                                          }
+                                          disabled={matchResult.completed || isDisabled}
+                                        />
+                                      </div>
+                                      <div className="gamjeon-group">
+                                        <span className="gamjeon-label">Gamjeom {getParticipantName(match, "B")}:</span>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          className="gamjeon-input"
+                                          value={round.penaltyB || 0}
+                                          onChange={(e) =>
+                                            handlePenaltyChange(
+                                              match.id,
+                                              roundIndex,
+                                              "B",
+                                              e.target.value
+                                            )
+                                          }
+                                          disabled={matchResult.completed || isDisabled}
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
                                   {isTieWithoutWinner && (
                                     <div className="tie-actions">
                                       <button

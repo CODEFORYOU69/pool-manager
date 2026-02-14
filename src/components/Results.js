@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useCompetition } from "../context/CompetitionContext";
-import { fetchResultsData } from "../services/dbService";
+import { API_URL, fetchResultsData } from "../services/dbService";
 import "../styles/Results.css";
 import { calculateResults } from "../utils/resultsCalculator";
 
@@ -24,6 +24,7 @@ const Results = ({
   const [noCompletedMatches, setNoCompletedMatches] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [exportingCSV, setExportingCSV] = useState(false);
+  const [podiumData, setPodiumData] = useState([]); // Pour mode poolFinals
 
   // Fonction pour exporter les classements au format CSV
   const exportClassementsCSV = () => {
@@ -214,9 +215,80 @@ const Results = ({
     }
   };
 
+  // Charger le podium pour le mode poolFinals
+  const fetchPodiumData = async () => {
+    if (tournamentConfig?.tournamentType !== "poolFinals" || !competitionId) return;
+    try {
+      const response = await fetch(
+        `${API_URL}/competition/${competitionId}/groupsWithDetails`
+      );
+      if (!response.ok) return;
+      const groupsData = await response.json();
+
+      const podiums = [];
+      for (const group of groupsData) {
+        if (!group.pools || group.pools.length === 0) continue;
+        for (const pool of group.pools) {
+          // Get pool matches to find finals
+          const poolResp = await fetch(`${API_URL}/pool/${pool.id}`);
+          if (!poolResp.ok) continue;
+          const poolData = await poolResp.json();
+          const allMatches = poolData.matches || [];
+          const finalsMatches = allMatches.filter((m) => m.phase && m.phase !== "pool");
+          if (finalsMatches.length === 0) continue;
+
+          const getName = (match, pos) => {
+            if (match.matchParticipants) {
+              const mp = match.matchParticipants.find((p) => p.position === pos);
+              if (mp && mp.participant) {
+                return `${mp.participant.prenom || ""} ${mp.participant.nom || ""}`.trim();
+              }
+            }
+            return null;
+          };
+
+          const getClub = (match, pos) => {
+            if (match.matchParticipants) {
+              const mp = match.matchParticipants.find((p) => p.position === pos);
+              if (mp && mp.participant) {
+                return mp.participant.club || mp.participant.ligue || "";
+              }
+            }
+            return "";
+          };
+
+          const finalMatch = finalsMatches.find((m) => m.phase === "final");
+          const bronzeMatch = finalsMatches.find((m) => m.phase === "bronze");
+
+          let gold = null, silver = null, bronze = null;
+
+          if (finalMatch && finalMatch.status === "completed" && finalMatch.winnerPosition) {
+            const loserPos = finalMatch.winnerPosition === "A" ? "B" : "A";
+            gold = { name: getName(finalMatch, finalMatch.winnerPosition), club: getClub(finalMatch, finalMatch.winnerPosition) };
+            silver = { name: getName(finalMatch, loserPos), club: getClub(finalMatch, loserPos) };
+          }
+
+          if (bronzeMatch && bronzeMatch.status === "completed" && bronzeMatch.winnerPosition) {
+            bronze = { name: getName(bronzeMatch, bronzeMatch.winnerPosition), club: getClub(bronzeMatch, bronzeMatch.winnerPosition) };
+          }
+
+          const categoryName = group.name || `${group.gender === "female" ? "F" : "M"} ${group.ageCategoryName || ""} ${group.weightCategoryName || ""}`.trim();
+
+          if (gold || silver || bronze) {
+            podiums.push({ categoryName, gold, silver, bronze });
+          }
+        }
+      }
+      setPodiumData(podiums);
+    } catch (err) {
+      console.error("Erreur chargement podium:", err);
+    }
+  };
+
   useEffect(() => {
     if (competitionId) {
       fetchData();
+      fetchPodiumData();
     }
   }, [competitionId]);
 
@@ -405,7 +477,44 @@ const Results = ({
 
   return (
     <div className="results-container">
-      <h2>Résultats par poules</h2>
+      <h2>{tournamentConfig?.tournamentType === "poolFinals" ? "Résultats & Podiums" : "Résultats par poules"}</h2>
+
+      {/* Podium pour le mode poolFinals */}
+      {tournamentConfig?.tournamentType === "poolFinals" && podiumData.length > 0 && (
+        <div className="podium-section">
+          <h3 className="podium-section-title">Podiums</h3>
+          <div className="podium-grid">
+            {podiumData.map((podium, idx) => (
+              <div key={idx} className="podium-card">
+                <h4 className="podium-category">{podium.categoryName}</h4>
+                <div className="podium-places">
+                  {podium.gold && (
+                    <div className="podium-place gold">
+                      <span className="podium-medal">Or</span>
+                      <span className="podium-name">{podium.gold.name}</span>
+                      <span className="podium-club">{podium.gold.club}</span>
+                    </div>
+                  )}
+                  {podium.silver && (
+                    <div className="podium-place silver">
+                      <span className="podium-medal">Argent</span>
+                      <span className="podium-name">{podium.silver.name}</span>
+                      <span className="podium-club">{podium.silver.club}</span>
+                    </div>
+                  )}
+                  {podium.bronze && (
+                    <div className="podium-place bronze">
+                      <span className="podium-medal">Bronze</span>
+                      <span className="podium-name">{podium.bronze.name}</span>
+                      <span className="podium-club">{podium.bronze.club}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="actions-container">
         <button

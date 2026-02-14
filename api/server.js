@@ -390,6 +390,9 @@ app.post("/api/pool", async (req, res) => {
     const result = await prisma.pool.create({
       data: {
         poolIndex: poolData.poolIndex,
+        phase: poolData.phase || "config",
+        bronzeMatch: poolData.bronzeMatch !== undefined ? poolData.bronzeMatch : true,
+        fightsPerPerson: poolData.fightsPerPerson || 0,
         group: {
           connect: { id: poolData.groupId },
         },
@@ -528,7 +531,7 @@ app.post("/api/match", async (req, res) => {
   try {
     console.log("Données du match reçues:", req.body);
 
-    const { matchNumber, startTime, status, groupId, poolIndex, areaNumber } =
+    const { matchNumber, startTime, status, groupId, poolIndex, areaNumber, phase: matchPhase, tour: matchTour } =
       req.body;
 
     // Vérifier si le groupe existe
@@ -583,6 +586,8 @@ app.post("/api/match", async (req, res) => {
         winner: null,
         endTime: null,
         poolIndex,
+        phase: matchPhase || "pool",
+        tour: matchTour || 0,
         group: {
           connect: { id: groupId },
         },
@@ -1359,6 +1364,10 @@ app.get("/api/competition/:id/groupsWithDetails", async (req, res) => {
                 participant: true,
               },
             },
+            matches: {
+              select: { id: true, matchNumber: true, status: true, phase: true },
+              orderBy: { matchNumber: "asc" },
+            },
           },
         },
         participants: {
@@ -1508,6 +1517,42 @@ app.get("/api/participants", async (req, res) => {
       where: { competitionId: competitionId },
     });
 
+    res.json(participants);
+  } catch (error) {
+    console.error("Erreur lors de la récupération des participants:", error);
+    res.status(500).json({
+      error: "Erreur lors de la récupération des participants",
+      details: error.message,
+    });
+  }
+});
+
+// Route alternative pour récupérer tous les participants d'une compétition (format RESTful)
+app.get("/api/competition/:id/participants", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Vérifier que la compétition existe
+    const competition = await prisma.competition.findUnique({
+      where: { id },
+    });
+
+    if (!competition) {
+      return res.status(404).json({
+        message: "Compétition non trouvée",
+        details: `Aucune compétition trouvée avec l'ID ${id}`,
+      });
+    }
+
+    // Récupérer tous les participants de la compétition
+    const participants = await prisma.participant.findMany({
+      where: { competitionId: id },
+      orderBy: [{ nom: "asc" }, { prenom: "asc" }],
+    });
+
+    console.log(
+      `${participants.length} participants récupérés pour la compétition ${id}`
+    );
     res.json(participants);
   } catch (error) {
     console.error("Erreur lors de la récupération des participants:", error);
@@ -1701,8 +1746,10 @@ app.post("/api/match/:id/results", async (req, res) => {
             roundNumber: index + 1,
             scoreA: round.scoreA || round.fighterA || 0,
             scoreB: round.scoreB || round.fighterB || 0,
-            winner: roundWinnerId, // Utiliser l'ID du participant au lieu de "A" ou "B"
-            winnerPosition: roundWinnerPosition, // Garder l'information de la position (A ou B) dans un nouveau champ
+            winner: roundWinnerId,
+            winnerPosition: roundWinnerPosition,
+            penaltyA: round.penaltyA || 0,
+            penaltyB: round.penaltyB || 0,
           },
         });
         rounds.push(newRound);
@@ -1724,10 +1771,88 @@ app.post("/api/match/:id/results", async (req, res) => {
       });
     });
 
+    // Auto-propagation : si ce match est une demi-finale, propager vers finale/bronze
+    try {
+      const savedMatch = await prisma.match.findUnique({
+        where: { id },
+        select: { phase: true, poolId: true },
+      });
+
+      if (savedMatch && (savedMatch.phase === "semi1" || savedMatch.phase === "semi2")) {
+        console.log(`Auto-propagation: match ${id} est une ${savedMatch.phase}`);
+
+        // Trouver les deux demis de cette poule
+        const semis = await prisma.match.findMany({
+          where: {
+            poolId: savedMatch.poolId,
+            phase: { in: ["semi1", "semi2"] },
+          },
+          include: {
+            matchParticipants: { include: { participant: true } },
+          },
+        });
+
+        // Vérifier que les deux demis sont terminées
+        const allSemisCompleted = semis.length === 2 && semis.every((s) => s.status === "completed" && s.winner);
+
+        if (allSemisCompleted) {
+          console.log("Les deux demi-finales sont terminées, propagation vers finale/bronze");
+
+          const semi1 = semis.find((s) => s.phase === "semi1");
+          const semi2 = semis.find((s) => s.phase === "semi2");
+
+          // Gagnants → finale
+          const semi1Winner = semi1.winner;
+          const semi2Winner = semi2.winner;
+
+          // Perdants → petite finale
+          const semi1Loser = semi1.matchParticipants.find((mp) => mp.participantId !== semi1.winner)?.participantId;
+          const semi2Loser = semi2.matchParticipants.find((mp) => mp.participantId !== semi2.winner)?.participantId;
+
+          // Trouver le match de finale
+          const finalMatch = await prisma.match.findFirst({
+            where: { poolId: savedMatch.poolId, phase: "final" },
+          });
+
+          if (finalMatch && semi1Winner && semi2Winner) {
+            // Supprimer les anciens participants de la finale s'ils existent
+            await prisma.matchParticipant.deleteMany({ where: { matchId: finalMatch.id } });
+            // Ajouter les gagnants
+            await prisma.matchParticipant.createMany({
+              data: [
+                { matchId: finalMatch.id, participantId: semi1Winner, position: "A" },
+                { matchId: finalMatch.id, participantId: semi2Winner, position: "B" },
+              ],
+            });
+            console.log(`Finale ${finalMatch.id}: ${semi1Winner} vs ${semi2Winner}`);
+          }
+
+          // Trouver le match de petite finale
+          const bronzeMatch = await prisma.match.findFirst({
+            where: { poolId: savedMatch.poolId, phase: "bronze" },
+          });
+
+          if (bronzeMatch && semi1Loser && semi2Loser) {
+            await prisma.matchParticipant.deleteMany({ where: { matchId: bronzeMatch.id } });
+            await prisma.matchParticipant.createMany({
+              data: [
+                { matchId: bronzeMatch.id, participantId: semi1Loser, position: "A" },
+                { matchId: bronzeMatch.id, participantId: semi2Loser, position: "B" },
+              ],
+            });
+            console.log(`Bronze ${bronzeMatch.id}: ${semi1Loser} vs ${semi2Loser}`);
+          }
+        }
+      }
+    } catch (propagationError) {
+      console.error("Erreur lors de l'auto-propagation des finales:", propagationError);
+      // Ne pas faire échouer la sauvegarde du résultat pour autant
+    }
+
     // Ajouter des propriétés utiles à la réponse
     const response = {
       ...result,
-      winnerPosition, // Ajouter la position du vainqueur pour la référence du client
+      winnerPosition,
       winnerParticipant: winnerId
         ? result.matchParticipants.find((p) => p.participantId === winnerId)
             ?.participant
@@ -1928,6 +2053,500 @@ app.delete(
     }
   }
 );
+
+// ======== Pool Finals Endpoints ========
+
+// PUT /api/pool/:id/phase — Met à jour la phase de la poule
+app.put("/api/pool/:id/phase", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { phase } = req.body;
+
+    const validPhases = ["config", "draw", "pool", "finals", "completed"];
+    if (!validPhases.includes(phase)) {
+      return res.status(400).json({
+        message: "Phase invalide",
+        details: `La phase doit être l'une de: ${validPhases.join(", ")}`,
+      });
+    }
+
+    const result = await prisma.pool.update({
+      where: { id },
+      data: { phase },
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error("Erreur lors de la mise à jour de la phase:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/pool/:id/standings — Calcule et retourne le classement de la poule
+app.get("/api/pool/:id/standings", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Récupérer la poule avec ses participants
+    const pool = await prisma.pool.findUnique({
+      where: { id },
+      include: {
+        poolParticipants: { include: { participant: true } },
+        matches: {
+          where: { phase: "pool", status: "completed" },
+          include: {
+            matchParticipants: { include: { participant: true } },
+            rounds: true,
+          },
+        },
+      },
+    });
+
+    if (!pool) {
+      return res.status(404).json({ message: "Poule non trouvée" });
+    }
+
+    // Initialiser les standings
+    const standings = {};
+    pool.poolParticipants.forEach((pp) => {
+      standings[pp.participantId] = {
+        participantId: pp.participantId,
+        participant: pp.participant,
+        victories: 0,
+        defeats: 0,
+        roundsWon: 0,
+        roundsLost: 0,
+        totalPoints: 0,
+        totalPointsAgainst: 0,
+        penalties: 0,
+        rank: 0,
+      };
+    });
+
+    // Compiler les résultats des matchs de poule
+    pool.matches.forEach((match) => {
+      if (!match.winner) return;
+
+      const participantA = match.matchParticipants.find((mp) => mp.position === "A");
+      const participantB = match.matchParticipants.find((mp) => mp.position === "B");
+      if (!participantA || !participantB) return;
+
+      const aId = participantA.participantId;
+      const bId = participantB.participantId;
+
+      if (!standings[aId] || !standings[bId]) return;
+
+      // Victoires/Défaites
+      if (match.winner === aId) {
+        standings[aId].victories++;
+        standings[bId].defeats++;
+      } else if (match.winner === bId) {
+        standings[bId].victories++;
+        standings[aId].defeats++;
+      }
+
+      // Rounds et points
+      match.rounds.forEach((round) => {
+        const scoreA = round.scoreA || 0;
+        const scoreB = round.scoreB || 0;
+
+        standings[aId].totalPoints += scoreA;
+        standings[aId].totalPointsAgainst += scoreB;
+        standings[bId].totalPoints += scoreB;
+        standings[bId].totalPointsAgainst += scoreA;
+
+        standings[aId].penalties += round.penaltyA || 0;
+        standings[bId].penalties += round.penaltyB || 0;
+
+        if (round.winnerPosition === "A" || (scoreA > scoreB && !round.winnerPosition)) {
+          standings[aId].roundsWon++;
+          standings[bId].roundsLost++;
+        } else if (round.winnerPosition === "B" || (scoreB > scoreA && !round.winnerPosition)) {
+          standings[bId].roundsWon++;
+          standings[aId].roundsLost++;
+        }
+      });
+    });
+
+    // Convertir en tableau et trier
+    const standingsArray = Object.values(standings);
+
+    // Fonction de confrontation directe
+    const getDirectWinner = (id1, id2) => {
+      const directMatch = pool.matches.find((m) => {
+        const pIds = m.matchParticipants.map((mp) => mp.participantId);
+        return pIds.includes(id1) && pIds.includes(id2);
+      });
+      if (directMatch && directMatch.winner) return directMatch.winner;
+      return null;
+    };
+
+    standingsArray.sort((a, b) => {
+      // 1. Victoires DESC
+      if (a.victories !== b.victories) return b.victories - a.victories;
+      // 2. Confrontation directe
+      const directWinner = getDirectWinner(a.participantId, b.participantId);
+      if (directWinner === a.participantId) return -1;
+      if (directWinner === b.participantId) return 1;
+      // 3. Rounds gagnés DESC
+      if (a.roundsWon !== b.roundsWon) return b.roundsWon - a.roundsWon;
+      // 4. Total points DESC
+      if (a.totalPoints !== b.totalPoints) return b.totalPoints - a.totalPoints;
+      // 5. Pénalités ASC
+      return a.penalties - b.penalties;
+    });
+
+    standingsArray.forEach((s, i) => { s.rank = i + 1; });
+
+    res.json(standingsArray);
+  } catch (error) {
+    console.error("Erreur lors du calcul du classement:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/pool/:id/draw — Effectue le tirage aléatoire et crée les matchs
+app.post("/api/pool/:id/draw", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { fights, tours, fightsPerPerson } = req.body;
+    // fights: Array<{ fighterA: string, fighterB: string }>
+    // tours: Array<Array<{ fighterA: string, fighterB: string }>>
+
+    if (!fights || !tours || !fightsPerPerson) {
+      return res.status(400).json({ message: "fights, tours et fightsPerPerson sont requis" });
+    }
+
+    const pool = await prisma.pool.findUnique({
+      where: { id },
+      include: { group: { include: { competition: { include: { areas: true } } } } },
+    });
+
+    if (!pool) {
+      return res.status(404).json({ message: "Poule non trouvée" });
+    }
+
+    const areas = pool.group.competition.areas;
+    if (!areas || areas.length === 0) {
+      return res.status(400).json({ message: "Aucune aire de combat trouvée" });
+    }
+
+    // Trouver l'aire la moins chargée pour distribuer les catégories équitablement
+    const matchCountsByArea = await Promise.all(
+      areas.map(async (area) => ({
+        areaId: area.id,
+        areaNumber: area.areaNumber,
+        count: await prisma.match.count({ where: { areaId: area.id } }),
+      }))
+    );
+    matchCountsByArea.sort((a, b) => a.count - b.count);
+    const assignedArea = matchCountsByArea[0];
+    const areaId = assignedArea.areaId;
+    const areaNumber = assignedArea.areaNumber;
+    console.log(`Pool ${id}: assignée à l'aire ${areaNumber} (${assignedArea.count} matchs existants)`);
+
+    // Supprimer les anciens matchs de poule si existants
+    const existingMatches = await prisma.match.findMany({
+      where: { poolId: id, phase: "pool" },
+      select: { id: true },
+    });
+    if (existingMatches.length > 0) {
+      const matchIds = existingMatches.map((m) => m.id);
+      await prisma.round.deleteMany({ where: { matchId: { in: matchIds } } });
+      await prisma.matchParticipant.deleteMany({ where: { matchId: { in: matchIds } } });
+      await prisma.match.deleteMany({ where: { id: { in: matchIds } } });
+    }
+
+    // Calculer le prochain numéro de match pour cette aire (convention: areaNumber * 100 + counter)
+    const maxMatchOnArea = await prisma.match.aggregate({
+      where: { areaId },
+      _max: { matchNumber: true },
+    });
+    const baseMatchNumber = areaNumber * 100;
+    let matchCounter = maxMatchOnArea._max.matchNumber
+      ? maxMatchOnArea._max.matchNumber - baseMatchNumber + 1
+      : 1;
+
+    // Calculer les startTimes basés sur la configuration de la compétition
+    const competition = pool.group.competition;
+    const roundDurationSeconds = competition.roundDuration || 120;
+    const matchDurationSeconds = roundDurationSeconds * 3 + 30 * 2 + 60; // 3 rounds + pauses + setup
+    const breakBetweenMatchesSeconds = 60;
+
+    // L'heure de début du premier match est basée sur l'heure de la compétition + les matchs déjà planifiés
+    const lastMatchOnArea = await prisma.match.findFirst({
+      where: { areaId },
+      orderBy: { startTime: "desc" },
+    });
+    let nextStartTime;
+    if (lastMatchOnArea) {
+      nextStartTime = new Date(lastMatchOnArea.startTime);
+      nextStartTime.setSeconds(nextStartTime.getSeconds() + matchDurationSeconds + breakBetweenMatchesSeconds);
+    } else {
+      nextStartTime = new Date(competition.startTime);
+    }
+
+    // Créer les matchs par tour
+    const createdMatches = [];
+
+    for (let tourIndex = 0; tourIndex < tours.length; tourIndex++) {
+      const tourFights = tours[tourIndex];
+      for (const fight of tourFights) {
+        const matchNumber = baseMatchNumber + matchCounter;
+        const match = await prisma.match.create({
+          data: {
+            matchNumber,
+            startTime: new Date(nextStartTime),
+            status: "pending",
+            poolIndex: pool.poolIndex,
+            phase: "pool",
+            tour: tourIndex + 1,
+            group: { connect: { id: pool.groupId } },
+            pool: { connect: { id } },
+            area: { connect: { id: areaId } },
+          },
+        });
+
+        // Avancer l'heure pour le prochain match
+        nextStartTime.setSeconds(nextStartTime.getSeconds() + matchDurationSeconds + breakBetweenMatchesSeconds);
+        matchCounter++;
+
+        // Créer les matchParticipants
+        await prisma.matchParticipant.createMany({
+          data: [
+            { matchId: match.id, participantId: fight.fighterA, position: "A" },
+            { matchId: match.id, participantId: fight.fighterB, position: "B" },
+          ],
+        });
+
+        createdMatches.push({ ...match, fighterA: fight.fighterA, fighterB: fight.fighterB });
+      }
+    }
+
+    // Mettre à jour la poule
+    await prisma.pool.update({
+      where: { id },
+      data: { phase: "pool", fightsPerPerson },
+    });
+
+    res.json({ matches: createdMatches, totalMatches: createdMatches.length });
+  } catch (error) {
+    console.error("Erreur lors du tirage:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/pool/:id/generateFinals — Génère les matchs de finales
+app.post("/api/pool/:id/generateFinals", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const pool = await prisma.pool.findUnique({
+      where: { id },
+      include: {
+        group: { include: { competition: { include: { areas: true } } } },
+        matches: {
+          where: { phase: "pool" },
+          include: { matchParticipants: true },
+        },
+        poolParticipants: { include: { participant: true } },
+      },
+    });
+
+    if (!pool) {
+      return res.status(404).json({ message: "Poule non trouvée" });
+    }
+
+    // Vérifier que tous les matchs de poule sont terminés
+    const pendingMatches = pool.matches.filter((m) => m.status !== "completed");
+    if (pendingMatches.length > 0) {
+      return res.status(400).json({
+        message: `${pendingMatches.length} match(s) de poule non terminé(s)`,
+      });
+    }
+
+    // Calculer le classement directement
+    const standingsMap = {};
+    pool.poolParticipants.forEach((pp) => {
+      standingsMap[pp.participantId] = {
+        participantId: pp.participantId,
+        participant: pp.participant,
+        victories: 0,
+        defeats: 0,
+        roundsWon: 0,
+        totalPoints: 0,
+        penalties: 0,
+      };
+    });
+
+    // Récupérer les matchs complétés avec leurs rounds
+    const completedMatches = await prisma.match.findMany({
+      where: { poolId: id, phase: "pool", status: "completed" },
+      include: { matchParticipants: true, rounds: true },
+    });
+
+    completedMatches.forEach((match) => {
+      if (!match.winner) return;
+      const pA = match.matchParticipants.find((mp) => mp.position === "A");
+      const pB = match.matchParticipants.find((mp) => mp.position === "B");
+      if (!pA || !pB || !standingsMap[pA.participantId] || !standingsMap[pB.participantId]) return;
+
+      if (match.winner === pA.participantId) {
+        standingsMap[pA.participantId].victories++;
+        standingsMap[pB.participantId].defeats++;
+      } else {
+        standingsMap[pB.participantId].victories++;
+        standingsMap[pA.participantId].defeats++;
+      }
+
+      match.rounds.forEach((r) => {
+        standingsMap[pA.participantId].totalPoints += r.scoreA || 0;
+        standingsMap[pB.participantId].totalPoints += r.scoreB || 0;
+        standingsMap[pA.participantId].penalties += r.penaltyA || 0;
+        standingsMap[pB.participantId].penalties += r.penaltyB || 0;
+        if (r.winnerPosition === "A" || ((r.scoreA || 0) > (r.scoreB || 0) && !r.winnerPosition)) {
+          standingsMap[pA.participantId].roundsWon++;
+        } else if (r.winnerPosition === "B" || ((r.scoreB || 0) > (r.scoreA || 0) && !r.winnerPosition)) {
+          standingsMap[pB.participantId].roundsWon++;
+        }
+      });
+    });
+
+    const standings = Object.values(standingsMap).sort((a, b) => {
+      if (a.victories !== b.victories) return b.victories - a.victories;
+      if (a.roundsWon !== b.roundsWon) return b.roundsWon - a.roundsWon;
+      if (a.totalPoints !== b.totalPoints) return b.totalPoints - a.totalPoints;
+      return a.penalties - b.penalties;
+    });
+
+    if (standings.length < 2) {
+      return res.status(400).json({ message: "Il faut au moins 2 combattants pour les finales" });
+    }
+
+    // Utiliser la même aire que les matchs de poule de cette catégorie
+    const poolMatch = await prisma.match.findFirst({
+      where: { poolId: id, phase: "pool" },
+      select: { areaId: true, area: true },
+    });
+    const areaId = poolMatch?.areaId || pool.group.competition.areas[0]?.id;
+    if (!areaId) {
+      return res.status(400).json({ message: "Aucune aire de combat trouvée" });
+    }
+
+    // Déterminer le numéro d'aire pour le calcul des matchNumbers
+    const areaNumber = poolMatch?.area?.areaNumber || pool.group.competition.areas[0]?.areaNumber || 1;
+
+    // Supprimer les anciens matchs de finales si existants
+    const existingFinals = await prisma.match.findMany({
+      where: { poolId: id, phase: { in: ["semi1", "semi2", "final", "bronze"] } },
+      select: { id: true },
+    });
+    if (existingFinals.length > 0) {
+      const fIds = existingFinals.map((m) => m.id);
+      await prisma.round.deleteMany({ where: { matchId: { in: fIds } } });
+      await prisma.matchParticipant.deleteMany({ where: { matchId: { in: fIds } } });
+      await prisma.match.deleteMany({ where: { id: { in: fIds } } });
+    }
+
+    // Calculer le prochain numéro de match pour cette aire (convention: areaNumber * 100 + counter)
+    const baseMatchNumber = areaNumber * 100;
+    const maxMatchOnArea = await prisma.match.aggregate({
+      where: { areaId },
+      _max: { matchNumber: true },
+    });
+    let matchCounter = maxMatchOnArea._max.matchNumber
+      ? maxMatchOnArea._max.matchNumber - baseMatchNumber + 1
+      : 1;
+
+    // Calculer les startTimes
+    const competition = pool.group.competition;
+    const roundDurationSeconds = competition.roundDuration || 120;
+    const matchDurationSeconds = roundDurationSeconds * 3 + 30 * 2 + 60;
+    const breakBetweenMatchesSeconds = 60;
+
+    const lastMatchOnArea = await prisma.match.findFirst({
+      where: { areaId },
+      orderBy: { startTime: "desc" },
+    });
+    let nextStartTime;
+    if (lastMatchOnArea) {
+      nextStartTime = new Date(lastMatchOnArea.startTime);
+      nextStartTime.setSeconds(nextStartTime.getSeconds() + matchDurationSeconds + breakBetweenMatchesSeconds);
+    } else {
+      nextStartTime = new Date(competition.startTime);
+    }
+
+    const createdMatches = [];
+
+    // Helper pour créer un match de finale avec numérotation correcte
+    const createFinalsMatch = async (phase, participantsData) => {
+      const matchNumber = baseMatchNumber + matchCounter;
+      const match = await prisma.match.create({
+        data: {
+          matchNumber,
+          startTime: new Date(nextStartTime),
+          status: "pending",
+          poolIndex: pool.poolIndex,
+          phase,
+          tour: 0,
+          group: { connect: { id: pool.groupId } },
+          pool: { connect: { id } },
+          area: { connect: { id: areaId } },
+        },
+      });
+      nextStartTime.setSeconds(nextStartTime.getSeconds() + matchDurationSeconds + breakBetweenMatchesSeconds);
+      matchCounter++;
+
+      if (participantsData && participantsData.length > 0) {
+        await prisma.matchParticipant.createMany({ data: participantsData.map((p) => ({ ...p, matchId: match.id })) });
+      }
+      return match;
+    };
+
+    if (standings.length >= 4) {
+      // Demi-finales: 1er vs 4e, 2e vs 3e
+      const semi1 = await createFinalsMatch("semi1", [
+        { participantId: standings[0].participantId, position: "A" },
+        { participantId: standings[3].participantId, position: "B" },
+      ]);
+      createdMatches.push({ ...semi1, phase: "semi1" });
+
+      const semi2 = await createFinalsMatch("semi2", [
+        { participantId: standings[1].participantId, position: "A" },
+        { participantId: standings[2].participantId, position: "B" },
+      ]);
+      createdMatches.push({ ...semi2, phase: "semi2" });
+
+      // Finale (placeholder, sera remplie après les semis)
+      const finalMatch = await createFinalsMatch("final", []);
+      createdMatches.push({ ...finalMatch, phase: "final" });
+
+      // Petite finale si activée
+      if (pool.bronzeMatch) {
+        const bronze = await createFinalsMatch("bronze", []);
+        createdMatches.push({ ...bronze, phase: "bronze" });
+      }
+    } else {
+      // Moins de 4 combattants: juste une finale entre les 2 premiers
+      const finalMatch = await createFinalsMatch("final", [
+        { participantId: standings[0].participantId, position: "A" },
+        { participantId: standings[1].participantId, position: "B" },
+      ]);
+      createdMatches.push({ ...finalMatch, phase: "final" });
+    }
+
+    // Mettre à jour la phase de la poule
+    await prisma.pool.update({
+      where: { id },
+      data: { phase: "finals" },
+    });
+
+    res.json({ matches: createdMatches });
+  } catch (error) {
+    console.error("Erreur lors de la génération des finales:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || "0.0.0.0"; // Écouter sur toutes les interfaces réseau

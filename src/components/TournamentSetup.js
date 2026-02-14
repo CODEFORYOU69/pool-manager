@@ -2,7 +2,10 @@ import React, { useState } from "react";
 import { useCompetition } from "../context/CompetitionContext";
 import { saveGroupsAndPools, saveParticipants } from "../services/dbService";
 import "../styles/TournamentSetup.css";
-import { createGroups } from "../utils/groupManager";
+import {
+  createGroups,
+  createGroupsForElimination,
+} from "../utils/groupManager";
 
 // Import des constantes de catégories
 import {
@@ -83,8 +86,9 @@ const TournamentSetup = ({
       }
     });
 
+    // Configuration standard par défaut (sera ignorée dans groupManager)
     return {
-      male: maleCategories.MINIME || [], // Par défaut, on utilise les catégories Minime
+      male: maleCategories.MINIME || [],
       female: femaleCategories.MINIME || [],
     };
   };
@@ -103,6 +107,7 @@ const TournamentSetup = ({
       defaultTime.setHours(8, 30, 0, 0); // 8h30
       return defaultTime;
     })(),
+    tournamentType: "pools", // Nouveau : type de tournoi ("pools" ou "elimination")
     roundDuration: 60, // 1 minute
     breakDuration: 30, // 30 secondes
     breakFrequency: 30, // Pause tous les 30 combats
@@ -301,12 +306,20 @@ const TournamentSetup = ({
     setSaveSuccess(false);
 
     try {
-      // S'assurer que poolSize est correctement inclus dans la configuration
+      // S'assurer que poolSize et numAreas sont correctement inclus dans la configuration
       const configToSave = {
         ...config,
         name: competitionName,
         date: config.date,
+        numAreas: config.numberOfAreas,
+        numberOfAreas: config.numberOfAreas,
       };
+
+      console.log("Configuration de sauvegarde directe:", configToSave);
+      console.log(
+        "Nombre d'aires pour sauvegarde directe:",
+        config.numberOfAreas
+      );
 
       const savedCompetitionId = await initializeCompetition(configToSave);
       console.log("Configuration sauvegardée avec ID:", savedCompetitionId);
@@ -333,6 +346,7 @@ const TournamentSetup = ({
       // Mettre à jour la configuration globale
       setTournamentConfig({
         ...config,
+        tournamentType: config.tournamentType,
         stats: {
           totalParticipants: participants.length,
           maleCount: participants.filter((p) => p.sexe === "male").length,
@@ -347,12 +361,15 @@ const TournamentSetup = ({
         breakDuration: config.breakDuration,
         breakFrequency: config.breakFrequency,
         poolSize: config.poolSize,
+        tournamentType: config.tournamentType,
         numAreas: config.numberOfAreas,
+        numberOfAreas: config.numberOfAreas,
         name: competitionName,
         date: config.date,
       };
 
       console.log("Configuration à sauvegarder:", configToSave);
+      console.log("Nombre d'aires à créer:", config.numberOfAreas);
 
       // Initialiser la compétition et obtenir l'ID
       const savedCompetitionId = await initializeCompetition(configToSave);
@@ -459,17 +476,43 @@ const TournamentSetup = ({
         poolSize: config.poolSize, // Utiliser 4 comme valeur par défaut si non défini
       };
 
-      // Créer les groupes avec les participants ayant des IDs
-      const { groups, stats } = createGroups(
-        participantsWithIds,
-        configWithPoolSize
-      );
-      console.log("Groupes créés:", groups);
-      console.log("Statistiques des groupes:", stats);
+      // Créer les groupes selon le type de tournoi
+      if (config.tournamentType === "pools") {
+        // Mode poules : créer groupes avec poules
+        const { groups, stats } = createGroups(
+          participantsWithIds,
+          configWithPoolSize
+        );
+        console.log("Groupes avec poules créés:", groups);
+        console.log("Statistiques des groupes:", stats);
 
-      // Sauvegarder les groupes
-      await saveGroupsAndPools(savedCompetitionId, groups);
-      console.log("Groupes sauvegardés avec succès");
+        // Sauvegarder les groupes avec poules
+        await saveGroupsAndPools(savedCompetitionId, groups);
+        console.log("Groupes avec poules sauvegardés avec succès");
+      } else if (config.tournamentType === "poolFinals") {
+        // Mode poule unique + finales : créer groupes avec 1 poule unique contenant tous les combattants
+        const { groups, stats } = createGroups(
+          participantsWithIds,
+          { ...configWithPoolSize, poolSize: 999 } // Pool size très large = 1 seule poule par catégorie
+        );
+        console.log("Groupes poule unique créés:", groups);
+        console.log("Statistiques:", stats);
+
+        await saveGroupsAndPools(savedCompetitionId, groups);
+        console.log("Groupes poule unique sauvegardés avec succès");
+      } else {
+        // Mode élimination directe : créer groupes sans poules
+        const { groups, stats } = createGroupsForElimination(
+          participantsWithIds,
+          configWithPoolSize
+        );
+        console.log("Groupes d'élimination créés (sans poules):", groups);
+        console.log("Statistiques des groupes d'élimination:", stats);
+
+        // Sauvegarder les groupes sans poules
+        await saveGroupsAndPools(savedCompetitionId, groups);
+        console.log("Groupes d'élimination sauvegardés avec succès");
+      }
 
       setSaveSuccess(true);
       setTimeout(() => {
@@ -656,18 +699,49 @@ const TournamentSetup = ({
           </div>
 
           <div className="form-group">
-            <label htmlFor="poolSize">Taille des poules:</label>
-            <input
-              type="number"
-              id="poolSize"
-              name="poolSize"
-              min="3"
-              max="8"
-              value={config.poolSize}
-              onChange={handleInputChange}
-              required
-            />
+            <label htmlFor="categoryType">Type de compétition:</label>
+            <select
+              id="categoryType"
+              value={categoryType}
+              onChange={handleCategoryTypeChange}
+            >
+              <option value="KYORUGI">Kyorugi Standard</option>
+              <option value="OLYMPIC">Catégories Olympiques</option>
+              <option value="PARA">Para-Taekwondo</option>
+            </select>
           </div>
+
+          <div className="form-group">
+            <label htmlFor="tournamentType">Format du tournoi:</label>
+            <select
+              id="tournamentType"
+              value={config.tournamentType}
+              onChange={(e) =>
+                setConfig({ ...config, tournamentType: e.target.value })
+              }
+            >
+              <option value="pools">Compétition par poules</option>
+              <option value="poolFinals">Poule Unique + Finales</option>
+              <option value="elimination">Élimination directe</option>
+            </select>
+          </div>
+
+          {config.tournamentType === "pools" && (
+            <div className="form-group">
+              <label htmlFor="poolSize">Taille des poules:</label>
+              <input
+                type="number"
+                id="poolSize"
+                name="poolSize"
+                min="3"
+                max="8"
+                value={config.poolSize}
+                onChange={handleInputChange}
+                required
+              />
+            </div>
+          )}
+
           <div className="form-group">
             <label htmlFor="startTime">Heure de début de la compétition:</label>
             <input
@@ -683,19 +757,6 @@ const TournamentSetup = ({
               onChange={handleStartTimeChange}
               required
             />
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="categoryType">Type de compétition:</label>
-            <select
-              id="categoryType"
-              value={categoryType}
-              onChange={handleCategoryTypeChange}
-            >
-              <option value="KYORUGI">Kyorugi Standard</option>
-              <option value="OLYMPIC">Catégories Olympiques</option>
-              <option value="PARA">Para-Taekwondo</option>
-            </select>
           </div>
         </div>
 

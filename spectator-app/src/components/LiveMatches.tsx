@@ -286,6 +286,16 @@ export default function LiveMatches({
                     <span className="text-xs bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded">
                       {getCategoryInfo(match)}
                     </span>
+                    {match.phase && match.phase !== "pool" && (
+                      <span className="text-xs bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded">
+                        {match.phase === "semi1" ? "Demi 1" : match.phase === "semi2" ? "Demi 2" : match.phase === "final" ? "Finale" : match.phase === "bronze" ? "Bronze" : match.phase}
+                      </span>
+                    )}
+                    {match.tour && match.tour > 0 && (
+                      <span className="text-xs bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">
+                        Tour {match.tour}
+                      </span>
+                    )}
                   </div>
 
                   <div className="p-2">

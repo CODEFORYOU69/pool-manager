@@ -21,6 +21,8 @@ type ExtendedRound = {
   scores?: Record<string, number>;
   scoreA?: number;
   scoreB?: number;
+  penaltyA?: number;
+  penaltyB?: number;
 };
 
 // Étendre l'interface Match importée
@@ -84,6 +86,8 @@ type Round = {
   scores?: Record<string, number>;
   scoreA?: number;
   scoreB?: number;
+  penaltyA?: number;
+  penaltyB?: number;
 };
 
 type Group = {
@@ -97,6 +101,8 @@ type Group = {
 type Pool = {
   id: string;
   poolIndex: number;
+  fightsPerPerson?: number;
+  phase?: string;
   poolParticipants?: {
     participantId: string;
     position: number;

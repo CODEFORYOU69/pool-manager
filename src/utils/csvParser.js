@@ -158,86 +158,179 @@ export const parseCSV = (csvContent) => {
   const extractWeight = (weights) => {
     if (!weights) return 0;
 
-    // Format attendu: "X - Y" ou "X - 999"
-    const parts = weights.split("-");
-    if (parts.length !== 2) return 0;
+    // CORRECTION: Gestion améliorée des formats de poids
+    const weightsStr = weights.toString().trim();
 
-    // Prendre la valeur moyenne entre min et max (ou juste min si max est 999)
-    const min = parseFloat(parts[0].trim());
-    const max = parseFloat(parts[1].trim());
-
-    if (max >= 900) {
-      // Valeur arbitraire pour détecter les catégories "+"
-      return min + 5; // Ajouter une marge raisonnable
+    // Format "29 - 33" → retourner la valeur maximale (33)
+    const rangeMatch = weightsStr.match(/(\d+)\s*-\s*(\d+)/);
+    if (rangeMatch) {
+      const min = parseFloat(rangeMatch[1]);
+      const max = parseFloat(rangeMatch[2]);
+      console.log(
+        `📏 Poids extrait du range "${weightsStr}": ${min}-${max}kg → utilisation de ${max}kg`
+      );
+      return max; // Utiliser la valeur max pour la catégorisation
     }
 
-    return (min + max) / 2;
+    // Format direct "-33kg" ou "33kg"
+    const directMatch = weightsStr.match(/[+-]?(\d+)(?:kg)?/);
+    if (directMatch) {
+      const weight = parseFloat(directMatch[1]);
+      console.log(
+        `📏 Poids extrait directement de "${weightsStr}": ${weight}kg`
+      );
+      return weight;
+    }
+
+    console.warn(`❌ Format de poids non reconnu: "${weightsStr}"`);
+    return 0;
+  };
+
+  // NOUVELLE FONCTION: Extraire les informations de la colonne "group"
+  const parseGroupColumn = (groupStr) => {
+    if (!groupStr) return null;
+
+    const result = {
+      ageCategory: null,
+      gender: null,
+      weightCategory: null,
+      weight: null,
+    };
+
+    const groupLower = groupStr.toLowerCase().trim();
+    console.log(`🎯 Parsing colonne group: "${groupStr}"`);
+
+    // Détecter le genre (Masculines/Féminines, Hommes/Femmes)
+    if (
+      groupLower.includes("féminin") ||
+      groupLower.includes("feminin") ||
+      groupLower.includes("femmes") ||
+      groupLower.includes("f ")
+    ) {
+      result.gender = "female";
+    } else if (
+      groupLower.includes("masculin") ||
+      groupLower.includes("hommes") ||
+      groupLower.includes("m ") ||
+      groupLower.includes("garçon")
+    ) {
+      result.gender = "male";
+    }
+
+    // Détecter la catégorie d'âge
+    if (groupLower.includes("benjamin")) {
+      result.ageCategory = "Benjamin";
+    } else if (groupLower.includes("minime")) {
+      result.ageCategory = "Minime";
+    } else if (groupLower.includes("cadet")) {
+      result.ageCategory = "Cadet";
+    } else if (groupLower.includes("junior")) {
+      result.ageCategory = "Junior";
+    } else if (groupLower.includes("senior")) {
+      result.ageCategory = "Senior";
+    } else if (groupLower.includes("pupille")) {
+      result.ageCategory = "Pupille";
+    } else if (groupLower.includes("baby")) {
+      result.ageCategory = "Baby";
+    }
+
+    // Détecter la catégorie de poids (format "-33 kg", "-33kg", "33kg", etc.)
+    const weightMatch = groupStr.match(/([+-]?\d+)\s*kg/i);
+    if (weightMatch) {
+      result.weight = parseFloat(
+        weightMatch[1].replace("+", "").replace("-", "")
+      );
+      result.weightCategory = weightMatch[1] + "kg";
+
+      // Normaliser le format (ajouter - si pas de signe)
+      if (!weightMatch[1].startsWith("+") && !weightMatch[1].startsWith("-")) {
+        result.weightCategory = "-" + result.weightCategory;
+      }
+    }
+
+    console.log(`📊 Résultat parsing group:`, result);
+    return result;
   };
 
   // Valider et formater les données
   const formattedData = parseResult.data.map((row) => {
+    console.log(`\n🔍 Traitement de: ${row.firstname} ${row.lastname}`);
+    console.log(`Données brutes:`, row);
+
+    // NOUVEAU: Parser la colonne group si elle existe
+    let groupInfo = null;
+    if (row.group) {
+      groupInfo = parseGroupColumn(row.group);
+    }
+
     // Normaliser le sexe (M/F, Homme/Femme, etc.)
     let gender = row.gender ? row.gender.toLowerCase().trim() : "";
 
-    // Amélioration de la détection du genre
-    if (
-      gender === "m" ||
-      gender === "h" ||
-      gender === "homme" ||
-      gender === "male" ||
-      gender === "masculin"
-    ) {
-      gender = "male";
-      console.log(
-        `Genre normalisé: "${row.gender}" -> "male" pour ${row.firstname} ${row.lastname}`
-      );
-    } else if (
-      gender === "f" ||
-      gender === "femme" ||
-      gender === "female" ||
-      gender === "féminin" ||
-      gender === "feminin"
-    ) {
-      gender = "female";
-      console.log(
-        `Genre normalisé: "${row.gender}" -> "female" pour ${row.firstname} ${row.lastname}`
-      );
+    // PRIORITÉ: Utiliser le genre de la colonne group si disponible
+    if (groupInfo && groupInfo.gender) {
+      gender = groupInfo.gender;
+      console.log(`🎯 Genre extrait de la colonne group: "${gender}"`);
     } else {
-      // Si le genre n'est pas reconnu, essayer de déterminer à partir d'autres indices
-      // Par exemple, si la catégorie est fournie (female-Minime, male-Cadet, etc.)
-      if (row.category && typeof row.category === "string") {
-        const lowerCategory = row.category.toLowerCase();
-        if (
-          lowerCategory.startsWith("f-") ||
-          lowerCategory.startsWith("female-") ||
-          lowerCategory.startsWith("f_") ||
-          lowerCategory.startsWith("fém-")
-        ) {
-          gender = "female";
-          console.log(
-            `Genre déterminé par catégorie: "${row.category}" -> "female" pour ${row.firstname} ${row.lastname}`
-          );
-        } else if (
-          lowerCategory.startsWith("m-") ||
-          lowerCategory.startsWith("male-") ||
-          lowerCategory.startsWith("m_") ||
-          lowerCategory.startsWith("masc-")
-        ) {
-          gender = "male";
-          console.log(
-            `Genre déterminé par catégorie: "${row.category}" -> "male" pour ${row.firstname} ${row.lastname}`
-          );
+      // Amélioration de la détection du genre (code existant)
+      if (
+        gender === "m" ||
+        gender === "h" ||
+        gender === "homme" ||
+        gender === "male" ||
+        gender === "masculin"
+      ) {
+        gender = "male";
+        console.log(
+          `Genre normalisé: "${row.gender}" -> "male" pour ${row.firstname} ${row.lastname}`
+        );
+      } else if (
+        gender === "f" ||
+        gender === "femme" ||
+        gender === "female" ||
+        gender === "féminin" ||
+        gender === "feminin"
+      ) {
+        gender = "female";
+        console.log(
+          `Genre normalisé: "${row.gender}" -> "female" pour ${row.firstname} ${row.lastname}`
+        );
+      } else {
+        // Si le genre n'est pas reconnu, essayer de déterminer à partir d'autres indices
+        // Par exemple, si la catégorie est fournie (female-Minime, male-Cadet, etc.)
+        if (row.category && typeof row.category === "string") {
+          const lowerCategory = row.category.toLowerCase();
+          if (
+            lowerCategory.startsWith("f-") ||
+            lowerCategory.startsWith("female-") ||
+            lowerCategory.startsWith("f_") ||
+            lowerCategory.startsWith("fém-")
+          ) {
+            gender = "female";
+            console.log(
+              `Genre déterminé par catégorie: "${row.category}" -> "female" pour ${row.firstname} ${row.lastname}`
+            );
+          } else if (
+            lowerCategory.startsWith("m-") ||
+            lowerCategory.startsWith("male-") ||
+            lowerCategory.startsWith("m_") ||
+            lowerCategory.startsWith("masc-")
+          ) {
+            gender = "male";
+            console.log(
+              `Genre déterminé par catégorie: "${row.category}" -> "male" pour ${row.firstname} ${row.lastname}`
+            );
+          } else {
+            gender = "unknown";
+            console.warn(
+              `Genre non reconnu: "${row.gender}" pour ${row.firstname} ${row.lastname}`
+            );
+          }
         } else {
           gender = "unknown";
           console.warn(
             `Genre non reconnu: "${row.gender}" pour ${row.firstname} ${row.lastname}`
           );
         }
-      } else {
-        gender = "unknown";
-        console.warn(
-          `Genre non reconnu: "${row.gender}" pour ${row.firstname} ${row.lastname}`
-        );
       }
     }
 
@@ -245,13 +338,52 @@ export const parseCSV = (csvContent) => {
     const age = calculateAge(row.birthdate);
 
     // Déterminer la catégorie d'âge
-    const ageCategory = determineAgeCategory(row.birthdate);
+    // PRIORITÉ: Utiliser la catégorie d'âge de la colonne group si disponible
+    let ageCategory;
+    if (groupInfo && groupInfo.ageCategory) {
+      ageCategory = groupInfo.ageCategory;
+      console.log(
+        `🎯 Catégorie d'âge extraite de la colonne group: "${ageCategory}"`
+      );
+    } else {
+      ageCategory = determineAgeCategory(row.birthdate);
+      console.log(
+        `📅 Catégorie d'âge calculée à partir de la date: "${ageCategory}"`
+      );
+    }
 
     // Extraire le poids
-    const poids = extractWeight(row.weights);
+    let poids = 0;
+
+    // PRIORITÉ: Utiliser le poids de la colonne group si disponible
+    if (groupInfo && groupInfo.weight) {
+      poids = groupInfo.weight;
+      console.log(`🎯 Poids extrait de la colonne group: ${poids}kg`);
+    } else if (row.weights) {
+      poids = extractWeight(row.weights);
+      console.log(`📏 Poids extrait de la colonne weights: ${poids}kg`);
+    } else {
+      console.warn(
+        `⚠️ Aucune information de poids trouvée pour ${row.firstname} ${row.lastname}`
+      );
+    }
+
+    // Construire la catégorie complète si on a les informations du group
+    let categorieComplete = null;
+    if (
+      groupInfo &&
+      groupInfo.ageCategory &&
+      groupInfo.gender &&
+      groupInfo.weightCategory
+    ) {
+      categorieComplete = `${groupInfo.gender}-${groupInfo.ageCategory}-${groupInfo.weightCategory}`;
+      console.log(
+        `🎯 Catégorie complète extraite du group: "${categorieComplete}"`
+      );
+    }
 
     // Ajouter un ID unique pour chaque participant
-    return {
+    const participant = {
       id: uuidv4(),
       nom: row.lastname || "",
       prenom: row.firstname || "",
@@ -262,9 +394,13 @@ export const parseCSV = (csvContent) => {
       poids: poids,
       ligue: row.region || "",
       club: row.team || "",
-      // Ajouter la catégorie si elle existe
-      ...(row.category && { categorie: row.category }),
+      // Ajouter la catégorie si elle existe (priorité à celle du group)
+      ...(categorieComplete && { categorie: categorieComplete }),
+      ...(row.category && !categorieComplete && { categorie: row.category }),
     };
+
+    console.log(`✅ Participant final:`, participant);
+    return participant;
   });
 
   // Trouver les indices des participants qui pourraient avoir des données incorrectes
@@ -343,6 +479,15 @@ const normalizeHeader = (header) => {
     weights: "weights",
     masse: "weights",
     categorie_poids: "weights",
+
+    // NOUVEAU: Variations possibles pour la colonne group
+    group: "group",
+    groupe: "group",
+    category: "group", // au cas où "category" contient le format complet
+    categorie: "group",
+    catégorie: "group",
+    "catégorie complète": "group",
+    "categorie complete": "group",
 
     // Variations possibles pour la ligue/region (stocké dans ligue)
     ligue: "region",

@@ -578,6 +578,12 @@ export default function AllMatches({
                     scope="col"
                     className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
                   >
+                    Phase
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wider"
+                  >
                     Bleu
                   </th>
                   <th
@@ -636,6 +642,17 @@ export default function AllMatches({
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {getCategoryInfo(match)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {match.phase && match.phase !== "pool" ? (
+                          <span className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded text-xs font-medium">
+                            {match.phase === "semi1" ? "Demi 1" : match.phase === "semi2" ? "Demi 2" : match.phase === "final" ? "Finale" : match.phase === "bronze" ? "Bronze" : "Poule"}
+                          </span>
+                        ) : match.tour && match.tour > 0 ? (
+                          <span className="text-xs text-gray-500">Tour {match.tour}</span>
+                        ) : (
+                          "-"
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-700">
                         {getParticipantName(match, "A")}
