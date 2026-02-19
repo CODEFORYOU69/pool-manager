@@ -498,19 +498,14 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
 
                               // Extraire les pénalités (gamjeon)
                               const myPenalty = extractPenalty(round, position);
-                              const oppPenalty = extractPenalty(round, positionOpposee);
 
-                              // Points réels = score - gamjeon de l'adversaire (car chaque gamjeon adverse donne 1pt)
-                              const pointsGagnes = scoreGagnes - oppPenalty;
-                              const pointsConcedes = scoreConcedes - myPenalty;
-
-                              // Ajouter aux totaux
-                              pointsGained += pointsGagnes;
-                              pointsLost += pointsConcedes;
+                              // Les scores en DB incluent déjà les points de gamjeon, pas besoin de soustraire
+                              pointsGained += scoreGagnes;
+                              pointsLost += scoreConcedes;
                               gamjeonReceived += myPenalty;
 
                               console.log(
-                                `Points pour ce round: gagnés +${pointsGagnes}, perdus +${pointsConcedes}, gamjeon reçus: ${myPenalty}`
+                                `Points pour ce round: gagnés +${scoreGagnes}, perdus +${scoreConcedes}, gamjeon reçus: ${myPenalty}`
                               );
                             }
                           });
@@ -705,11 +700,15 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
                   if (a.roundsWon !== b.roundsWon)
                     return b.roundsWon - a.roundsWon;
 
-                  // 4. Différence de points
+                  // 4. Total points marqués DESC
+                  if (a.pointsGained !== b.pointsGained)
+                    return b.pointsGained - a.pointsGained;
+
+                  // 5. Différence de points
                   if (a.pointsDiff !== b.pointsDiff)
                     return b.pointsDiff - a.pointsDiff;
 
-                  // 5. Moins de gamjeon reçus = mieux classé
+                  // 6. Moins de gamjeon reçus = mieux classé
                   if (a.gamjeonReceived !== b.gamjeonReceived)
                     return a.gamjeonReceived - b.gamjeonReceived;
 

@@ -19,6 +19,8 @@ model Competition {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   poolSize       Int           @default(4)
+  tournamentType String        @default("pools")
+  numAreas       Int           @default(6)
   areas          Area[]
   groups         Group[]
   participants   Participant[]

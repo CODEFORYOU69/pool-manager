@@ -7,6 +7,7 @@ import {
   fetchPoolMatches,
 } from "../services/dbService";
 import { getPhaseLabel } from "../utils/finalsGenerator";
+import { exportMatchesToDaedoCsv } from "../utils/csvExporter";
 import "../styles/PoolFinals.css";
 
 const PoolFinals = ({ tournamentConfig, nextStep, prevStep }) => {
@@ -18,6 +19,8 @@ const PoolFinals = ({ tournamentConfig, nextStep, prevStep }) => {
   const [poolPhases, setPoolPhases] = useState({}); // poolId -> phase
   const [isLoading, setIsLoading] = useState(true);
   const [generating, setGenerating] = useState(null); // poolId being generated
+  const [generatingAll, setGeneratingAll] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
   const [error, setError] = useState(null);
 
   // Charger les groupes et leurs poules
@@ -117,6 +120,94 @@ const PoolFinals = ({ tournamentConfig, nextStep, prevStep }) => {
     }
   };
 
+  // Générer les finales pour TOUTES les catégories d'un coup
+  const handleGenerateAllFinals = async () => {
+    setGeneratingAll(true);
+    let successCount = 0;
+    let errorCount = 0;
+
+    try {
+      for (const group of groups) {
+        if (group.pools && group.pools.length > 0) {
+          for (const pool of group.pools) {
+            // Skip si finales déjà générées ou pas assez de standings
+            const poolStands = standings[pool.id];
+            const alreadyGenerated = finalsMatches[pool.id] && finalsMatches[pool.id].length > 0;
+            if (alreadyGenerated) continue;
+            if (!poolStands || poolStands.length < 2) continue;
+
+            try {
+              await generateAndSaveFinals(pool.id);
+              successCount++;
+            } catch (err) {
+              console.error(`Erreur finales pool ${pool.id}:`, err);
+              errorCount++;
+            }
+          }
+        }
+      }
+
+      await loadData();
+
+      if (errorCount > 0) {
+        alert(`${successCount} finales générées, ${errorCount} erreur(s)`);
+      }
+    } catch (err) {
+      console.error("Erreur génération globale:", err);
+      alert(`Erreur: ${err.message}`);
+    } finally {
+      setGeneratingAll(false);
+    }
+  };
+
+  // Exporter les matchs de finales au format CSV Daedo
+  const handleExportFinalsCsv = async () => {
+    setExportLoading(true);
+    try {
+      // Collecter tous les matchs de finales de toutes les poules
+      const allFinalsMatches = [];
+      for (const group of groups) {
+        if (group.pools && group.pools.length > 0) {
+          for (const pool of group.pools) {
+            const finals = finalsMatches[pool.id] || [];
+            allFinalsMatches.push(...finals);
+          }
+        }
+      }
+
+      if (allFinalsMatches.length === 0) {
+        alert("Aucun match de finales à exporter. Générez d'abord les finales.");
+        return;
+      }
+
+      await exportMatchesToDaedoCsv(
+        allFinalsMatches,
+        competitionId,
+        groups,
+        "finals_export_daedo.csv"
+      );
+    } catch (err) {
+      console.error("Erreur export CSV:", err);
+      alert(`Erreur: ${err.message}`);
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  // Compter les pools sans finales
+  const poolsWithoutFinals = groups.reduce((count, group) => {
+    if (!group.pools) return count;
+    return count + group.pools.filter((pool) => {
+      const alreadyGenerated = finalsMatches[pool.id] && finalsMatches[pool.id].length > 0;
+      const hasStandings = standings[pool.id] && standings[pool.id].length >= 2;
+      return !alreadyGenerated && hasStandings;
+    }).length;
+  }, 0);
+
+  const totalFinalsMatches = Object.values(finalsMatches).reduce(
+    (sum, matches) => sum + (matches ? matches.length : 0), 0
+  );
+
   // Obtenir le nom d'un participant depuis un match
   const getParticipantName = (match, position) => {
     if (match.matchParticipants) {
@@ -186,6 +277,32 @@ const PoolFinals = ({ tournamentConfig, nextStep, prevStep }) => {
     <div className="pool-finals-container">
       <h2>Classement & Finales</h2>
 
+      {/* Boutons globaux */}
+      <div className="global-actions" style={{ display: "flex", gap: "10px", marginBottom: "20px", flexWrap: "wrap" }}>
+        {poolsWithoutFinals > 0 && (
+          <button
+            className="btn-generate-finals"
+            onClick={handleGenerateAllFinals}
+            disabled={generatingAll}
+            style={{ padding: "10px 20px", fontSize: "14px", fontWeight: "bold" }}
+          >
+            {generatingAll
+              ? "Génération en cours..."
+              : `Générer toutes les finales (${poolsWithoutFinals} catégorie${poolsWithoutFinals > 1 ? "s" : ""})`}
+          </button>
+        )}
+        {totalFinalsMatches > 0 && (
+          <button
+            className="btn-primary"
+            onClick={handleExportFinalsCsv}
+            disabled={exportLoading}
+            style={{ padding: "10px 20px", fontSize: "14px", background: "#2563eb", color: "white", border: "none", borderRadius: "6px", cursor: "pointer" }}
+          >
+            {exportLoading ? "Export en cours..." : `Exporter CSV Daedo (${totalFinalsMatches} matchs)`}
+          </button>
+        )}
+      </div>
+
       {/* Onglets de groupes */}
       {groups.length > 1 && (
         <div className="group-tabs">
@@ -239,9 +356,9 @@ const PoolFinals = ({ tournamentConfig, nextStep, prevStep }) => {
                         {idx < 4 && <span className="star"> *</span>}
                       </td>
                       <td className="fighter-name">
-                        {fighter.prenom || ""} {fighter.nom || fighter.name || ""}
+                        {fighter.participant?.prenom || fighter.prenom || ""} {fighter.participant?.nom || fighter.nom || fighter.name || ""}
                       </td>
-                      <td>{fighter.club || fighter.ligue || "-"}</td>
+                      <td>{fighter.participant?.club || fighter.club || fighter.participant?.ligue || fighter.ligue || "-"}</td>
                       <td className="stat">{fighter.victories || 0}</td>
                       <td className="stat">{fighter.defeats || 0}</td>
                       <td className="stat">{fighter.roundsWon || 0}</td>

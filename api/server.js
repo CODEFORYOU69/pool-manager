@@ -428,6 +428,15 @@ app.get("/api/pool/:id", async (req, res) => {
             participant: true,
           },
         },
+        matches: {
+          include: {
+            matchParticipants: {
+              include: { participant: true },
+            },
+            rounds: { orderBy: { roundNumber: "asc" } },
+          },
+          orderBy: { matchNumber: "asc" },
+        },
       },
     });
 
@@ -2198,9 +2207,13 @@ app.get("/api/pool/:id/standings", async (req, res) => {
       if (directWinner === b.participantId) return 1;
       // 3. Rounds gagnés DESC
       if (a.roundsWon !== b.roundsWon) return b.roundsWon - a.roundsWon;
-      // 4. Total points DESC
+      // 4. Total points marqués DESC
       if (a.totalPoints !== b.totalPoints) return b.totalPoints - a.totalPoints;
-      // 5. Pénalités ASC
+      // 5. Différence de points (marqués - encaissés) DESC
+      const diffA = a.totalPoints - a.totalPointsAgainst;
+      const diffB = b.totalPoints - b.totalPointsAgainst;
+      if (diffA !== diffB) return diffB - diffA;
+      // 6. Pénalités ASC
       return a.penalties - b.penalties;
     });
 
@@ -2384,6 +2397,7 @@ app.post("/api/pool/:id/generateFinals", async (req, res) => {
         defeats: 0,
         roundsWon: 0,
         totalPoints: 0,
+        totalPointsAgainst: 0,
         penalties: 0,
       };
     });
@@ -2410,7 +2424,9 @@ app.post("/api/pool/:id/generateFinals", async (req, res) => {
 
       match.rounds.forEach((r) => {
         standingsMap[pA.participantId].totalPoints += r.scoreA || 0;
+        standingsMap[pA.participantId].totalPointsAgainst += r.scoreB || 0;
         standingsMap[pB.participantId].totalPoints += r.scoreB || 0;
+        standingsMap[pB.participantId].totalPointsAgainst += r.scoreA || 0;
         standingsMap[pA.participantId].penalties += r.penaltyA || 0;
         standingsMap[pB.participantId].penalties += r.penaltyB || 0;
         if (r.winnerPosition === "A" || ((r.scoreA || 0) > (r.scoreB || 0) && !r.winnerPosition)) {
@@ -2422,9 +2438,17 @@ app.post("/api/pool/:id/generateFinals", async (req, res) => {
     });
 
     const standings = Object.values(standingsMap).sort((a, b) => {
+      // 1. Victoires DESC
       if (a.victories !== b.victories) return b.victories - a.victories;
+      // 2. Rounds gagnés DESC
       if (a.roundsWon !== b.roundsWon) return b.roundsWon - a.roundsWon;
+      // 3. Total points marqués DESC
       if (a.totalPoints !== b.totalPoints) return b.totalPoints - a.totalPoints;
+      // 4. Différence de points (marqués - encaissés) DESC
+      const diffA = a.totalPoints - a.totalPointsAgainst;
+      const diffB = b.totalPoints - b.totalPointsAgainst;
+      if (diffA !== diffB) return diffB - diffA;
+      // 5. Pénalités ASC
       return a.penalties - b.penalties;
     });
 

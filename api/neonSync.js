@@ -69,6 +69,8 @@ async function syncCompetitionToNeon(localPrisma, competitionId) {
         breakDuration: competition.breakDuration,
         breakFrequency: competition.breakFrequency,
         poolSize: competition.poolSize,
+        tournamentType: competition.tournamentType,
+        numAreas: competition.numAreas,
         updatedAt: competition.updatedAt,
       },
       create: {
@@ -81,6 +83,8 @@ async function syncCompetitionToNeon(localPrisma, competitionId) {
         breakDuration: competition.breakDuration,
         breakFrequency: competition.breakFrequency,
         poolSize: competition.poolSize,
+        tournamentType: competition.tournamentType,
+        numAreas: competition.numAreas,
         createdAt: competition.createdAt,
         updatedAt: competition.updatedAt,
       },
@@ -139,11 +143,16 @@ async function syncCompetitionToNeon(localPrisma, competitionId) {
         },
       });
 
-      // ParticipantGroups
+      // ParticipantGroups - use compound unique key (participantId, groupId)
       for (const pg of group.participants) {
         await neon.participantGroup.upsert({
-          where: { id: pg.id },
-          update: {},
+          where: {
+            participantId_groupId: {
+              participantId: pg.participantId,
+              groupId: pg.groupId,
+            },
+          },
+          update: { id: pg.id },
           create: {
             id: pg.id,
             participantId: pg.participantId,
@@ -172,11 +181,16 @@ async function syncCompetitionToNeon(localPrisma, competitionId) {
           },
         });
 
-        // PoolParticipants
+        // PoolParticipants - use compound unique key (poolId, participantId)
         for (const pp of pool.poolParticipants) {
           await neon.poolParticipant.upsert({
-            where: { id: pp.id },
-            update: {},
+            where: {
+              poolId_participantId: {
+                poolId: pp.poolId,
+                participantId: pp.participantId,
+              },
+            },
+            update: { id: pp.id },
             create: {
               id: pp.id,
               poolId: pp.poolId,
@@ -217,11 +231,16 @@ async function syncCompetitionToNeon(localPrisma, competitionId) {
             },
           });
 
-          // MatchParticipants
+          // MatchParticipants - use compound unique key (matchId, position)
           for (const mp of match.matchParticipants) {
             await neon.matchParticipant.upsert({
-              where: { id: mp.id },
-              update: { position: mp.position },
+              where: {
+                matchId_position: {
+                  matchId: mp.matchId,
+                  position: mp.position,
+                },
+              },
+              update: { id: mp.id, participantId: mp.participantId },
               create: {
                 id: mp.id,
                 position: mp.position,
@@ -231,11 +250,17 @@ async function syncCompetitionToNeon(localPrisma, competitionId) {
             });
           }
 
-          // Rounds
+          // Rounds - use compound unique key (matchId, roundNumber)
           for (const round of match.rounds) {
             await neon.round.upsert({
-              where: { id: round.id },
+              where: {
+                matchId_roundNumber: {
+                  matchId: round.matchId,
+                  roundNumber: round.roundNumber,
+                },
+              },
               update: {
+                id: round.id,
                 scoreA: round.scoreA,
                 scoreB: round.scoreB,
                 winner: round.winner,

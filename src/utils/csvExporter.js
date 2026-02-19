@@ -129,12 +129,23 @@ export const exportMatchesToDaedoCsv = async (matches, competitionId, groups = [
       homeOrgId++;
       awayOrgId++;
 
+      // Déterminer la phase Daedo selon le type de match
+      let daedoPhase = "R16";
+      const matchPhase = match.phase || "";
+      if (matchPhase === "semi1" || matchPhase === "semi2") {
+        daedoPhase = "SF";
+      } else if (matchPhase === "final") {
+        daedoPhase = "F";
+      } else if (matchPhase === "bronze") {
+        daedoPhase = "BR";
+      }
+
       const row = [
         formattedId, mat, match.matchNumber || match.number || index + 1,
-        "R16", "SCHEDULED",
+        daedoPhase, "SCHEDULED",
         getParticipantName(match, "A"), "FRA", homeOrgId, "A", homeCompetitorId,
         getParticipantName(match, "B"), "FRA", awayOrgId, "A", awayCompetitorId,
-        "BESTOF3", "3", "99", "5",
+        "BESTOF3", "3", "12", "5",
         roundDuration, breakDuration, "60",
         thresholdBody, "0",
         "False", "60",
