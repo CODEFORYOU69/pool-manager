@@ -3,7 +3,13 @@
 export interface Competition {
   id: string;
   name: string;
-  date?: string; // Date de la compétition
+  date?: string;
+  startTime?: string;
+  endTime?: string;
+  roundDuration?: number;
+  breakDuration?: number;
+  numAreas?: number;
+  location?: string;
 }
 
 export interface Participant {

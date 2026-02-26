@@ -30,8 +30,9 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<
     "live" | "history" | "all" | "results"
   >("live");
-  // État pour stocker la date de la compétition actuelle
+  // État pour stocker la date et les détails de la compétition actuelle
   const [competitionDate, setCompetitionDate] = useState<Date | null>(null);
+  const [competitionDetails, setCompetitionDetails] = useState<Competition | null>(null);
 
   // Données des matchs
   const [upcomingMatchesByArea, setUpcomingMatchesByArea] = useState<{
@@ -100,12 +101,12 @@ export default function Home() {
         if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
 
         const data = await response.json();
+        setCompetitionDetails(data);
 
         // Si la compétition a une date, la stocker
         if (data.date) {
           setCompetitionDate(new Date(data.date));
         } else {
-          // Si pas de date, utiliser la date actuelle
           setCompetitionDate(new Date());
         }
       } catch (err) {
@@ -698,6 +699,95 @@ export default function Home() {
         lastUpdate={lastUpdate}
         formatTime={formatTime}
       />
+
+      {/* Bandeau infos compétition */}
+      {competitionDetails && !loading && (
+        <div className="bg-white border-b border-gray-200">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+            {(() => {
+              const totalMatches = allMatches.length;
+              const completedMatches = allMatches.filter(m => m.status === "completed").length;
+              const pct = totalMatches > 0 ? Math.round((completedMatches / totalMatches) * 100) : 0;
+
+              // Estimation fin : durée moyenne par match terminé × matchs restants
+              let estimatedEnd = "";
+              if (completedMatches > 0 && completedMatches < totalMatches) {
+                const completedWithTimes = allMatches.filter(
+                  m => m.status === "completed" && m.startTime && m.endTime
+                );
+                if (completedWithTimes.length > 0) {
+                  const totalDuration = completedWithTimes.reduce((sum, m) => {
+                    return sum + (new Date(m.endTime!).getTime() - new Date(m.startTime).getTime());
+                  }, 0);
+                  const avgDuration = totalDuration / completedWithTimes.length;
+                  const remaining = totalMatches - completedMatches;
+                  // Prendre la fin du dernier match terminé comme point de départ
+                  const lastCompleted = completedWithTimes.sort(
+                    (a, b) => new Date(b.endTime!).getTime() - new Date(a.endTime!).getTime()
+                  )[0];
+                  const estEndTime = new Date(
+                    new Date(lastCompleted.endTime!).getTime() + (avgDuration * remaining) / (competitionDetails.numAreas || 1)
+                  );
+                  estimatedEnd = estEndTime.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+                }
+              } else if (completedMatches === totalMatches && totalMatches > 0) {
+                estimatedEnd = "Terminé";
+              }
+
+              const dateStr = competitionDate
+                ? competitionDate.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })
+                : "";
+
+              return (
+                <div className="flex flex-col gap-2">
+                  {/* Ligne 1 : Nom, lieu, date */}
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                    <h2 className="text-lg font-bold text-gray-900">{competitionDetails.name}</h2>
+                    {competitionDetails.location && (
+                      <span className="text-sm text-gray-600 flex items-center gap-1">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                        {competitionDetails.location}
+                      </span>
+                    )}
+                    {dateStr && (
+                      <span className="text-sm text-gray-500 capitalize">{dateStr}</span>
+                    )}
+                  </div>
+
+                  {/* Ligne 2 : Stats combats */}
+                  {totalMatches > 0 && (
+                    <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
+                      <span className="text-gray-700">
+                        <span className="font-semibold text-gray-900">{totalMatches}</span> combats programmés
+                      </span>
+                      <span className="text-gray-700">
+                        <span className="font-semibold text-green-700">{completedMatches}</span> terminés
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{
+                              width: `${pct}%`,
+                              backgroundColor: pct === 100 ? "#22C55E" : "#6366F1",
+                            }}
+                          />
+                        </div>
+                        <span className="font-semibold text-gray-900">{pct}%</span>
+                      </div>
+                      {estimatedEnd && (
+                        <span className="text-gray-700">
+                          Fin estimée : <span className="font-semibold text-primary-700">{estimatedEnd}</span>
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
       <div className="bg-white shadow-sm border-b border-gray-200">
         {/* Indicateur de rafraîchissement */}
