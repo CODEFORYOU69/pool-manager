@@ -136,8 +136,6 @@ export const exportMatchesToDaedoCsv = async (matches, competitionId, groups = [
         daedoPhase = "SF";
       } else if (matchPhase === "final") {
         daedoPhase = "F";
-      } else if (matchPhase === "bronze") {
-        daedoPhase = "BR";
       }
 
       const row = [

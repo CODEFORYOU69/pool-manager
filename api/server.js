@@ -1785,7 +1785,7 @@ app.post("/api/match/:id/results", async (req, res) => {
       });
     });
 
-    // Auto-propagation : si ce match est une demi-finale, propager vers finale/bronze
+    // Auto-propagation : si ce match est une demi-finale, propager les gagnants vers la finale
     try {
       const savedMatch = await prisma.match.findUnique({
         where: { id },
@@ -1810,7 +1810,7 @@ app.post("/api/match/:id/results", async (req, res) => {
         const allSemisCompleted = semis.length === 2 && semis.every((s) => s.status === "completed" && s.winner);
 
         if (allSemisCompleted) {
-          console.log("Les deux demi-finales sont terminées, propagation vers finale/bronze");
+          console.log("Les deux demi-finales sont terminées, propagation vers la finale");
 
           const semi1 = semis.find((s) => s.phase === "semi1");
           const semi2 = semis.find((s) => s.phase === "semi2");
@@ -1818,10 +1818,6 @@ app.post("/api/match/:id/results", async (req, res) => {
           // Gagnants → finale
           const semi1Winner = semi1.winner;
           const semi2Winner = semi2.winner;
-
-          // Perdants → petite finale
-          const semi1Loser = semi1.matchParticipants.find((mp) => mp.participantId !== semi1.winner)?.participantId;
-          const semi2Loser = semi2.matchParticipants.find((mp) => mp.participantId !== semi2.winner)?.participantId;
 
           // Trouver le match de finale
           const finalMatch = await prisma.match.findFirst({
@@ -1839,22 +1835,6 @@ app.post("/api/match/:id/results", async (req, res) => {
               ],
             });
             console.log(`Finale ${finalMatch.id}: ${semi1Winner} vs ${semi2Winner}`);
-          }
-
-          // Trouver le match de petite finale
-          const bronzeMatch = await prisma.match.findFirst({
-            where: { poolId: savedMatch.poolId, phase: "bronze" },
-          });
-
-          if (bronzeMatch && semi1Loser && semi2Loser) {
-            await prisma.matchParticipant.deleteMany({ where: { matchId: bronzeMatch.id } });
-            await prisma.matchParticipant.createMany({
-              data: [
-                { matchId: bronzeMatch.id, participantId: semi1Loser, position: "A" },
-                { matchId: bronzeMatch.id, participantId: semi2Loser, position: "B" },
-              ],
-            });
-            console.log(`Bronze ${bronzeMatch.id}: ${semi1Loser} vs ${semi2Loser}`);
           }
         }
       }
@@ -2471,7 +2451,7 @@ app.post("/api/pool/:id/generateFinals", async (req, res) => {
 
     // Supprimer les anciens matchs de finales si existants
     const existingFinals = await prisma.match.findMany({
-      where: { poolId: id, phase: { in: ["semi1", "semi2", "final", "bronze"] } },
+      where: { poolId: id, phase: { in: ["semi1", "semi2", "final"] } },
       select: { id: true },
     });
     if (existingFinals.length > 0) {
@@ -2554,11 +2534,6 @@ app.post("/api/pool/:id/generateFinals", async (req, res) => {
       const finalMatch = await createFinalsMatch("final", []);
       createdMatches.push({ ...finalMatch, phase: "final" });
 
-      // Petite finale si activée
-      if (pool.bronzeMatch) {
-        const bronze = await createFinalsMatch("bronze", []);
-        createdMatches.push({ ...bronze, phase: "bronze" });
-      }
     } else {
       // Moins de 4 combattants: juste une finale entre les 2 premiers
       const finalMatch = await createFinalsMatch("final", [

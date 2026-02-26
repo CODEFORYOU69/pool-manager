@@ -303,6 +303,8 @@ function AppContent() {
               tournamentConfig={tournamentConfig}
               nextStep={nextStep}
               prevStep={prevStep}
+              setSchedule={setSchedule}
+              setMatches={setMatches}
             />
           );
         }

@@ -1,106 +1,126 @@
+/* ============================================
+   COMPETITION LIST - Card grid & actions
+   ============================================ */
+
 .competition-list-container {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 20px;
+  padding: var(--space-5);
 }
 
 .competition-list-container h2 {
   text-align: center;
-  margin-bottom: 30px;
-  color: #2c3e50;
+  margin-bottom: var(--space-8);
+  color: var(--color-gray-900);
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  letter-spacing: -0.025em;
 }
 
 .action-buttons {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 30px;
+  margin-bottom: var(--space-8);
 }
 
 .new-competition-btn,
 .refresh-btn,
 .retry-btn {
-  padding: 12px 24px;
+  padding: var(--space-3) var(--space-6);
   border: none;
-  border-radius: 5px;
-  font-weight: bold;
+  border-radius: var(--radius-md);
+  font-weight: var(--font-semibold);
   cursor: pointer;
-  transition: background-color 0.3s;
+  transition: all var(--transition-base);
+  font-size: var(--text-base);
 }
 
 .new-competition-btn {
-  background-color: #3498db;
-  color: white;
+  background-color: var(--color-primary-500);
+  color: var(--color-white);
+  box-shadow: var(--shadow-sm);
 }
 
 .new-competition-btn:hover {
-  background-color: #2980b9;
+  background-color: var(--color-primary-600);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
 }
 
 .refresh-btn,
 .retry-btn {
-  background-color: #e7e7e7;
-  color: #333;
+  background-color: var(--color-gray-100);
+  color: var(--color-gray-700);
 }
 
 .refresh-btn:hover,
 .retry-btn:hover {
-  background-color: #d3d3d3;
+  background-color: var(--color-gray-200);
 }
 
 .loading,
 .error,
 .no-competitions {
   text-align: center;
-  padding: 30px;
-  background-color: #f8f9fa;
-  border-radius: 8px;
-  margin-top: 20px;
-  color: #666;
+  padding: var(--space-8);
+  background-color: var(--color-gray-50);
+  border-radius: var(--radius-lg);
+  margin-top: var(--space-5);
+  color: var(--color-gray-500);
+  font-size: var(--text-base);
 }
 
 .error {
-  color: #e74c3c;
-  background-color: #fadbd8;
+  color: var(--color-danger-600);
+  background-color: var(--color-danger-50);
+  border: 1px solid var(--color-danger-100);
 }
 
+/* ── Competition Grid ── */
 .competitions-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 20px;
-  margin-top: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--space-6);
+  margin-top: var(--space-5);
 }
 
 .competition-card {
-  background-color: white;
-  border-radius: 8px;
-  padding: 20px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  transition: transform 0.3s, box-shadow 0.3s;
+  background-color: var(--color-white);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  border: 1px solid var(--color-gray-200);
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-base);
   cursor: pointer;
   position: relative;
 }
 
 .competition-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-primary-200);
 }
 
 .competition-name {
   margin-top: 0;
-  margin-bottom: 15px;
-  color: #2c3e50;
-  font-size: 20px;
+  margin-bottom: var(--space-3);
+  color: var(--color-gray-900);
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
 }
 
 .competition-date {
-  margin-bottom: 15px;
-  color: #7f8c8d;
+  margin-bottom: var(--space-4);
+  color: var(--color-gray-500);
+  font-size: var(--text-sm);
 }
 
 .competition-stats {
   display: flex;
   justify-content: space-between;
-  margin-top: 15px;
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-gray-100);
 }
 
 .stat {
@@ -108,23 +128,27 @@
 }
 
 .label {
-  font-weight: bold;
-  color: #7f8c8d;
+  font-weight: var(--font-medium);
+  color: var(--color-gray-500);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
+/* ── Delete Button ── */
 .delete-btn {
   position: absolute;
-  top: 10px;
-  right: 10px;
-  background-color: #e74c3c;
-  color: white;
+  top: var(--space-3);
+  right: var(--space-3);
+  background-color: var(--color-danger-500);
+  color: var(--color-white);
   border: none;
-  border-radius: 4px;
-  padding: 5px 10px;
-  font-size: 12px;
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-2-5);
+  font-size: var(--text-xs);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.3s;
+  transition: opacity var(--transition-fast);
 }
 
 .competition-card:hover .delete-btn {
@@ -132,9 +156,10 @@
 }
 
 .delete-btn:hover {
-  background-color: #c0392b;
+  background-color: var(--color-danger-600);
 }
 
+/* ── Responsive ── */
 @media (max-width: 768px) {
   .competitions-grid {
     grid-template-columns: 1fr;
@@ -142,7 +167,7 @@
 
   .action-buttons {
     flex-direction: column;
-    gap: 10px;
+    gap: var(--space-2-5);
   }
 
   .new-competition-btn,

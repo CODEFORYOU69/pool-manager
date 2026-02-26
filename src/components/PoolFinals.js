@@ -426,19 +426,19 @@ const PoolFinals = ({ tournamentConfig, nextStep, prevStep }) => {
                             {getPhaseLabel(match.phase)}
                           </div>
                           <div className="bracket-fighters">
-                            <div className={`bracket-fighter rouge ${getMatchWinner(match) && getParticipantName(match, "A") === getMatchWinner(match) ? "winner" : ""}`}>
-                              <span className="position-badge rouge">R</span>
-                              <span className="fighter-info">
-                                {getParticipantName(match, "A")}
-                                <small>{getParticipantClub(match, "A")}</small>
-                              </span>
-                            </div>
-                            <div className="vs">VS</div>
                             <div className={`bracket-fighter bleu ${getMatchWinner(match) && getParticipantName(match, "B") === getMatchWinner(match) ? "winner" : ""}`}>
                               <span className="position-badge bleu">B</span>
                               <span className="fighter-info">
                                 {getParticipantName(match, "B")}
                                 <small>{getParticipantClub(match, "B")}</small>
+                              </span>
+                            </div>
+                            <div className="vs">VS</div>
+                            <div className={`bracket-fighter rouge ${getMatchWinner(match) && getParticipantName(match, "A") === getMatchWinner(match) ? "winner" : ""}`}>
+                              <span className="position-badge rouge">R</span>
+                              <span className="fighter-info">
+                                {getParticipantName(match, "A")}
+                                <small>{getParticipantClub(match, "A")}</small>
                               </span>
                             </div>
                           </div>
@@ -470,19 +470,19 @@ const PoolFinals = ({ tournamentConfig, nextStep, prevStep }) => {
                             {getPhaseLabel(match.phase)}
                           </div>
                           <div className="bracket-fighters">
-                            <div className={`bracket-fighter rouge ${getMatchWinner(match) && getParticipantName(match, "A") === getMatchWinner(match) ? "winner" : ""}`}>
-                              <span className="position-badge rouge">R</span>
-                              <span className="fighter-info">
-                                {getParticipantName(match, "A")}
-                                <small>{getParticipantClub(match, "A")}</small>
-                              </span>
-                            </div>
-                            <div className="vs">VS</div>
                             <div className={`bracket-fighter bleu ${getMatchWinner(match) && getParticipantName(match, "B") === getMatchWinner(match) ? "winner" : ""}`}>
                               <span className="position-badge bleu">B</span>
                               <span className="fighter-info">
                                 {getParticipantName(match, "B")}
                                 <small>{getParticipantClub(match, "B")}</small>
+                              </span>
+                            </div>
+                            <div className="vs">VS</div>
+                            <div className={`bracket-fighter rouge ${getMatchWinner(match) && getParticipantName(match, "A") === getMatchWinner(match) ? "winner" : ""}`}>
+                              <span className="position-badge rouge">R</span>
+                              <span className="fighter-info">
+                                {getParticipantName(match, "A")}
+                                <small>{getParticipantClub(match, "A")}</small>
                               </span>
                             </div>
                           </div>
@@ -498,49 +498,91 @@ const PoolFinals = ({ tournamentConfig, nextStep, prevStep }) => {
                 </div>
               )}
 
-              {/* Petite finale */}
-              {finalsMatches[pool.id].filter((m) => m.phase === "bronze").length > 0 && (
-                <div className="bracket-round bronze-round">
-                  <h5>Petite finale (3e place)</h5>
-                  <div className="bracket-matches">
-                    {finalsMatches[pool.id]
-                      .filter((m) => m.phase === "bronze")
-                      .map((match) => (
-                        <div
-                          key={match.id}
-                          className={`bracket-match bronze ${match.status === "completed" ? "completed" : "pending"}`}
-                        >
-                          <div className="bracket-match-label">
-                            {getPhaseLabel(match.phase)}
-                          </div>
-                          <div className="bracket-fighters">
-                            <div className={`bracket-fighter rouge ${getMatchWinner(match) && getParticipantName(match, "A") === getMatchWinner(match) ? "winner" : ""}`}>
-                              <span className="position-badge rouge">R</span>
-                              <span className="fighter-info">
-                                {getParticipantName(match, "A")}
-                                <small>{getParticipantClub(match, "A")}</small>
-                              </span>
-                            </div>
-                            <div className="vs">VS</div>
-                            <div className={`bracket-fighter bleu ${getMatchWinner(match) && getParticipantName(match, "B") === getMatchWinner(match) ? "winner" : ""}`}>
-                              <span className="position-badge bleu">B</span>
-                              <span className="fighter-info">
-                                {getParticipantName(match, "B")}
-                                <small>{getParticipantClub(match, "B")}</small>
-                              </span>
-                            </div>
-                          </div>
-                          <div className="bracket-status">
-                            {getMatchStatusIcon(match)}{" "}
-                            {match.status === "completed"
-                              ? `Vainqueur: ${getMatchWinner(match) || "?"}`
-                              : "En attente"}
-                          </div>
+              {/* Podium (affiché quand la finale est terminée) */}
+              {(() => {
+                const finalMatch = finalsMatches[pool.id].find((m) => m.phase === "final");
+                const semi1 = finalsMatches[pool.id].find((m) => m.phase === "semi1");
+                const semi2 = finalsMatches[pool.id].find((m) => m.phase === "semi2");
+
+                if (!finalMatch || finalMatch.status !== "completed") return null;
+
+                const champion = getMatchWinner(finalMatch);
+                if (!champion) return null;
+
+                // Perdant de la finale = 2e
+                const finalistA = getParticipantName(finalMatch, "A");
+                const finalistB = getParticipantName(finalMatch, "B");
+                const second = champion === finalistA ? finalistB : finalistA;
+                const secondClub = champion === finalistA
+                  ? getParticipantClub(finalMatch, "B")
+                  : getParticipantClub(finalMatch, "A");
+                const championClub = champion === finalistA
+                  ? getParticipantClub(finalMatch, "A")
+                  : getParticipantClub(finalMatch, "B");
+
+                // 3e = perdant de la demi contre le champion
+                // 3e ex-aequo = perdant de la demi contre le 2e
+                let third = null, thirdClub = "";
+                let thirdEx = null, thirdExClub = "";
+
+                if (semi1 && semi2 && semi1.status === "completed" && semi2.status === "completed") {
+                  const semi1Winner = getMatchWinner(semi1);
+                  const semi2Winner = getMatchWinner(semi2);
+
+                  // Perdant semi1
+                  const semi1LoserPos = getParticipantName(semi1, "A") === semi1Winner ? "B" : "A";
+                  const semi1Loser = getParticipantName(semi1, semi1LoserPos);
+                  const semi1LoserClub = getParticipantClub(semi1, semi1LoserPos);
+
+                  // Perdant semi2
+                  const semi2LoserPos = getParticipantName(semi2, "A") === semi2Winner ? "B" : "A";
+                  const semi2Loser = getParticipantName(semi2, semi2LoserPos);
+                  const semi2LoserClub = getParticipantClub(semi2, semi2LoserPos);
+
+                  // Le champion vient de quelle demi ?
+                  if (semi1Winner === champion) {
+                    // semi1 loser a perdu contre le champion → 3e
+                    third = semi1Loser; thirdClub = semi1LoserClub;
+                    thirdEx = semi2Loser; thirdExClub = semi2LoserClub;
+                  } else {
+                    // semi2 loser a perdu contre le champion → 3e
+                    third = semi2Loser; thirdClub = semi2LoserClub;
+                    thirdEx = semi1Loser; thirdExClub = semi1LoserClub;
+                  }
+                }
+
+                return (
+                  <div className="bracket-round podium-round">
+                    <h5>Podium</h5>
+                    <div className="podium-results">
+                      <div className="podium-entry gold">
+                        <span className="podium-rank">1er</span>
+                        <span className="podium-name">{champion}</span>
+                        <small className="podium-club">{championClub}</small>
+                      </div>
+                      <div className="podium-entry silver">
+                        <span className="podium-rank">2e</span>
+                        <span className="podium-name">{second}</span>
+                        <small className="podium-club">{secondClub}</small>
+                      </div>
+                      {third && (
+                        <div className="podium-entry bronze">
+                          <span className="podium-rank">3e</span>
+                          <span className="podium-name">{third}</span>
+                          <small className="podium-club">{thirdClub}</small>
                         </div>
-                      ))}
+                      )}
+                      {thirdEx && (
+                        <div className="podium-entry bronze-ex">
+                          <span className="podium-rank">3e ex.</span>
+                          <span className="podium-name">{thirdEx}</span>
+                          <small className="podium-club">{thirdExClub}</small>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           )}
         </div>

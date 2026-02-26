@@ -3053,7 +3053,6 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep, tournam
                         <option value="semi1">Demi-finale 1</option>
                         <option value="semi2">Demi-finale 2</option>
                         <option value="final">Finale</option>
-                        <option value="bronze">Petite finale</option>
                       </select>
                     </div>
                   </>

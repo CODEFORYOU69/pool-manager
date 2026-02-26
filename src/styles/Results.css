@@ -1,139 +1,163 @@
+/* ============================================
+   RESULTS - Results tables & podium
+   ============================================ */
+
 .results-container {
   width: 100%;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 20px;
+  padding: var(--space-5);
 }
 
 .results-container h2 {
-  color: #333;
-  margin-bottom: 20px;
+  color: var(--color-gray-900);
+  margin-bottom: var(--space-5);
   text-align: center;
+  font-size: var(--text-xl);
+  font-weight: var(--font-bold);
 }
 
+/* ── Actions ── */
 .actions-container {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: var(--space-5);
   flex-wrap: wrap;
-  gap: 15px;
+  gap: var(--space-4);
 }
 
 .export-buttons {
   display: flex;
-  gap: 10px;
+  gap: var(--space-2-5);
   flex-wrap: wrap;
 }
 
 .refresh-btn {
-  background-color: #2196f3;
-  color: white;
+  background-color: var(--color-primary-500);
+  color: var(--color-white);
   border: none;
-  border-radius: 4px;
-  padding: 10px 20px;
-  font-size: 14px;
+  border-radius: var(--radius-md);
+  padding: var(--space-2-5) var(--space-5);
+  font-size: var(--text-base);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background-color 0.3s;
+  transition: all var(--transition-base);
+  font-weight: var(--font-medium);
 }
 
 .refresh-btn:hover {
-  background-color: #0d8aee;
+  background-color: var(--color-primary-600);
 }
 
 .refresh-btn:disabled {
-  background-color: #90caf9;
+  background-color: var(--color-primary-200);
   cursor: not-allowed;
 }
 
-/* Styles pour les boutons d'exportation */
 .export-btn {
-  background-color: #4caf50;
-  color: white;
+  background-color: var(--color-success-500);
+  color: var(--color-white);
   border: none;
-  border-radius: 4px;
-  padding: 10px 15px;
-  font-size: 14px;
+  border-radius: var(--radius-md);
+  padding: var(--space-2-5) var(--space-4);
+  font-size: var(--text-base);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background-color 0.3s;
+  transition: all var(--transition-base);
+  font-weight: var(--font-medium);
 }
 
 .export-btn:hover {
-  background-color: #3e8e41;
+  background-color: var(--color-success-600);
 }
 
 .export-btn:disabled {
-  background-color: #a5d6a7;
+  background-color: var(--color-success-200);
   cursor: not-allowed;
 }
 
 .export-btn.qualified-btn {
-  background-color: #ff9800;
+  background-color: var(--color-warning-500);
 }
 
 .export-btn.qualified-btn:hover {
-  background-color: #e68a00;
+  background-color: var(--color-warning-600);
 }
 
 .export-btn.qualified-btn:disabled {
-  background-color: #ffcc80;
+  background-color: var(--color-warning-200);
 }
 
+/* ── Group Tabs (Pill) ── */
 .group-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
-  margin-bottom: 20px;
+  gap: var(--space-1);
+  margin-bottom: var(--space-5);
   justify-content: center;
+  background-color: var(--color-gray-100);
+  padding: var(--space-1);
+  border-radius: var(--radius-full);
+  width: fit-content;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .group-tab {
-  background-color: #f0f0f0;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  padding: 8px 15px;
+  background-color: transparent;
+  border: none;
+  border-radius: var(--radius-full);
+  padding: var(--space-2) var(--space-4);
   cursor: pointer;
-  transition: background-color 0.3s;
+  transition: all var(--transition-fast);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-gray-600);
 }
 
 .group-tab:hover {
-  background-color: #e0e0e0;
+  background-color: var(--color-white);
+  color: var(--color-gray-900);
 }
 
 .group-tab.active {
-  background-color: #2196f3;
-  color: white;
-  border-color: #2196f3;
+  background-color: var(--color-white);
+  color: var(--color-primary-600);
+  box-shadow: var(--shadow-sm);
 }
 
+/* ── Pool Results ── */
 .pools-container {
   display: flex;
   flex-direction: column;
-  gap: 30px;
+  gap: var(--space-8);
 }
 
 .pool-results {
-  background-color: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  background-color: var(--color-white);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-gray-200);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
-  margin-bottom: 20px;
+  margin-bottom: var(--space-5);
 }
 
 .pool-results h3 {
-  background-color: #f5f5f5;
-  color: #333;
+  background-color: var(--color-gray-50);
+  color: var(--color-gray-800);
   margin: 0;
-  padding: 15px;
-  border-bottom: 1px solid #ddd;
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--color-gray-200);
+  font-size: var(--text-md);
+  font-weight: var(--font-semibold);
 }
 
+/* ── Results Table ── */
 .results-table {
   width: 100%;
   border-collapse: collapse;
@@ -141,244 +165,250 @@
 
 .results-table th,
 .results-table td {
-  padding: 12px 8px;
+  padding: var(--space-3) var(--space-2);
   text-align: center;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--color-gray-100);
 }
 
 .results-table th {
-  background-color: #f8f8f8;
-  font-weight: 600;
-  color: #555;
+  background-color: var(--color-gray-50);
+  font-weight: var(--font-semibold);
+  color: var(--color-gray-600);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .results-table tr:nth-child(even) {
-  background-color: #f9f9f9;
+  background-color: var(--color-gray-25);
 }
 
 .results-table tr:hover {
-  background-color: #f0f7fd;
+  background-color: var(--color-primary-50);
 }
 
 .results-table td:nth-child(2) {
   text-align: left;
-  font-weight: 500;
+  font-weight: var(--font-medium);
 }
 
 .results-table td:nth-child(3) {
   text-align: left;
   font-style: italic;
-  font-size: 0.9em;
+  font-size: var(--text-sm);
+  color: var(--color-gray-500);
 }
 
 .points {
-  font-weight: bold;
-  font-size: 1.1em;
-  color: #0d47a1;
+  font-weight: var(--font-bold);
+  font-size: var(--text-md);
+  color: var(--color-primary-700);
 }
 
 .diff.positive {
-  color: #4caf50;
-  font-weight: bold;
+  color: var(--color-success-500);
+  font-weight: var(--font-bold);
 }
 
 .diff.negative {
-  color: #f44336;
-  font-weight: bold;
+  color: var(--color-danger-500);
+  font-weight: var(--font-bold);
 }
 
-/* Styles pour les messages d'erreur et de chargement */
+/* ── Loading & Error ── */
 .loading {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 40px;
+  padding: var(--space-10);
   text-align: center;
 }
 
 .loading-spinner {
   width: 40px;
   height: 40px;
-  border: 4px solid rgba(0, 0, 0, 0.1);
-  border-left-color: #2196f3;
-  border-radius: 50%;
+  border: 4px solid var(--color-gray-200);
+  border-left-color: var(--color-primary-500);
+  border-radius: var(--radius-full);
   animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
-  0% {
-    transform: rotate(0deg);
-  }
-  100% {
-    transform: rotate(360deg);
-  }
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 .error-message {
-  background-color: #ffebee;
-  color: #c62828;
-  padding: 20px;
-  border-radius: 8px;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  background-color: var(--color-danger-50);
+  color: var(--color-danger-700);
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-5);
+  border: 1px solid var(--color-danger-100);
 }
 
 .error-message h3 {
   margin-top: 0;
-  margin-bottom: 10px;
+  margin-bottom: var(--space-2-5);
 }
 
 .no-data-message {
-  background-color: #fff8e1;
-  color: #ff8f00;
-  padding: 20px;
-  border-radius: 8px;
+  background-color: var(--color-warning-50);
+  color: var(--color-warning-700);
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
   text-align: center;
-  margin: 30px auto;
+  margin: var(--space-8) auto;
   max-width: 600px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--color-warning-100);
 }
 
 .no-data-message h3 {
   margin-top: 0;
-  margin-bottom: 10px;
+  margin-bottom: var(--space-2-5);
 }
 
 .no-data-message p {
-  margin-bottom: 20px;
+  margin-bottom: var(--space-5);
 }
 
-/* Styles responsive */
-@media (max-width: 768px) {
-  .results-table {
-    font-size: 0.9em;
-  }
-
-  .results-table th,
-  .results-table td {
-    padding: 8px 4px;
-  }
-
-  .group-tab {
-    padding: 6px 10px;
-    font-size: 0.9em;
-  }
-}
-
-@media (max-width: 480px) {
-  .results-container {
-    padding: 10px;
-  }
-
-  .results-table {
-    font-size: 0.8em;
-  }
-
-  .group-tabs {
-    flex-direction: column;
-    gap: 5px;
-  }
-
-  .group-tab {
-    width: 100%;
-  }
-}
-
-/* Podium section for poolFinals mode */
+/* ── Podium ── */
 .podium-section {
-  margin-bottom: 30px;
-  padding-bottom: 24px;
-  border-bottom: 2px solid #e0e0e0;
+  margin-bottom: var(--space-8);
+  padding-bottom: var(--space-6);
+  border-bottom: 2px solid var(--color-gray-200);
 }
 
 .podium-section-title {
   text-align: center;
-  color: #333;
-  margin-bottom: 16px;
-  font-size: 20px;
+  color: var(--color-gray-900);
+  margin-bottom: var(--space-4);
+  font-size: var(--text-xl);
+  font-weight: var(--font-bold);
 }
 
 .podium-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .podium-card {
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  padding: 16px;
-  border-top: 3px solid #ffc107;
+  background: var(--color-white);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-4);
+  border-top: 3px solid var(--color-gold);
+  border: 1px solid var(--color-gray-200);
+  border-top: 3px solid var(--color-gold);
 }
 
 .podium-category {
-  font-size: 14px;
-  color: #555;
-  margin: 0 0 12px 0;
+  font-size: var(--text-base);
+  color: var(--color-gray-600);
+  margin: 0 0 var(--space-3) 0;
   text-align: center;
-  font-weight: 600;
+  font-weight: var(--font-semibold);
 }
 
 .podium-places {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .podium-place {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border-radius: 6px;
+  gap: var(--space-2-5);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
 }
 
 .podium-place.gold {
-  background: linear-gradient(135deg, #fff9c4, #ffe082);
-  border: 1px solid #ffc107;
+  background: var(--color-gold-gradient);
+  border: 1px solid var(--color-gold);
 }
 
 .podium-place.silver {
-  background: linear-gradient(135deg, #f5f5f5, #e0e0e0);
-  border: 1px solid #bdbdbd;
+  background: var(--color-silver-gradient);
+  border: 1px solid var(--color-silver);
 }
 
 .podium-place.bronze {
-  background: linear-gradient(135deg, #ffe0b2, #ffcc80);
-  border: 1px solid #cd7f32;
+  background: var(--color-bronze-gradient);
+  border: 1px solid var(--color-bronze);
 }
 
 .podium-medal {
-  font-weight: 700;
-  font-size: 12px;
+  font-weight: var(--font-bold);
+  font-size: var(--text-xs);
   min-width: 50px;
   text-align: center;
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: var(--space-0-5) var(--space-1-5);
+  border-radius: var(--radius-sm);
 }
 
 .podium-place.gold .podium-medal {
-  color: #f57f17;
+  color: var(--color-warning-800);
 }
 
 .podium-place.silver .podium-medal {
-  color: #616161;
+  color: var(--color-gray-600);
 }
 
 .podium-place.bronze .podium-medal {
-  color: #8d6e63;
+  color: var(--color-warning-700);
 }
 
 .podium-name {
-  font-weight: 600;
-  font-size: 14px;
-  color: #333;
+  font-weight: var(--font-semibold);
+  font-size: var(--text-base);
+  color: var(--color-gray-900);
   flex: 1;
 }
 
 .podium-club {
-  font-size: 12px;
-  color: #888;
+  font-size: var(--text-xs);
+  color: var(--color-gray-500);
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .results-table {
+    font-size: var(--text-sm);
+  }
+
+  .results-table th,
+  .results-table td {
+    padding: var(--space-2) var(--space-1);
+  }
+
+  .group-tab {
+    padding: var(--space-1-5) var(--space-2-5);
+    font-size: var(--text-sm);
+  }
+}
+
+@media (max-width: 480px) {
+  .results-container {
+    padding: var(--space-2-5);
+  }
+
+  .results-table {
+    font-size: var(--text-xs);
+  }
+
+  .group-tabs {
+    flex-direction: column;
+    gap: var(--space-1);
+    width: 100%;
+    border-radius: var(--radius-lg);
+  }
+
+  .group-tab {
+    width: 100%;
+    border-radius: var(--radius-md);
+  }
 }

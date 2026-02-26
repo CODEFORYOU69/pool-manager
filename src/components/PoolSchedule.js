@@ -4,7 +4,7 @@ import { API_URL } from "../services/dbService";
 import { exportMatchesToDaedoCsv } from "../utils/csvExporter";
 import "../styles/PoolSchedule.css";
 
-const PoolSchedule = ({ tournamentConfig, nextStep, prevStep }) => {
+const PoolSchedule = ({ tournamentConfig, nextStep, prevStep, setSchedule: setParentSchedule, setMatches: setParentMatches }) => {
   const { competitionId } = useCompetition();
   const [matches, setMatches] = useState([]);
   const [groups, setGroups] = useState([]);
@@ -42,6 +42,35 @@ const PoolSchedule = ({ tournamentConfig, nextStep, prevStep }) => {
 
         setMatches(poolMatches);
         setGroups(groupsData || []);
+
+        // Remonter les matchs au parent pour ScoreInput
+        if (setParentMatches) {
+          setParentMatches(poolMatches);
+        }
+
+        // Construire le schedule pour le calcul des retards dans ScoreInput
+        if (setParentSchedule && poolMatches.length > 0) {
+          const roundDuration = tournamentConfig?.roundDuration || 120;
+          const matchDurationMs = (roundDuration * 3 + 30 * 2 + 60) * 1000;
+
+          const scheduleItems = poolMatches.map((match) => {
+            const startTime = match.startTime
+              ? new Date(match.startTime)
+              : new Date();
+            const endTime = new Date(startTime.getTime() + matchDurationMs);
+
+            return {
+              type: "match",
+              matchId: match.id,
+              matchNumber: match.matchNumber,
+              areaNumber: match.area?.areaNumber || match.areaNumber || 1,
+              startTime: startTime.toISOString(),
+              endTime: endTime.toISOString(),
+            };
+          });
+
+          setParentSchedule(scheduleItems);
+        }
       } catch (err) {
         console.error("Erreur lors du chargement des donnees:", err);
         setError(err.message);

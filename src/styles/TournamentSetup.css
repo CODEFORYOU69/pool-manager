@@ -1,43 +1,53 @@
+/* ============================================
+   TOURNAMENT SETUP - Forms & categories
+   ============================================ */
+
 .tournament-setup-container {
-  background-color: white;
-  border-radius: 8px;
-  padding: 20px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  background-color: var(--color-white);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  border: 1px solid var(--color-gray-200);
+  box-shadow: var(--shadow-sm);
 }
 
 .participants-summary {
-  background-color: #e8f5e9;
-  padding: 15px;
-  border-radius: 4px;
-  margin-bottom: 20px;
+  background-color: var(--color-success-50);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-5);
+  border: 1px solid var(--color-success-100);
 }
 
 .participants-summary h3 {
   margin-top: 0;
-  color: #2e7d32;
+  color: var(--color-success-700);
+  font-size: var(--text-md);
 }
 
 .tournament-form {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--space-5);
 }
 
 .form-section {
-  border: 1px solid #e0e0e0;
-  border-radius: 4px;
-  padding: 15px;
-  background-color: #f9f9f9;
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  background-color: var(--color-gray-25);
 }
 
 .form-section h3 {
   margin-top: 0;
-  border-bottom: 1px solid #e0e0e0;
-  padding-bottom: 10px;
+  border-bottom: 1px solid var(--color-gray-200);
+  padding-bottom: var(--space-3);
+  font-size: var(--text-md);
+  font-weight: var(--font-semibold);
+  color: var(--color-gray-800);
 }
 
 .form-group {
-  margin-bottom: 15px;
+  margin-bottom: var(--space-4);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -45,79 +55,112 @@
 
 .form-group label {
   width: 250px;
-  font-weight: 500;
-  margin-right: 10px;
+  font-weight: var(--font-medium);
+  margin-right: var(--space-2-5);
+  color: var(--color-gray-600);
+  font-size: var(--text-sm);
 }
 
 .form-group input,
 .form-group select {
   flex: 1;
   min-width: 150px;
-  padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-gray-300);
+  border-radius: var(--radius-md);
+  font-size: var(--text-base);
 }
 
+/* ── Categories Table ── */
 .categories-table {
   width: 100%;
   border-collapse: collapse;
-  margin: 15px 0;
-  background-color: white;
+  margin: var(--space-4) 0;
+  background-color: var(--color-white);
+  border-radius: var(--radius-md);
+  overflow: hidden;
 }
 
 .categories-table th,
 .categories-table td {
-  padding: 10px;
+  padding: var(--space-2-5);
   text-align: left;
-  border-bottom: 1px solid #ddd;
+  border-bottom: 1px solid var(--color-gray-100);
 }
 
 .categories-table th {
-  background-color: #e8eaf6;
-  font-weight: bold;
+  background-color: var(--color-gray-50);
+  font-weight: var(--font-semibold);
+  color: var(--color-gray-600);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .categories-table input {
   width: 100%;
-  padding: 6px 8px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  padding: var(--space-1-5) var(--space-2);
+  border: 1px solid var(--color-gray-300);
+  border-radius: var(--radius-md);
 }
 
 .add-btn {
-  background-color: #4caf50;
-  color: white;
-  padding: 8px 15px;
+  background-color: var(--color-success-500);
+  color: var(--color-white);
+  padding: var(--space-2) var(--space-4);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  margin-top: 10px;
+  margin-top: var(--space-2-5);
+  font-weight: var(--font-medium);
 }
 
 .add-btn:hover {
-  background-color: #388e3c;
+  background-color: var(--color-success-600);
 }
 
 .delete-btn {
-  background-color: #f44336;
-  color: white;
-  padding: 6px 10px;
+  background-color: var(--color-danger-500);
+  color: var(--color-white);
+  padding: var(--space-1-5) var(--space-2-5);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   cursor: pointer;
+  font-size: var(--text-sm);
 }
 
 .delete-btn:hover {
-  background-color: #d32f2f;
+  background-color: var(--color-danger-600);
 }
 
 .navigation-buttons {
   display: flex;
   justify-content: space-between;
-  margin-top: 20px;
+  margin-top: var(--space-5);
 }
 
-/* Pour les écrans mobiles */
+/* ── Time Input ── */
+.time-input {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.time-input input,
+.time-input select {
+  width: 70px;
+  padding: var(--space-2);
+  border: 1px solid var(--color-gray-300);
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+
+.time-input span {
+  color: var(--color-gray-500);
+  font-size: var(--text-sm);
+}
+
+/* ── Responsive ── */
 @media (max-width: 768px) {
   .form-group {
     flex-direction: column;
@@ -126,7 +169,7 @@
 
   .form-group label {
     width: 100%;
-    margin-bottom: 5px;
+    margin-bottom: var(--space-1);
   }
 
   .form-group input,
@@ -138,23 +181,4 @@
     overflow-x: auto;
     display: block;
   }
-}
-.time-input {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.time-input input,
-.time-input select {
-  width: 70px;
-  padding: 8px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  text-align: center;
-}
-
-.time-input span {
-  color: #666;
-  font-size: 0.9rem;
 }

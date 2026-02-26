@@ -260,24 +260,50 @@ const Results = ({
           };
 
           const finalMatch = finalsMatches.find((m) => m.phase === "final");
-          const bronzeMatch = finalsMatches.find((m) => m.phase === "bronze");
+          const semi1 = finalsMatches.find((m) => m.phase === "semi1");
+          const semi2 = finalsMatches.find((m) => m.phase === "semi2");
 
-          let gold = null, silver = null, bronze = null;
+          let gold = null, silver = null, bronze = null, bronzeEx = null;
 
           if (finalMatch && finalMatch.status === "completed" && finalMatch.winnerPosition) {
             const loserPos = finalMatch.winnerPosition === "A" ? "B" : "A";
             gold = { name: getName(finalMatch, finalMatch.winnerPosition), club: getClub(finalMatch, finalMatch.winnerPosition) };
             silver = { name: getName(finalMatch, loserPos), club: getClub(finalMatch, loserPos) };
-          }
 
-          if (bronzeMatch && bronzeMatch.status === "completed" && bronzeMatch.winnerPosition) {
-            bronze = { name: getName(bronzeMatch, bronzeMatch.winnerPosition), club: getClub(bronzeMatch, bronzeMatch.winnerPosition) };
+            // 3e et 3e ex-aequo basés sur les demi-finales
+            if (semi1 && semi2 && semi1.status === "completed" && semi2.status === "completed" && semi1.winner && semi2.winner) {
+              const championId = finalMatch.winner;
+              // Identifier quel demi a produit le champion
+              const semi1LoserId = semi1.matchParticipants?.find((mp) => mp.participantId !== semi1.winner)?.participantId;
+              const semi2LoserId = semi2.matchParticipants?.find((mp) => mp.participantId !== semi2.winner)?.participantId;
+
+              const getSemiLoserInfo = (semi, loserId) => {
+                const mp = semi.matchParticipants?.find((p) => p.participantId === loserId);
+                if (mp && mp.participant) {
+                  return {
+                    name: `${mp.participant.prenom || ""} ${mp.participant.nom || ""}`.trim(),
+                    club: mp.participant.club || mp.participant.ligue || "",
+                  };
+                }
+                return null;
+              };
+
+              if (semi1.winner === championId) {
+                // semi1 loser a perdu contre le champion → 3e
+                bronze = getSemiLoserInfo(semi1, semi1LoserId);
+                bronzeEx = getSemiLoserInfo(semi2, semi2LoserId);
+              } else {
+                // semi2 loser a perdu contre le champion → 3e
+                bronze = getSemiLoserInfo(semi2, semi2LoserId);
+                bronzeEx = getSemiLoserInfo(semi1, semi1LoserId);
+              }
+            }
           }
 
           const categoryName = group.name || `${group.gender === "female" ? "F" : "M"} ${group.ageCategoryName || ""} ${group.weightCategoryName || ""}`.trim();
 
           if (gold || silver || bronze) {
-            podiums.push({ categoryName, gold, silver, bronze });
+            podiums.push({ categoryName, gold, silver, bronze, bronzeEx });
           }
         }
       }
@@ -506,9 +532,16 @@ const Results = ({
                   )}
                   {podium.bronze && (
                     <div className="podium-place bronze">
-                      <span className="podium-medal">Bronze</span>
+                      <span className="podium-medal">3e</span>
                       <span className="podium-name">{podium.bronze.name}</span>
                       <span className="podium-club">{podium.bronze.club}</span>
+                    </div>
+                  )}
+                  {podium.bronzeEx && (
+                    <div className="podium-place bronze">
+                      <span className="podium-medal">3e ex.</span>
+                      <span className="podium-name">{podium.bronzeEx.name}</span>
+                      <span className="podium-club">{podium.bronzeEx.club}</span>
                     </div>
                   )}
                 </div>

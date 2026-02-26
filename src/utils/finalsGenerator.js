@@ -9,13 +9,14 @@
  * Semi 1 : Rank 1 vs Rank 4
  * Semi 2 : Rank 2 vs Rank 3
  * Final  : placeholder (gagnants des semis)
- * Bronze : placeholder (perdants des semis, si activé)
+ *
+ * Pas de petite finale : le 3e est le perdant de la demi qui a affronté le champion,
+ * le 3e ex-aequo est le perdant de la demi qui a affronté le 2e.
  *
  * @param {Array} standings - Classement trié (top 4 minimum)
- * @param {{ bronzeMatch: boolean }} options
  * @returns {Array<{phase: string, fighterA: object|null, fighterB: object|null}>}
  */
-export const generateFinalsMatches = (standings, options = { bronzeMatch: true }) => {
+export const generateFinalsMatches = (standings) => {
   const matches = [];
 
   if (standings.length < 2) {
@@ -46,16 +47,6 @@ export const generateFinalsMatches = (standings, options = { bronzeMatch: true }
       fighterA: null, // Gagnant semi1
       fighterB: null, // Gagnant semi2
     });
-
-    // Petite finale (si activée)
-    if (options.bronzeMatch) {
-      matches.push({
-        phase: "bronze",
-        label: "Petite finale",
-        fighterA: null, // Perdant semi1
-        fighterB: null, // Perdant semi2
-      });
-    }
   } else {
     // Moins de 4 combattants: juste une finale entre les 2 premiers
     matches.push({
@@ -77,7 +68,6 @@ export const PHASE_LABELS = {
   semi1: "Demi-finale 1",
   semi2: "Demi-finale 2",
   final: "Finale",
-  bronze: "Petite finale",
 };
 
 /**
