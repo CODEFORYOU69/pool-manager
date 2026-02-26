@@ -53,27 +53,27 @@ export default function ResultsPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
-      <header className="bg-white shadow">
+      <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-blue-800">
+          <h1 className="text-2xl font-bold text-primary-800">
             Résultats des compétitions
           </h1>
           <nav className="flex space-x-4">
             <Link
               href="/"
-              className="px-3 py-2 rounded hover:bg-gray-100 transition-colors"
+              className="px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors text-sm font-medium"
             >
               Accueil
             </Link>
             <Link
               href="/match"
-              className="px-3 py-2 rounded hover:bg-gray-100 transition-colors"
+              className="px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors text-sm font-medium"
             >
               Matchs
             </Link>
             <Link
               href="/results"
-              className="px-3 py-2 rounded bg-blue-100 text-blue-800 font-medium"
+              className="px-3 py-2 rounded-lg bg-primary-50 text-primary-700 font-semibold text-sm"
             >
               Résultats
             </Link>
@@ -84,7 +84,7 @@ export default function ResultsPage() {
       <main className="container mx-auto px-4 py-6 flex-grow">
         {loading ? (
           <div className="flex justify-center items-center h-32">
-            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500"></div>
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-500"></div>
           </div>
         ) : error ? (
           <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-md">
@@ -101,7 +101,7 @@ export default function ResultsPage() {
               </label>
               <select
                 id="competition-select"
-                className="w-full max-w-md rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200"
+                className="w-full max-w-md rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring focus:ring-primary-200"
                 value={competitionId || ""}
                 onChange={handleCompetitionChange}
               >

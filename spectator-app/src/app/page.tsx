@@ -699,51 +699,51 @@ export default function Home() {
         formatTime={formatTime}
       />
 
-      <div className="bg-white shadow-sm border-b">
+      <div className="bg-white shadow-sm border-b border-gray-200">
         {/* Indicateur de rafraîchissement */}
         {refreshing && (
-          <div className="bg-blue-50 text-blue-700 text-center text-xs py-1 animate-pulse">
+          <div className="bg-primary-50 text-primary-700 text-center text-xs py-1 animate-pulse">
             Mise à jour des données en cours...
           </div>
         )}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex space-x-8">
+          <div className="flex space-x-8 overflow-x-auto">
             <button
               onClick={() => setActiveTab("live")}
-              className={`py-4 px-1 font-medium text-sm border-b-2 ${
+              className={`py-4 px-1 font-medium text-sm border-b-2 whitespace-nowrap transition-colors ${
                 activeTab === "live"
-                  ? "border-blue-500 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
+                  ? "border-primary-500 text-primary-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
               }`}
             >
               Matchs par aire
             </button>
             <button
               onClick={() => setActiveTab("history")}
-              className={`py-4 px-1 font-medium text-sm border-b-2 ${
+              className={`py-4 px-1 font-medium text-sm border-b-2 whitespace-nowrap transition-colors ${
                 activeTab === "history"
-                  ? "border-blue-500 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
+                  ? "border-primary-500 text-primary-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
               }`}
             >
               Historique des résultats
             </button>
             <button
               onClick={() => setActiveTab("all")}
-              className={`py-4 px-1 font-medium text-sm border-b-2 ${
+              className={`py-4 px-1 font-medium text-sm border-b-2 whitespace-nowrap transition-colors ${
                 activeTab === "all"
-                  ? "border-blue-500 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
+                  ? "border-primary-500 text-primary-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
               }`}
             >
               Tous les matchs
             </button>
             <button
               onClick={() => setActiveTab("results")}
-              className={`py-4 px-1 font-medium text-sm border-b-2 ${
+              className={`py-4 px-1 font-medium text-sm border-b-2 whitespace-nowrap transition-colors ${
                 activeTab === "results"
-                  ? "border-blue-500 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
+                  ? "border-primary-500 text-primary-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
               }`}
             >
               Résultats des poules
@@ -767,7 +767,7 @@ export default function Home() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 text-center">
             <div className="flex flex-col items-center justify-center">
               <svg
-                className="animate-spin h-10 w-10 text-blue-500 mb-4"
+                className="animate-spin h-10 w-10 text-primary-500 mb-4"
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
                 viewBox="0 0 24 24"
@@ -786,10 +786,10 @@ export default function Home() {
                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                 ></path>
               </svg>
-              <h3 className="text-lg font-bold text-gray-900">
+              <h3 className="text-lg font-semibold text-gray-900">
                 Chargement des données...
               </h3>
-              <p className="text-gray-500 mt-1">
+              <p className="text-gray-500 mt-1 text-sm">
                 Nous récupérons les informations des matchs pour cette
                 compétition.
               </p>
@@ -866,9 +866,9 @@ export default function Home() {
         )}
       </main>
 
-      <footer className="bg-white border-t border-gray-200 py-4">
+      <footer className="bg-primary-900 py-4">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <p className="text-center text-sm text-gray-500">
+          <p className="text-center text-xs text-primary-200">
             Spectator App - Dernière mise à jour :{" "}
             {formatTime(lastUpdate.toISOString())}
           </p>

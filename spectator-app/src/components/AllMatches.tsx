@@ -468,7 +468,7 @@ export default function AllMatches({
       case "in_progress":
         return "bg-green-100 text-green-800";
       case "completed":
-        return "bg-blue-100 text-blue-800";
+        return "bg-primary-100 text-primary-800";
       default:
         return "bg-yellow-100 text-yellow-800";
     }
@@ -496,7 +496,7 @@ export default function AllMatches({
           onClick={exportToPdf}
           disabled={isExporting || filteredMatches.length === 0}
           className={`px-4 py-2 ${
-            isExporting ? "bg-gray-500" : "bg-blue-600 hover:bg-blue-700"
+            isExporting ? "bg-gray-500" : "bg-primary-600 hover:bg-primary-700"
           } text-white rounded-md flex items-center`}
         >
           {isExporting ? (
@@ -646,7 +646,7 @@ export default function AllMatches({
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {match.phase && match.phase !== "pool" ? (
                           <span className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded text-xs font-medium">
-                            {match.phase === "semi1" ? "Demi 1" : match.phase === "semi2" ? "Demi 2" : match.phase === "final" ? "Finale" : match.phase === "bronze" ? "Bronze" : "Poule"}
+                            {match.phase === "semi1" ? "Demi 1" : match.phase === "semi2" ? "Demi 2" : match.phase === "final" ? "Finale" : "Poule"}
                           </span>
                         ) : match.tour && match.tour > 0 ? (
                           <span className="text-xs text-gray-500">Tour {match.tour}</span>

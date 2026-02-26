@@ -211,7 +211,7 @@ export default function LiveMatches({
       );
     } else {
       return (
-        <span className="ml-2 bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded font-medium">
+        <span className="ml-2 bg-primary-100 text-primary-800 text-xs px-2 py-1 rounded font-medium">
           Dans les temps
         </span>
       );
@@ -273,7 +273,7 @@ export default function LiveMatches({
                             ? "bg-green-100 text-green-800"
                             : isPending
                             ? "bg-yellow-100 text-yellow-800"
-                            : "bg-blue-100 text-blue-800"
+                            : "bg-primary-100 text-primary-800"
                         }`}
                       >
                         {match.status === "in_progress"
@@ -288,11 +288,11 @@ export default function LiveMatches({
                     </span>
                     {match.phase && match.phase !== "pool" && (
                       <span className="text-xs bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded">
-                        {match.phase === "semi1" ? "Demi 1" : match.phase === "semi2" ? "Demi 2" : match.phase === "final" ? "Finale" : match.phase === "bronze" ? "Bronze" : match.phase}
+                        {match.phase === "semi1" ? "Demi 1" : match.phase === "semi2" ? "Demi 2" : match.phase === "final" ? "Finale" : match.phase}
                       </span>
                     )}
                     {match.tour && match.tour > 0 && (
-                      <span className="text-xs bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">
+                      <span className="text-xs bg-primary-100 text-primary-700 px-1.5 py-0.5 rounded">
                         Tour {match.tour}
                       </span>
                     )}
