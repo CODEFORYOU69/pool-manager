@@ -24,9 +24,31 @@ function startApiServer() {
     const dbPath = getDbPath();
     const apiPath = getApiPath();
 
+    // Lire le NEON_DATABASE_URL depuis api/.env ou api/.env.neon
+    let neonUrl = process.env.NEON_DATABASE_URL || "";
+    if (!neonUrl) {
+      const apiDir = isPackaged
+        ? path.join(process.resourcesPath, "api")
+        : path.join(__dirname, "api");
+      // Essayer .env.neon d'abord (inclus dans le bundle), puis .env (dev)
+      for (const file of [".env.neon", ".env"]) {
+        try {
+          const content = fs.readFileSync(path.join(apiDir, file), "utf-8");
+          const match = content.match(/^NEON_DATABASE_URL=["']?([^"'\r\n]+)/m);
+          if (match) { neonUrl = match[1]; break; }
+        } catch (e) { /* fichier absent, on continue */ }
+      }
+    }
+    if (neonUrl) {
+      console.log("[Electron] NEON_DATABASE_URL: configured");
+    } else {
+      console.log("[Electron] NEON_DATABASE_URL: not found (sync disabled)");
+    }
+
     const env = {
       ...process.env,
       DATABASE_URL: `file:${dbPath}`,
+      NEON_DATABASE_URL: neonUrl,
       PORT: "3001",
       NODE_ENV: isPackaged ? "production" : "development",
     };
