@@ -2608,6 +2608,223 @@ app.post("/api/pool/:id/generateFinals", async (req, res) => {
   }
 });
 
+// ─── CRUD individuel des participants (PoolConfig step 3) ───
+
+// PUT /api/participant/:id — Met à jour un participant
+app.put("/api/participant/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { nom, prenom, sexe, age, poids, ligue, club } = req.body;
+
+    const existing = await prisma.participant.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({ message: "Participant non trouvé" });
+    }
+
+    const updated = await prisma.participant.update({
+      where: { id },
+      data: { nom, prenom, sexe, age, poids, ligue, club },
+    });
+
+    triggerSync(prisma, existing.competitionId);
+    res.json(updated);
+  } catch (error) {
+    console.error("Erreur lors de la mise à jour du participant:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE /api/participant/:id — Supprime un participant et retourne les groupIds impactés
+app.delete("/api/participant/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const existing = await prisma.participant.findUnique({
+      where: { id },
+      include: { participantGroups: true },
+    });
+    if (!existing) {
+      return res.status(404).json({ message: "Participant non trouvé" });
+    }
+
+    const groupIds = existing.participantGroups.map((pg) => pg.groupId);
+
+    // La suppression cascade (MatchParticipant, PoolParticipant, ParticipantGroup)
+    await prisma.participant.delete({ where: { id } });
+
+    triggerSync(prisma, existing.competitionId);
+    res.json({ groupIds });
+  } catch (error) {
+    console.error("Erreur lors de la suppression du participant:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/competition/:id/addParticipant — Crée un participant et l'assigne au bon groupe
+app.post("/api/competition/:id/addParticipant", async (req, res) => {
+  try {
+    const competitionId = req.params.id;
+    const { nom, prenom, sexe, age, poids, ligue, club } = req.body;
+
+    // Créer le participant
+    const participant = await prisma.participant.create({
+      data: { nom, prenom, sexe, age, poids, ligue, club, competitionId },
+    });
+
+    // Trouver le bon groupe (gender + age range + weight range)
+    const gender = sexe === "F" ? "female" : "male";
+    const groups = await prisma.group.findMany({
+      where: { competitionId },
+      include: { pools: true },
+    });
+
+    const matchingGroup = groups.find(
+      (g) =>
+        g.gender === gender &&
+        age >= g.ageCategoryMin &&
+        age <= g.ageCategoryMax &&
+        poids <= g.weightCategoryMax
+    );
+
+    if (!matchingGroup) {
+      // Participant créé mais pas de catégorie — on le retourne quand même
+      return res.json({ participant, groupId: null, message: "Aucune catégorie correspondante" });
+    }
+
+    // Parmi les groupes correspondants au gender+age, trouver le bon poids
+    // (le plus petit weightCategoryMax qui est >= poids du participant)
+    const candidateGroups = groups.filter(
+      (g) =>
+        g.gender === gender &&
+        age >= g.ageCategoryMin &&
+        age <= g.ageCategoryMax &&
+        poids <= g.weightCategoryMax
+    );
+    candidateGroups.sort((a, b) => a.weightCategoryMax - b.weightCategoryMax);
+    const bestGroup = candidateGroups[0];
+
+    // Créer ParticipantGroup
+    await prisma.participantGroup.create({
+      data: { participantId: participant.id, groupId: bestGroup.id },
+    });
+
+    // Créer PoolParticipant (premier pool du groupe)
+    const pool = bestGroup.pools[0];
+    if (pool) {
+      await prisma.poolParticipant.create({
+        data: { poolId: pool.id, participantId: participant.id },
+      });
+    }
+
+    triggerSync(prisma, competitionId);
+    res.json({ participant, groupId: bestGroup.id });
+  } catch (error) {
+    console.error("Erreur lors de l'ajout du participant:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/participant/:id/reassign — Recalcule le bon groupe après modification
+app.post("/api/participant/:id/reassign", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const participant = await prisma.participant.findUnique({
+      where: { id },
+      include: { participantGroups: true, poolParticipants: true },
+    });
+    if (!participant) {
+      return res.status(404).json({ message: "Participant non trouvé" });
+    }
+
+    const oldGroupIds = participant.participantGroups.map((pg) => pg.groupId);
+
+    // Trouver le bon nouveau groupe
+    const gender = participant.sexe === "F" ? "female" : "male";
+    const groups = await prisma.group.findMany({
+      where: { competitionId: participant.competitionId },
+      include: { pools: true },
+    });
+
+    const candidateGroups = groups.filter(
+      (g) =>
+        g.gender === gender &&
+        participant.age >= g.ageCategoryMin &&
+        participant.age <= g.ageCategoryMax &&
+        participant.poids <= g.weightCategoryMax
+    );
+    candidateGroups.sort((a, b) => a.weightCategoryMax - b.weightCategoryMax);
+    const bestGroup = candidateGroups[0];
+
+    if (!bestGroup) {
+      return res.status(400).json({
+        message: "Aucune catégorie correspondante pour cet athlète",
+        oldGroupIds,
+        newGroupId: null,
+      });
+    }
+
+    // Supprimer anciens liens
+    await prisma.participantGroup.deleteMany({ where: { participantId: id } });
+    await prisma.poolParticipant.deleteMany({ where: { participantId: id } });
+
+    // Créer nouveaux liens
+    await prisma.participantGroup.create({
+      data: { participantId: id, groupId: bestGroup.id },
+    });
+
+    const pool = bestGroup.pools[0];
+    if (pool) {
+      await prisma.poolParticipant.create({
+        data: { poolId: pool.id, participantId: id },
+      });
+    }
+
+    triggerSync(prisma, participant.competitionId);
+    res.json({ oldGroupIds, newGroupId: bestGroup.id });
+  } catch (error) {
+    console.error("Erreur lors du reassign du participant:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/group/:id/invalidateDraw — Supprime tous les matchs pool-phase du groupe
+app.post("/api/group/:id/invalidateDraw", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const group = await prisma.group.findUnique({
+      where: { id },
+      include: { pools: { include: { matches: true } }, competition: true },
+    });
+    if (!group) {
+      return res.status(404).json({ message: "Groupe non trouvé" });
+    }
+
+    // Supprimer les matchs pool-phase (et leurs rounds + matchParticipants via cascade)
+    for (const pool of group.pools) {
+      const poolMatches = pool.matches.filter((m) => m.phase === "pool" || !m.phase);
+      for (const match of poolMatches) {
+        await prisma.round.deleteMany({ where: { matchId: match.id } });
+        await prisma.matchParticipant.deleteMany({ where: { matchId: match.id } });
+        await prisma.match.delete({ where: { id: match.id } });
+      }
+
+      // Remettre pool.phase à config
+      await prisma.pool.update({
+        where: { id: pool.id },
+        data: { phase: "config", fightsPerPerson: 0 },
+      });
+    }
+
+    triggerSync(prisma, group.competition.id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Erreur lors de l'invalidation du tirage:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || "0.0.0.0";
 

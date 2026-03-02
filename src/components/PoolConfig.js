@@ -12,6 +12,7 @@ import {
   computePssAreaAssignment,
   getPssForGroup,
 } from "../utils/pssAreaAssignment";
+import ParticipantModal from "./ParticipantModal";
 import "../styles/PoolConfig.css";
 
 const PoolConfig = ({
@@ -40,6 +41,11 @@ const PoolConfig = ({
   const [drawTours, setDrawTours] = useState({});
   const [validating, setValidating] = useState({});
   const [validated, setValidated] = useState({});
+
+  // Participant management
+  const [showParticipantModal, setShowParticipantModal] = useState(false);
+  const [editingParticipant, setEditingParticipant] = useState(null);
+  const [editingGroupId, setEditingGroupId] = useState(null);
 
   // PSS area mode
   const [areaMode, setAreaMode] = useState("balanced");
@@ -105,6 +111,137 @@ const PoolConfig = ({
 
     fetchGroups();
   }, [competitionId]);
+
+  /**
+   * Refresh categories from API (extracted from useEffect).
+   */
+  const refreshCategories = async () => {
+    if (!competitionId) return;
+    try {
+      const response = await fetch(
+        `${API_URL}/competition/${competitionId}/groupsWithDetails`,
+        { method: "GET", headers: { "Content-Type": "application/json" } }
+      );
+      if (!response.ok) throw new Error(`Erreur: ${response.status}`);
+      const data = await response.json();
+      setCategories(data);
+
+      // Re-initialize selectedK defaults for new groups
+      const defaults = { ...selectedK };
+      const alreadyValidated = { ...validated };
+      data.forEach((group) => {
+        if (defaults[group.id] === undefined) defaults[group.id] = 3;
+        const pool = group.pools?.[0];
+        if (pool && pool.matches && pool.matches.length > 0) {
+          alreadyValidated[group.id] = true;
+        }
+      });
+      setSelectedK(defaults);
+      setValidated(alreadyValidated);
+    } catch (err) {
+      console.error("Erreur lors du refresh des categories:", err);
+    }
+  };
+
+  /**
+   * Invalidate draw state for a set of groupIds (local + server).
+   */
+  const invalidateGroups = async (groupIds) => {
+    for (const gid of groupIds) {
+      // Clear local state
+      setValidated((prev) => { const n = { ...prev }; delete n[gid]; return n; });
+      setDrawResults((prev) => { const n = { ...prev }; delete n[gid]; return n; });
+      setDrawFights((prev) => { const n = { ...prev }; delete n[gid]; return n; });
+      setDrawTours((prev) => { const n = { ...prev }; delete n[gid]; return n; });
+
+      // If draw was saved in DB, invalidate server-side
+      const group = categories.find((g) => g.id === gid);
+      const pool = group?.pools?.[0];
+      if (pool && pool.matches && pool.matches.length > 0) {
+        try {
+          await fetch(`${API_URL}/group/${gid}/invalidateDraw`, { method: "POST" });
+        } catch (err) {
+          console.error("Erreur invalidateDraw pour group", gid, err);
+        }
+      }
+    }
+  };
+
+  /**
+   * Open modal in add mode (optionally for a specific group).
+   */
+  const handleAddParticipant = (groupId) => {
+    setEditingParticipant(null);
+    setEditingGroupId(groupId || null);
+    setShowParticipantModal(true);
+  };
+
+  /**
+   * Open modal in edit mode.
+   */
+  const handleEditParticipant = (participant, groupId) => {
+    setEditingParticipant(participant);
+    setEditingGroupId(groupId);
+    setShowParticipantModal(true);
+  };
+
+  /**
+   * Delete a participant.
+   */
+  const handleDeleteParticipant = async (participant, groupId) => {
+    if (!window.confirm(`Supprimer ${participant.nom} ${participant.prenom} ?`)) return;
+    try {
+      const resp = await fetch(`${API_URL}/participant/${participant.id}`, { method: "DELETE" });
+      if (!resp.ok) throw new Error("Erreur suppression");
+      const { groupIds } = await resp.json();
+      const impactedIds = groupIds && groupIds.length > 0 ? groupIds : [groupId];
+      await invalidateGroups(impactedIds);
+      await refreshCategories();
+    } catch (err) {
+      alert(`Erreur lors de la suppression : ${err.message}`);
+    }
+  };
+
+  /**
+   * Save participant (add or edit) from modal.
+   */
+  const handleSaveParticipant = async (data) => {
+    if (editingParticipant) {
+      // --- Edit existing ---
+      const resp = await fetch(`${API_URL}/participant/${editingParticipant.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!resp.ok) throw new Error("Erreur modification");
+
+      // Reassign to correct group
+      const reassignResp = await fetch(`${API_URL}/participant/${editingParticipant.id}/reassign`, {
+        method: "POST",
+      });
+      if (!reassignResp.ok) throw new Error("Erreur reassignation");
+      const { oldGroupIds, newGroupId } = await reassignResp.json();
+
+      // Invalidate all impacted groups (old + new)
+      const impactedIds = [...new Set([...(oldGroupIds || []), ...(newGroupId ? [newGroupId] : [])])];
+      await invalidateGroups(impactedIds);
+    } else {
+      // --- Add new ---
+      const resp = await fetch(`${API_URL}/competition/${competitionId}/addParticipant`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!resp.ok) throw new Error("Erreur ajout");
+      const result = await resp.json();
+      if (!result.groupId) {
+        alert("Athlete cree mais aucune categorie correspondante trouvee.");
+      } else {
+        await invalidateGroups([result.groupId]);
+      }
+    }
+    await refreshCategories();
+  };
 
   // Compute PSS assignment when mode is PSS and categories are loaded
   const numAreas = useMemo(() => {
@@ -586,6 +723,13 @@ const PoolConfig = ({
         <div className="global-buttons">
           <button
             type="button"
+            className="add-participant-btn bulk-btn"
+            onClick={() => handleAddParticipant(null)}
+          >
+            + Ajouter un athlete
+          </button>
+          <button
+            type="button"
             className="draw-btn bulk-btn"
             onClick={handleBulkDraw}
             disabled={bulkDrawing || countNeedDraw() === 0}
@@ -636,7 +780,17 @@ const PoolConfig = ({
               className={`category-card ${isValidated ? "validated" : ""}`}
             >
               <div className="category-header">
-                <h3 className="category-title">{getCategoryName(group)}</h3>
+                <div className="category-title-row">
+                  <h3 className="category-title">{getCategoryName(group)}</h3>
+                  <button
+                    type="button"
+                    className="add-participant-category-btn"
+                    onClick={() => handleAddParticipant(group.id)}
+                    title="Ajouter un athlete a cette categorie"
+                  >
+                    +
+                  </button>
+                </div>
                 <div className="category-info">
                   <span className="fighters-count">
                     {n} combattant{n > 1 ? "s" : ""}
@@ -667,6 +821,7 @@ const PoolConfig = ({
                       <th>Nom</th>
                       <th>Club</th>
                       <th>Ligue</th>
+                      <th className="actions-col">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -678,10 +833,33 @@ const PoolConfig = ({
                         </td>
                         <td>{fighter.club || "-"}</td>
                         <td>{fighter.ligue || "-"}</td>
+                        <td className="actions-col">
+                          <button
+                            type="button"
+                            className="action-btn edit-btn"
+                            onClick={() => handleEditParticipant(fighter, group.id)}
+                            title="Modifier"
+                          >
+                            &#9998;
+                          </button>
+                          <button
+                            type="button"
+                            className="action-btn delete-btn"
+                            onClick={() => handleDeleteParticipant(fighter, group.id)}
+                            title="Supprimer"
+                          >
+                            &#10005;
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              )}
+              {fighters.length > 0 && fighters.length < 2 && (
+                <p className="warning-message">
+                  Moins de 2 combattants — tirage impossible.
+                </p>
               )}
 
               {/* K selector */}
@@ -827,6 +1005,13 @@ const PoolConfig = ({
           Suivant
         </button>
       </div>
+
+      <ParticipantModal
+        isOpen={showParticipantModal}
+        onClose={() => setShowParticipantModal(false)}
+        onSave={handleSaveParticipant}
+        participant={editingParticipant}
+      />
     </div>
   );
 };
