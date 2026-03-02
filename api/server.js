@@ -1,5 +1,7 @@
 require("dotenv").config({ path: __dirname + "/.env" });
 const express = require("express");
+const path = require("path");
+const fs = require("fs");
 const { PrismaClient } = require("@prisma/client");
 const cors = require("cors");
 
@@ -7,8 +9,48 @@ const prisma = new PrismaClient();
 const { triggerSync } = require("./neonSync");
 const app = express();
 
+// Ensure SQLite database tables exist by applying migration SQL directly
+async function ensureDatabase() {
+  try {
+    await prisma.competition.findFirst();
+    console.log("[API] Database OK");
+  } catch (err) {
+    console.log("[API] Database needs initialization, applying migrations...");
+    const migrationsDir = path.join(__dirname, "prisma", "migrations");
+    if (fs.existsSync(migrationsDir)) {
+      const dirs = fs
+        .readdirSync(migrationsDir)
+        .filter((d) => !d.includes("."))
+        .sort();
+      for (const dir of dirs) {
+        const sqlPath = path.join(migrationsDir, dir, "migration.sql");
+        if (fs.existsSync(sqlPath)) {
+          const sql = fs.readFileSync(sqlPath, "utf-8");
+          const statements = sql
+            .split(";")
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0);
+          for (const stmt of statements) {
+            try {
+              await prisma.$executeRawUnsafe(stmt);
+            } catch (e) {
+              // Table might already exist, ignore
+            }
+          }
+        }
+      }
+    }
+    console.log("[API] Database initialized");
+  }
+}
+
 app.use(cors());
 app.use(express.json());
+
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.json({ status: "ok" });
+});
 
 // Route pour initialiser/sauvegarder une compétition
 app.post("/api/competition", async (req, res) => {
@@ -2210,9 +2252,10 @@ app.get("/api/pool/:id/standings", async (req, res) => {
 app.post("/api/pool/:id/draw", async (req, res) => {
   try {
     const { id } = req.params;
-    const { fights, tours, fightsPerPerson } = req.body;
+    const { fights, tours, fightsPerPerson, allowedAreas } = req.body;
     // fights: Array<{ fighterA: string, fighterB: string }>
     // tours: Array<Array<{ fighterA: string, fighterB: string }>>
+    // allowedAreas: Array<number> (optionnel) - numéros d'aires autorisées (mode PSS)
 
     if (!fights || !tours || !fightsPerPerson) {
       return res.status(400).json({ message: "fights, tours et fightsPerPerson sont requis" });
@@ -2227,9 +2270,19 @@ app.post("/api/pool/:id/draw", async (req, res) => {
       return res.status(404).json({ message: "Poule non trouvée" });
     }
 
-    const areas = pool.group.competition.areas;
-    if (!areas || areas.length === 0) {
+    const allAreas = pool.group.competition.areas;
+    if (!allAreas || allAreas.length === 0) {
       return res.status(400).json({ message: "Aucune aire de combat trouvée" });
+    }
+
+    // Filtrer les aires si allowedAreas est fourni (mode PSS)
+    let areas = allAreas;
+    if (allowedAreas && Array.isArray(allowedAreas) && allowedAreas.length > 0) {
+      const filtered = allAreas.filter(a => allowedAreas.includes(a.areaNumber));
+      if (filtered.length > 0) {
+        areas = filtered;
+        console.log(`Pool ${id}: mode PSS, aires autorisées: [${allowedAreas.join(", ")}]`);
+      }
     }
 
     // Trouver l'aire la moins chargée pour distribuer les catégories équitablement
@@ -2558,11 +2611,20 @@ app.post("/api/pool/:id/generateFinals", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3001;
-const HOST = process.env.HOST || "0.0.0.0"; // Écouter sur toutes les interfaces réseau
+const HOST = process.env.HOST || "0.0.0.0";
 
-app.listen(PORT, HOST, () => {
-  console.log(`Serveur démarré sur http://${HOST}:${PORT}`);
-  console.log(
-    `Pour accéder depuis d'autres ordinateurs, utilisez l'adresse IP de ce serveur`
-  );
-});
+// Initialize database then start server
+ensureDatabase()
+  .then(() => {
+    app.listen(PORT, HOST, () => {
+      console.log(`Serveur démarré sur http://${HOST}:${PORT}`);
+      // Notify parent process (Electron main) that server is ready
+      if (process.send) {
+        process.send({ type: "ready", port: PORT });
+      }
+    });
+  })
+  .catch((err) => {
+    console.error("[API] Failed to initialize database:", err);
+    process.exit(1);
+  });

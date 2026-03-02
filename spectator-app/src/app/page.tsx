@@ -7,6 +7,7 @@ import MatchHistory from "@/components/MatchHistory";
 import Results from "@/components/Results";
 import TournamentHeader from "@/components/TournamentHeader";
 import { Competition, Match } from "@/types";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 
 // URL de l'API - toujours utiliser les routes internes Next.js
@@ -956,12 +957,34 @@ export default function Home() {
         )}
       </main>
 
-      <footer className="bg-primary-900 py-4">
+      <footer className="bg-gray-100 border-t-2 border-red-500 py-4">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <p className="text-center text-xs text-primary-200">
-            Spectator App - Dernière mise à jour :{" "}
-            {formatTime(lastUpdate.toISOString())}
-          </p>
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <Image
+                src="/logopng.png"
+                alt="KYO"
+                width={28}
+                height={28}
+                className="object-contain"
+              />
+              <span className="text-sm font-bold text-gray-800 tracking-wide">KYO</span>
+            </div>
+            <div className="text-center">
+              <p className="text-xs font-medium text-gray-600">
+                &copy; {new Date().getFullYear()} KYO - Tous droits r&eacute;serv&eacute;s
+              </p>
+              <p className="text-[10px] text-gray-400 mt-0.5">
+                Gestionnaire de comp&eacute;titions de Taekwondo
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] text-gray-400 bg-gray-200 px-2 py-0.5 rounded-full">v1.0.0</span>
+              <span className="text-[10px] text-gray-400">
+                MAJ : {formatTime(lastUpdate.toISOString())}
+              </span>
+            </div>
+          </div>
         </div>
       </footer>
     </div>

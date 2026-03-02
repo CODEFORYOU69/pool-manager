@@ -1,14 +1,19 @@
-const { PrismaClient } = require("@prisma/client");
+// Use the dedicated Neon Prisma client (PostgreSQL) separate from local SQLite client
+let neonPrismaModule;
+try {
+  neonPrismaModule = require(".prisma/client-neon");
+} catch {
+  neonPrismaModule = null;
+}
 
-// Second Prisma client for Neon (remote database)
 let neonPrisma = null;
 
 const NEON_DATABASE_URL = process.env.NEON_DATABASE_URL;
 
 function getNeonPrisma() {
-  if (!NEON_DATABASE_URL) return null;
+  if (!NEON_DATABASE_URL || !neonPrismaModule) return null;
   if (!neonPrisma) {
-    neonPrisma = new PrismaClient({
+    neonPrisma = new neonPrismaModule.PrismaClient({
       datasources: { db: { url: NEON_DATABASE_URL } },
     });
     console.log("[NeonSync] Client Neon initialisé");

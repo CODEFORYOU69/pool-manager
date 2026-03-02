@@ -456,6 +456,182 @@
   background-color: var(--color-primary-600);
 }
 
+/* ── Area Mode Section (PSS) ── */
+.area-mode-section {
+  background-color: var(--color-gray-50);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
+  margin-bottom: var(--space-5);
+  border: 1px solid var(--color-gray-200);
+}
+
+.area-mode-label {
+  display: block;
+  font-weight: var(--font-semibold);
+  color: var(--color-gray-800);
+  margin-bottom: var(--space-3);
+  font-size: var(--text-base);
+}
+
+.area-mode-options {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.mode-option {
+  flex: 1;
+  min-width: 200px;
+  padding: var(--space-3) var(--space-4);
+  border: 2px solid var(--color-gray-300);
+  background-color: var(--color-white);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  transition: all var(--transition-fast);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.mode-option:hover {
+  border-color: var(--color-primary-300);
+  background-color: var(--color-primary-50);
+}
+
+.mode-option.active {
+  border-color: var(--color-primary-500);
+  background-color: var(--color-primary-50);
+  box-shadow: 0 0 0 1px var(--color-primary-500);
+}
+
+.mode-option-title {
+  font-weight: var(--font-semibold);
+  color: var(--color-gray-900);
+  font-size: var(--text-sm);
+}
+
+.mode-option-desc {
+  font-size: var(--text-xs);
+  color: var(--color-gray-500);
+}
+
+.mode-option.active .mode-option-title {
+  color: var(--color-primary-700);
+}
+
+.mode-option.active .mode-option-desc {
+  color: var(--color-primary-600);
+}
+
+/* ── PSS Preview ── */
+.pss-preview {
+  background-color: var(--color-white);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
+  margin-bottom: var(--space-5);
+  border: 1px solid var(--color-primary-200);
+  border-left: 4px solid var(--color-primary-500);
+}
+
+.pss-preview h3 {
+  margin-top: 0;
+  margin-bottom: var(--space-3);
+  color: var(--color-primary-700);
+  font-size: var(--text-md);
+  font-weight: var(--font-semibold);
+}
+
+.pss-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: var(--color-white);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.pss-preview-table th,
+.pss-preview-table td {
+  padding: var(--space-2-5) var(--space-3);
+  text-align: left;
+  border-bottom: 1px solid var(--color-gray-100);
+}
+
+.pss-preview-table th {
+  background-color: var(--color-primary-50);
+  font-weight: var(--font-semibold);
+  color: var(--color-primary-700);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pss-preview-table td {
+  font-size: var(--text-sm);
+  color: var(--color-gray-700);
+}
+
+.pss-preview-table tbody tr:hover {
+  background-color: var(--color-primary-50);
+}
+
+.pss-match-count {
+  font-weight: var(--font-semibold);
+  text-align: center !important;
+}
+
+/* ── PSS Badge ── */
+.pss-badge {
+  background-color: #e0e7ff;
+  color: #3730a3;
+  padding: var(--space-1) var(--space-2-5);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  white-space: nowrap;
+}
+
+.pss-area-info {
+  background-color: var(--color-primary-50);
+  color: var(--color-primary-700);
+  padding: var(--space-1) var(--space-2-5);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  white-space: nowrap;
+}
+
+/* ── PSS Area Number Badge ── */
+.area-number-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background-color: var(--color-primary-500);
+  color: var(--color-white);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--font-bold);
+  margin-right: var(--space-1);
+}
+
+/* ── PSS Categories in Preview ── */
+.pss-categories-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pss-category-tag {
+  background-color: var(--color-gray-100);
+  color: var(--color-gray-700);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
   .category-header {
@@ -480,6 +656,19 @@
   }
 
   .fighters-table {
+    display: block;
+    overflow-x: auto;
+  }
+
+  .area-mode-options {
+    flex-direction: column;
+  }
+
+  .mode-option {
+    min-width: unset;
+  }
+
+  .pss-preview-table {
     display: block;
     overflow-x: auto;
   }

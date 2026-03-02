@@ -1,24 +1,4 @@
-// Fonction pour détecter si l'application est exécutée dans Electron
-const isElectron = () => {
-  // Vérification plus robuste pour Electron
-  return (
-    typeof window !== "undefined" &&
-    ((window.process && window.process.type === "renderer") ||
-      (window.navigator &&
-        window.navigator.userAgent.indexOf("Electron") !== -1))
-  );
-};
-
-// URLs de l'API - utilise localhost sur votre machine, adresse IP sur le réseau, ou variable d'environnement
-const LOCAL_API_URL = "http://localhost:3001/api";
-const NETWORK_API_URL = "http://192.168.1.18:3001/api";
-
-// Utiliser NEXT_PUBLIC_API_URL si disponible (déploiement Vercel), sinon utiliser l'URL selon le contexte
-const API_URL = process.env.NEXT_PUBLIC_API_URL
-  ? process.env.NEXT_PUBLIC_API_URL
-  : isElectron()
-  ? LOCAL_API_URL
-  : NETWORK_API_URL;
+const API_URL = "http://localhost:3001/api";
 
 export { API_URL }; // Exporter API_URL pour l'utiliser dans d'autres fichiers
 
@@ -2219,12 +2199,17 @@ export const fetchPoolStandings = async (poolId) => {
  * @param {Array} fights - Liste de paires {fighterA, fighterB}
  * @param {Array} tours - Combats groupés par tour
  * @param {number} fightsPerPerson
+ * @param {Array<number>} [allowedAreas] - Numéros d'aires autorisées (mode PSS)
  */
-export const performDraw = async (poolId, fights, tours, fightsPerPerson) => {
+export const performDraw = async (poolId, fights, tours, fightsPerPerson, allowedAreas) => {
+  const body = { fights, tours, fightsPerPerson };
+  if (allowedAreas && allowedAreas.length > 0) {
+    body.allowedAreas = allowedAreas;
+  }
   const response = await fetch(`${API_URL}/pool/${poolId}/draw`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ fights, tours, fightsPerPerson }),
+    body: JSON.stringify(body),
   });
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));

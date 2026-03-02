@@ -5,8 +5,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js",
-    "postinstall": "prisma generate",
-    "build": "prisma generate"
+    "postinstall": "prisma generate && prisma generate --schema=prisma/schema-neon.prisma",
+    "build": "prisma generate && prisma generate --schema=prisma/schema-neon.prisma"
   },
   "keywords": [],
   "author": "",

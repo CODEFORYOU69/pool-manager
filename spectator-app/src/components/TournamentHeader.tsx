@@ -26,17 +26,24 @@ export default function TournamentHeader({
         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex items-center space-x-4">
             <Image
+              src="/logopng.png"
+              alt="KYO Logo"
+              width={52}
+              height={52}
+              className="object-contain"
+            />
+            <Image
               src="/logo-fftda.png"
               alt="Logo FFTDA"
-              width={64}
-              height={64}
+              width={52}
+              height={52}
               className="object-contain"
             />
             <Image
               src="/30ansfftda.jpeg"
               alt="30 ans FFTDA"
-              width={64}
-              height={64}
+              width={52}
+              height={52}
               className="object-contain rounded"
             />
             <div className="text-center md:text-left">

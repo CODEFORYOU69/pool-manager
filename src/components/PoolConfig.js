@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useCompetition } from "../context/CompetitionContext";
 import { API_URL } from "../services/dbService";
 import { performDraw } from "../services/dbService";
@@ -8,6 +8,10 @@ import {
   organizeFightsIntoTours,
   summarizeDraw,
 } from "../utils/drawGenerator";
+import {
+  computePssAreaAssignment,
+  getPssForGroup,
+} from "../utils/pssAreaAssignment";
 import "../styles/PoolConfig.css";
 
 const PoolConfig = ({
@@ -36,6 +40,9 @@ const PoolConfig = ({
   const [drawTours, setDrawTours] = useState({});
   const [validating, setValidating] = useState({});
   const [validated, setValidated] = useState({});
+
+  // PSS area mode
+  const [areaMode, setAreaMode] = useState("balanced");
 
   // Fetch groups with details on mount
   useEffect(() => {
@@ -99,6 +106,20 @@ const PoolConfig = ({
     fetchGroups();
   }, [competitionId]);
 
+  // Compute PSS assignment when mode is PSS and categories are loaded
+  const numAreas = useMemo(() => {
+    if (!tournamentConfig) return 1;
+    const n = parseInt(tournamentConfig.numAreas, 10);
+    return !isNaN(n) && n > 0 ? n : 1;
+  }, [tournamentConfig]);
+
+  const pssAssignment = useMemo(() => {
+    if (areaMode !== "pss" || categories.length === 0 || numAreas < 1) {
+      return null;
+    }
+    return computePssAreaAssignment(categories, numAreas, globalK);
+  }, [areaMode, categories, numAreas, globalK]);
+
   /**
    * Build a display name for a category group.
    */
@@ -156,6 +177,14 @@ const PoolConfig = ({
       }
     });
     return map;
+  };
+
+  /**
+   * Get allowedAreas for a group based on PSS mode.
+   */
+  const getAllowedAreas = (groupId) => {
+    if (areaMode !== "pss" || !pssAssignment) return undefined;
+    return pssAssignment.groupAreaMap[groupId] || undefined;
   };
 
   /**
@@ -263,7 +292,8 @@ const PoolConfig = ({
 
     try {
       setValidating((prev) => ({ ...prev, [groupId]: true }));
-      await performDraw(poolId, fights, tours, k);
+      const allowedAreas = getAllowedAreas(groupId);
+      await performDraw(poolId, fights, tours, k, allowedAreas);
       setValidated((prev) => ({ ...prev, [groupId]: true }));
       console.log(`Tirage valide pour la categorie ${getCategoryName(group)}`);
     } catch (err) {
@@ -368,7 +398,8 @@ const PoolConfig = ({
 
       try {
         setValidating((prev) => ({ ...prev, [groupId]: true }));
-        await performDraw(poolId, drawFights[groupId], drawTours[groupId], k);
+        const allowedAreas = getAllowedAreas(groupId);
+        await performDraw(poolId, drawFights[groupId], drawTours[groupId], k, allowedAreas);
         setValidated((prev) => ({ ...prev, [groupId]: true }));
       } catch (err) {
         errors.push(`${getCategoryName(group)}: ${err.message}`);
@@ -466,11 +497,77 @@ const PoolConfig = ({
     <div className="pool-config-container">
       <h2>Configuration des poules et tirage</h2>
 
+      {/* Mode de repartition des aires */}
+      <div className="area-mode-section">
+        <label className="area-mode-label">Repartition des aires :</label>
+        <div className="area-mode-options">
+          <button
+            type="button"
+            className={`mode-option ${areaMode === "balanced" ? "active" : ""}`}
+            onClick={() => setAreaMode("balanced")}
+          >
+            <span className="mode-option-title">Equilibre</span>
+            <span className="mode-option-desc">Repartition equilibree sur toutes les aires</span>
+          </button>
+          <button
+            type="button"
+            className={`mode-option ${areaMode === "pss" ? "active" : ""}`}
+            onClick={() => setAreaMode("pss")}
+          >
+            <span className="mode-option-title">Par taille de plastrons (PSS)</span>
+            <span className="mode-option-desc">Regrouper par taille PSS (max 1-2 tailles/aire)</span>
+          </button>
+        </div>
+      </div>
+
+      {/* PSS Preview Table */}
+      {areaMode === "pss" && pssAssignment && pssAssignment.pssSummary.length > 0 && (
+        <div className="pss-preview">
+          <h3>Affectation des aires par taille PSS</h3>
+          <table className="pss-preview-table">
+            <thead>
+              <tr>
+                <th>Taille(s) PSS</th>
+                <th>Aire(s)</th>
+                <th>Categories</th>
+                <th>Combats estimes</th>
+                <th>Combats/aire</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pssAssignment.pssSummary.map((row, idx) => (
+                <tr key={idx}>
+                  <td>
+                    <span className="pss-badge">
+                      {row.pssLabels.join(", ")}
+                    </span>
+                  </td>
+                  <td>
+                    {row.areaNumbers.map((a) => (
+                      <span key={a} className="area-number-badge">{a}</span>
+                    ))}
+                  </td>
+                  <td>
+                    <div className="pss-categories-list">
+                      {row.groups.map((g) => (
+                        <span key={g.id} className="pss-category-tag">{g.name}</span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="pss-match-count">{row.matchEstimate}</td>
+                  <td className="pss-match-count">{row.matchesPerArea}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {/* Actions globales */}
       <div className="global-actions">
         <div className="global-k-section">
           <label className="global-k-label">
-            Combats par personne (toutes catégories) :
+            Combats par personne (toutes categories) :
           </label>
           <div className="k-selector">
             {[2, 3, 4].map((kOption) => (
@@ -495,7 +592,7 @@ const PoolConfig = ({
           >
             {bulkDrawing
               ? "Tirage en cours..."
-              : `Tirer toutes les catégories (${countNeedDraw()})`}
+              : `Tirer toutes les categories (${countNeedDraw()})`}
           </button>
           <button
             type="button"
@@ -511,10 +608,10 @@ const PoolConfig = ({
 
         <div className="global-progress">
           <span className="progress-text">
-            {Object.keys(validated).length} / {categories.length} catégories validées
+            {Object.keys(validated).length} / {categories.length} categories validees
           </span>
           {allValidated() && (
-            <span className="all-validated-badge">Tout est prêt !</span>
+            <span className="all-validated-badge">Tout est pret !</span>
           )}
         </div>
       </div>
@@ -530,6 +627,8 @@ const PoolConfig = ({
           const hasDraw = !!drawResults[group.id];
           const isValidated = !!validated[group.id];
           const isValidating = !!validating[group.id];
+          const groupPss = getPssForGroup(group);
+          const groupAllowedAreas = getAllowedAreas(group.id);
 
           return (
             <div
@@ -545,6 +644,14 @@ const PoolConfig = ({
                   <span className={`parity-badge ${isOdd ? "odd" : "even"}`}>
                     {isOdd ? "Impair" : "Pair"}
                   </span>
+                  {groupPss && (
+                    <span className="pss-badge">PSS: {groupPss}</span>
+                  )}
+                  {areaMode === "pss" && groupAllowedAreas && (
+                    <span className="pss-area-info">
+                      Aire{groupAllowedAreas.length > 1 ? "s" : ""}: {groupAllowedAreas.join(", ")}
+                    </span>
+                  )}
                   {isValidated && (
                     <span className="validated-badge">Valide</span>
                   )}

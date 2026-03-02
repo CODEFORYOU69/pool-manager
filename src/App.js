@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import CompetitionList from "./components/CompetitionList";
+import Footer from "./components/Footer";
+import HomePage from "./components/HomePage";
 import EliminationBracket from "./components/EliminationBracket";
 import GroupDisplay from "./components/GroupDisplay";
 import ImportCSV from "./components/ImportCSV";
@@ -21,6 +23,8 @@ import "./styles/common.css"; // Importer les styles communs
 // Composant interne qui utilise le contexte
 function AppContent() {
   const { setCompetitionId, setCompetitionName } = useCompetition();
+
+  const [showLanding, setShowLanding] = useState(true);
 
   // États globaux de l'application
   const [participants, setParticipants] = useState([]);
@@ -375,6 +379,10 @@ function AppContent() {
   // Ne pas afficher la sidebar à l'étape 0 (liste des compétitions)
   const shouldShowSidebar = currentStep > 0;
 
+  if (showLanding) {
+    return <HomePage onStart={() => setShowLanding(false)} />;
+  }
+
   return (
     <div className="app-container">
       {shouldShowSidebar && (
@@ -396,6 +404,7 @@ function AppContent() {
           )}
         </header>
         <main className="App-main">{renderStep()}</main>
+        <Footer />
       </div>
     </div>
   );

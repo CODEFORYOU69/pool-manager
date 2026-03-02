@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import "../styles/PhaseEditor.css";
 import { createDefaultPhases, validatePhases } from "../utils/phaseManager";
+import { computePssAreaAssignment } from "../utils/pssAreaAssignment";
 
 const PhaseEditor = ({ groups, tournamentConfig, onPhasesChange }) => {
   const [phases, setPhases] = useState([]);
@@ -8,6 +9,7 @@ const PhaseEditor = ({ groups, tournamentConfig, onPhasesChange }) => {
   const [unusedGroups, setUnusedGroups] = useState([]);
   const [numAreas, setNumAreas] = useState(1);
   const [manuallyAdjusted, setManuallyAdjusted] = useState(false);
+  const [phaseAreaMode, setPhaseAreaMode] = useState("balanced");
 
   useEffect(() => {
     if (groups && groups.length > 0 && tournamentConfig) {
@@ -282,6 +284,31 @@ const PhaseEditor = ({ groups, tournamentConfig, onPhasesChange }) => {
     setError(null);
   };
 
+  const applyPssAssignment = () => {
+    if (!groups || groups.length === 0 || numAreas < 1) return;
+
+    const { groupAreaMap } = computePssAreaAssignment(groups, numAreas, 3);
+
+    // Update each group's aires in all phases based on PSS assignment
+    const newPhases = phases.map((phase) => ({
+      ...phase,
+      groups: phase.groups.map((group) => ({
+        ...group,
+        aires: groupAreaMap[group.groupId] || group.aires,
+      })),
+    }));
+
+    const validation = validatePhases(newPhases, numAreas);
+    if (!validation.valid) {
+      setError(validation.errors[0]);
+      return;
+    }
+
+    setPhases(newPhases);
+    onPhasesChange(newPhases);
+    setError(null);
+  };
+
   const renderAreaButtons = (phaseIndex, groupIndex, selectedAires) => {
     const totalAreas = numAreas;
     console.log("Rendu des boutons d'aires. Nombre total d'aires:", totalAreas);
@@ -407,6 +434,34 @@ const PhaseEditor = ({ groups, tournamentConfig, onPhasesChange }) => {
           <div className="auto-detection-note">
             <i>Le nombre d'aires a été détecté automatiquement</i>
           </div>
+        )}
+      </div>
+
+      <div className="phase-area-mode-section">
+        <label className="phase-area-mode-label">Mode d'affectation des aires :</label>
+        <div className="phase-area-mode-options">
+          <button
+            type="button"
+            className={`phase-mode-option ${phaseAreaMode === "balanced" ? "active" : ""}`}
+            onClick={() => setPhaseAreaMode("balanced")}
+          >
+            Equilibre
+          </button>
+          <button
+            type="button"
+            className={`phase-mode-option ${phaseAreaMode === "pss" ? "active" : ""}`}
+            onClick={() => {
+              setPhaseAreaMode("pss");
+              applyPssAssignment();
+            }}
+          >
+            Par taille PSS
+          </button>
+        </div>
+        {phaseAreaMode === "pss" && (
+          <p className="phase-pss-hint">
+            Les aires ont ete auto-assignees par taille de plastron. Vous pouvez ajuster manuellement.
+          </p>
         )}
       </div>
 
