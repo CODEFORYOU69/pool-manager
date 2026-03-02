@@ -282,20 +282,20 @@ const PoolSchedule = ({ tournamentConfig, nextStep, prevStep, setSchedule: setPa
                                   Combat {match.matchNumber || "?"}
                                 </div>
                                 <div className="fight-participants">
-                                  <span className="fighter fighter-red">
+                                  <span className="fighter fighter-blue">
                                     {fighterA}
                                     {clubA && (
                                       <span className="fighter-club"> ({clubA})</span>
                                     )}
-                                    <span className="fighter-color-tag red-tag">R</span>
+                                    <span className="fighter-color-tag blue-tag">B</span>
                                   </span>
                                   <span className="fight-vs">vs</span>
-                                  <span className="fighter fighter-blue">
+                                  <span className="fighter fighter-red">
                                     {fighterB}
                                     {clubB && (
                                       <span className="fighter-club"> ({clubB})</span>
                                     )}
-                                    <span className="fighter-color-tag blue-tag">B</span>
+                                    <span className="fighter-color-tag red-tag">R</span>
                                   </span>
                                 </div>
                                 <div

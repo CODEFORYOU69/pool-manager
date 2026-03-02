@@ -1044,10 +1044,8 @@ app.get("/api/competition/:id", async (req, res) => {
       return res.status(404).json({ message: "Compétition non trouvée" });
     }
 
-    // Ajouter une propriété numAreas plus explicite pour faciliter l'utilisation côté client
     const responseData = {
       ...competition,
-      numAreas: competition.areas.length,
     };
 
     res.json(responseData);

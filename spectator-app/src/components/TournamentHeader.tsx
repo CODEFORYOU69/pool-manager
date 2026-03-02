@@ -28,8 +28,8 @@ export default function TournamentHeader({
             <Image
               src="/logopng.png"
               alt="KYO Logo"
-              width={52}
-              height={52}
+              width={72}
+              height={72}
               className="object-contain"
             />
             <Image

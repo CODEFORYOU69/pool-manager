@@ -964,8 +964,8 @@ export default function Home() {
               <Image
                 src="/logopng.png"
                 alt="KYO"
-                width={28}
-                height={28}
+                width={48}
+                height={48}
                 className="object-contain"
               />
               <span className="text-sm font-bold text-gray-800 tracking-wide">KYO</span>
