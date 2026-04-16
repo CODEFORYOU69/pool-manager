@@ -376,31 +376,29 @@ const PoolFinals = ({ tournamentConfig, nextStep, prevStep }) => {
             {standings[pool.id] && standings[pool.id].length >= 4 && (
               <p className="qualified-legend">* = Qualifié(e) pour les finales</p>
             )}
+            {standings[pool.id] && standings[pool.id].length > 0 && standings[pool.id].length <= 3 && (
+              <p className="qualified-legend">
+                Classement final issu directement de la poule (≤3 combattants, pas de phase finale).
+              </p>
+            )}
           </div>
 
-          {/* Bouton génération finales */}
-          {!hasFinalsGenerated(pool.id) && (
-            <div className="generate-finals-section">
-              <button
-                className="btn-generate-finals"
-                onClick={() => handleGenerateFinals(pool.id)}
-                disabled={
-                  generating === pool.id ||
-                  !standings[pool.id] ||
-                  standings[pool.id].length < 2
-                }
-              >
-                {generating === pool.id
-                  ? "Génération en cours..."
-                  : "Générer les finales"}
-              </button>
-              {(!standings[pool.id] || standings[pool.id].length < 2) && (
-                <p className="warning-text">
-                  Au moins 2 combattants classés sont nécessaires pour générer les finales.
-                </p>
-              )}
-            </div>
-          )}
+          {/* Bouton génération finales (uniquement ≥4 combattants) */}
+          {!hasFinalsGenerated(pool.id) &&
+            standings[pool.id] &&
+            standings[pool.id].length >= 4 && (
+              <div className="generate-finals-section">
+                <button
+                  className="btn-generate-finals"
+                  onClick={() => handleGenerateFinals(pool.id)}
+                  disabled={generating === pool.id}
+                >
+                  {generating === pool.id
+                    ? "Génération en cours..."
+                    : "Générer les finales"}
+                </button>
+              </div>
+            )}
 
           {/* Bracket de finales */}
           {hasFinalsGenerated(pool.id) && (

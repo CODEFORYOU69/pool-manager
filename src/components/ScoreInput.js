@@ -2086,6 +2086,178 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep, tournam
       });
   };
 
+  // Exporter la liste des combats en PDF via une fenêtre imprimable (HTML → print)
+  const handleExportMatchesPDF = () => {
+    const matches = getFilteredMatches();
+    if (!matches.length) {
+      alert("Aucun combat à exporter.");
+      return;
+    }
+
+    const esc = (s) =>
+      String(s ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+
+    const sorted = [...matches].sort((a, b) => {
+      const areaA = a.areaNumber || 0;
+      const areaB = b.areaNumber || 0;
+      if (areaA !== areaB) return areaA - areaB;
+      return (a.matchNumber || 0) - (b.matchNumber || 0);
+    });
+
+    const rows = sorted
+      .map((match) => {
+        const result = matchResults[match.id];
+        const isCompleted =
+          result?.completed ||
+          match.status === "completed" ||
+          completedMatches.some(
+            (cm) => cm.id === match.id || cm.matchNumber === match.matchNumber
+          );
+
+        const nameA = esc(getParticipantName(match, "A"));
+        const nameB = esc(getParticipantName(match, "B"));
+
+        const rounds = result?.rounds || [];
+        const totalA = rounds.reduce((s, r) => s + (Number(r.fighterA) || 0), 0);
+        const totalB = rounds.reduce((s, r) => s + (Number(r.fighterB) || 0), 0);
+        const winnerLabel =
+          result?.winner === "A"
+            ? nameA
+            : result?.winner === "B"
+            ? nameB
+            : "—";
+
+        const roundsHtml = rounds
+          .map(
+            (r, i) =>
+              `<span class="round">R${i + 1}: ${Number(r.fighterA) || 0}-${
+                Number(r.fighterB) || 0
+              }</span>`
+          )
+          .join(" ");
+
+        const category = [
+          match.gender,
+          match.ageCategoryName,
+          match.weightCategoryName,
+        ]
+          .filter(Boolean)
+          .map(esc)
+          .join(" · ");
+
+        return `
+          <tr class="${isCompleted ? "done" : "pending"}">
+            <td class="num">#${esc(match.matchNumber ?? "")}</td>
+            <td class="area">A${esc(match.areaNumber ?? "")}</td>
+            <td class="cat">${category}</td>
+            <td class="fighter ${result?.winner === "A" ? "winner" : ""}">${nameA}</td>
+            <td class="score">${isCompleted ? totalA : ""}</td>
+            <td class="vs">vs</td>
+            <td class="score">${isCompleted ? totalB : ""}</td>
+            <td class="fighter ${result?.winner === "B" ? "winner" : ""}">${nameB}</td>
+            <td class="rounds">${roundsHtml}</td>
+            <td class="winner-col">${isCompleted ? winnerLabel : "—"}</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    const title = esc(
+      `Combats - ${new Date().toLocaleDateString("fr-FR")}`
+    );
+
+    const html = `<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <title>${title}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: #1a1a1a;
+      margin: 24px;
+    }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    .meta { color: #666; font-size: 12px; margin-bottom: 16px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    thead th {
+      background: #111;
+      color: #fff;
+      text-align: left;
+      padding: 8px 6px;
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    tbody td {
+      padding: 6px;
+      border-bottom: 1px solid #eee;
+      vertical-align: middle;
+    }
+    tbody tr.pending { color: #888; }
+    tbody tr.done { background: #fafafa; }
+    .num { font-weight: 700; width: 48px; }
+    .area { width: 40px; color: #2563eb; font-weight: 600; }
+    .cat { font-size: 11px; color: #555; width: 180px; }
+    .fighter { font-weight: 500; }
+    .fighter.winner { color: #059669; font-weight: 700; }
+    .score { width: 36px; text-align: center; font-weight: 700; font-size: 14px; }
+    .vs { width: 20px; text-align: center; color: #999; font-size: 10px; }
+    .rounds { font-size: 10px; color: #666; }
+    .round { margin-right: 6px; }
+    .winner-col { font-size: 11px; color: #059669; font-weight: 600; }
+    @media print {
+      @page { size: A4 landscape; margin: 12mm; }
+      body { margin: 0; }
+      thead { display: table-header-group; }
+      tr { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Liste des combats</h1>
+  <div class="meta">
+    ${sorted.length} combats · exporté le ${new Date().toLocaleString("fr-FR")}
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Aire</th>
+        <th>Catégorie</th>
+        <th>Bleu</th>
+        <th></th>
+        <th></th>
+        <th></th>
+        <th>Rouge</th>
+        <th>Rounds</th>
+        <th>Vainqueur</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <script>window.addEventListener("load", () => setTimeout(() => window.print(), 300));</script>
+</body>
+</html>`;
+
+    const win = window.open("", "_blank");
+    if (!win) {
+      alert(
+        "Impossible d'ouvrir la fenêtre d'impression. Autorise les popups pour ce site."
+      );
+      return;
+    }
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+  };
+
   // Ajouter un onglet de navigation pour les combats terminés
   const renderTabs = () => (
     <>
@@ -2106,7 +2278,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep, tournam
       <div className="export-buttons">
         <button
           className="secondary-button"
-          onClick={handleExportPoolSheetsPDF}
+          onClick={handleExportMatchesPDF}
         >
           Exporter en PDF
         </button>

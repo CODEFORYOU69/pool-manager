@@ -53,12 +53,57 @@ const ImportCSV = ({
     }
   };
 
+  const processCsvContent = (content, displayName) => {
+    const { data, errors } = parseCSV(content);
+
+    if (errors && errors.length > 0) {
+      throw new Error(`Erreur dans le fichier CSV: ${errors[0].message}`);
+    }
+
+    setFile({ name: displayName });
+    validateData(data);
+    setPreviewData(data.slice(0, 5));
+    setParticipants(data);
+  };
+
+  const handleBrowserFileChange = (e) => {
+    const selected = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!selected) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        processCsvContent(evt.target.result, selected.name);
+      } catch (err) {
+        setError(err.message);
+        setFile(null);
+        setPreviewData(null);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    reader.onerror = () => {
+      setError("Impossible de lire le fichier.");
+      setIsLoading(false);
+    };
+    reader.readAsText(selected);
+  };
+
   const handleFileSelect = async () => {
+    // Fallback navigateur : déclencher l'<input type="file"> caché
+    if (!window.electronAPI || !window.electronAPI.openFileDialog) {
+      document.getElementById("csv-file-fallback")?.click();
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
     try {
-      // Utiliser l'API Electron pour sélectionner un fichier
       const result = await window.electronAPI.openFileDialog();
 
       if (result.canceled) {
@@ -106,7 +151,7 @@ const ImportCSV = ({
     }
 
     // Vérifier les champs obligatoires dans chaque entrée
-    const requiredFields = ["nom", "prenom", "sexe", "age", "poids", "ligue"];
+    const requiredFields = ["nom", "prenom", "sexe", "age", "poids"];
 
     for (const participant of data) {
       const missingFields = requiredFields.filter(
@@ -142,6 +187,20 @@ const ImportCSV = ({
         >
           {isLoading ? "Importation..." : "Sélectionner un fichier CSV"}
         </button>
+        <input
+          id="csv-file-fallback"
+          type="file"
+          accept=".csv,text/csv"
+          style={{ display: "none" }}
+          onChange={handleBrowserFileChange}
+        />
+        <a
+          className="template-link"
+          href={`${process.env.PUBLIC_URL || ""}/template-athletes.csv`}
+          download="template-athletes.csv"
+        >
+          Télécharger le template CSV
+        </a>
 
         {file && (
           <div className="file-info">

@@ -760,6 +760,48 @@ const PoolConfig = ({
         </div>
       </div>
 
+      {/* Résumé des catégories */}
+      <details className="categories-summary" open>
+        <summary className="categories-summary-title">
+          Résumé : {categories.length} catégories ·{" "}
+          {categories.reduce((acc, g) => acc + getFighterIds(g).length, 0)}{" "}
+          combattants
+        </summary>
+        <table className="categories-summary-table">
+          <thead>
+            <tr>
+              <th>Catégorie</th>
+              <th>Combattants</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...categories]
+              .sort((a, b) => {
+                const genderOrder = { male: 0, female: 1 };
+                const ga = genderOrder[a.gender] ?? 2;
+                const gb = genderOrder[b.gender] ?? 2;
+                if (ga !== gb) return ga - gb;
+                const ageA = (a.ageCategoryName || "").localeCompare(
+                  b.ageCategoryName || ""
+                );
+                if (ageA !== 0) return ageA;
+                return (a.weightCategoryName || "").localeCompare(
+                  b.weightCategoryName || ""
+                );
+              })
+              .map((group) => {
+                const n = getFighterIds(group).length;
+                return (
+                  <tr key={group.id} className={n < 3 ? "low-count" : ""}>
+                    <td>{getCategoryName(group)}</td>
+                    <td className="summary-count">{n}</td>
+                  </tr>
+                );
+              })}
+          </tbody>
+        </table>
+      </details>
+
       <div className="categories-list">
         {categories.map((group) => {
           const fighters = getFighters(group);

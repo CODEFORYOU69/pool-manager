@@ -1,12 +1,17 @@
 import React, { useEffect, useState } from "react";
 import { useCompetition } from "../context/CompetitionContext";
-import { deleteCompetition, fetchCompetitions } from "../services/dbService";
+import {
+  API_URL,
+  deleteCompetition,
+  fetchCompetitions,
+} from "../services/dbService";
 import "../styles/CompetitionList.css";
 
 const CompetitionList = ({ onNewCompetition, onSelectCompetition }) => {
   const { setCompetitionId, setCompetitionName, competitionId } =
     useCompetition();
   const [competitions, setCompetitions] = useState([]);
+  const [neonOnlyCompetitions, setNeonOnlyCompetitions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -20,6 +25,24 @@ const CompetitionList = ({ onNewCompetition, onSelectCompetition }) => {
       setError(null);
       const data = await fetchCompetitions();
       setCompetitions(data);
+
+      // Charger les compétitions Neon en parallèle, garder uniquement celles
+      // qui n'existent pas en local.
+      try {
+        const neonRes = await fetch(`${API_URL}/neon/competitions`);
+        if (neonRes.ok) {
+          const neonData = await neonRes.json();
+          const localIds = new Set(data.map((c) => c.id));
+          setNeonOnlyCompetitions(
+            neonData.filter((c) => !localIds.has(c.id))
+          );
+        } else {
+          setNeonOnlyCompetitions([]);
+        }
+      } catch (neonErr) {
+        console.warn("Neon indisponible:", neonErr);
+        setNeonOnlyCompetitions([]);
+      }
     } catch (error) {
       console.error("Erreur lors du chargement des compétitions:", error);
       setError("Impossible de charger les compétitions");
@@ -28,10 +51,68 @@ const CompetitionList = ({ onNewCompetition, onSelectCompetition }) => {
     }
   };
 
+  const handleToggleNeonVisibility = async (id, currentVisible) => {
+    try {
+      const res = await fetch(`${API_URL}/neon/competition/${id}/visibility`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visibleInSpectator: !currentVisible }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setNeonOnlyCompetitions((prev) =>
+        prev.map((c) =>
+          c.id === id ? { ...c, visibleInSpectator: !currentVisible } : c
+        )
+      );
+    } catch (err) {
+      console.error("Erreur toggle Neon:", err);
+      setError("Impossible de mettre à jour la visibilité (Neon)");
+    }
+  };
+
+  const handleDeleteNeon = async (id) => {
+    if (
+      !window.confirm(
+        "Supprimer définitivement cette compétition de Neon ? (irréversible)"
+      )
+    )
+      return;
+    try {
+      const res = await fetch(`${API_URL}/neon/competition/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setNeonOnlyCompetitions((prev) => prev.filter((c) => c.id !== id));
+    } catch (err) {
+      console.error("Erreur DELETE Neon:", err);
+      setError("Impossible de supprimer la compétition Neon");
+    }
+  };
+
   const handleSelectCompetition = (competition) => {
     setCompetitionId(competition.id);
     setCompetitionName(competition.name);
     onSelectCompetition(competition);
+  };
+
+  const handleToggleVisibility = async (id, currentVisible, event) => {
+    event.stopPropagation();
+    try {
+      const res = await fetch(`${API_URL}/competition/${id}/visibility`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visibleInSpectator: !currentVisible }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setCompetitions((prev) =>
+        prev.map((c) =>
+          c.id === id ? { ...c, visibleInSpectator: !currentVisible } : c
+        )
+      );
+    } catch (err) {
+      console.error("Erreur toggle visibilité:", err);
+      setError("Impossible de mettre à jour la visibilité");
+    }
   };
 
   const handleDeleteCompetition = async (id, event) => {
@@ -129,14 +210,103 @@ const CompetitionList = ({ onNewCompetition, onSelectCompetition }) => {
                   {competition._count.groups}
                 </div>
               </div>
-              <button
-                className="delete-btn"
-                onClick={(e) => handleDeleteCompetition(competition.id, e)}
-              >
-                Supprimer
-              </button>
+              <div className="competition-actions">
+                <button
+                  className={`visibility-btn ${
+                    competition.visibleInSpectator === false
+                      ? "hidden"
+                      : "visible"
+                  }`}
+                  onClick={(e) =>
+                    handleToggleVisibility(
+                      competition.id,
+                      competition.visibleInSpectator !== false,
+                      e
+                    )
+                  }
+                  title={
+                    competition.visibleInSpectator === false
+                      ? "Compétition cachée du spectator — cliquer pour afficher"
+                      : "Compétition visible dans le spectator — cliquer pour cacher"
+                  }
+                >
+                  {competition.visibleInSpectator === false
+                    ? "Cachée"
+                    : "Visible spectator"}
+                </button>
+                <button
+                  className="delete-btn"
+                  onClick={(e) => handleDeleteCompetition(competition.id, e)}
+                >
+                  Supprimer
+                </button>
+              </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {neonOnlyCompetitions.length > 0 && (
+        <div className="neon-only-section">
+          <h3 className="neon-section-title">
+            Compétitions cloud uniquement ({neonOnlyCompetitions.length})
+          </h3>
+          <p className="neon-section-desc">
+            Présentes dans Neon mais pas dans cette machine. Tu peux quand
+            même contrôler leur visibilité côté spectator.
+          </p>
+          <div className="competitions-grid">
+            {neonOnlyCompetitions.map((competition) => (
+              <div
+                key={competition.id}
+                className="competition-card neon-only-card"
+              >
+                <h3 className="competition-name">
+                  {competition.name}
+                  <span className="cloud-badge">Cloud</span>
+                </h3>
+                <div className="competition-date">
+                  <span className="label">Date:</span>{" "}
+                  {formatDate(competition.date)}
+                </div>
+                <div className="competition-stats">
+                  <div className="stat">
+                    <span className="label">Participants:</span>{" "}
+                    {competition._count?.participants ?? "—"}
+                  </div>
+                  <div className="stat">
+                    <span className="label">Groupes:</span>{" "}
+                    {competition._count?.groups ?? "—"}
+                  </div>
+                </div>
+                <div className="competition-actions">
+                  <button
+                    className={`visibility-btn ${
+                      competition.visibleInSpectator === false
+                        ? "hidden"
+                        : "visible"
+                    }`}
+                    onClick={() =>
+                      handleToggleNeonVisibility(
+                        competition.id,
+                        competition.visibleInSpectator !== false
+                      )
+                    }
+                  >
+                    {competition.visibleInSpectator === false
+                      ? "Cachée"
+                      : "Visible spectator"}
+                  </button>
+                  <button
+                    className="delete-btn"
+                    onClick={() => handleDeleteNeon(competition.id)}
+                  >
+                    Supprimer (Neon)
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

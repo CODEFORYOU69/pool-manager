@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 export async function GET() {
   try {
     const competitions = await prisma.competition.findMany({
+      where: { visibleInSpectator: true },
       orderBy: { date: "desc" },
     });
     return NextResponse.json(competitions);

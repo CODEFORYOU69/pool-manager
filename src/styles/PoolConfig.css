@@ -92,6 +92,68 @@
   color: var(--color-gray-500);
 }
 
+/* ── Categories Summary ── */
+.categories-summary {
+  margin: var(--space-5) 0;
+  padding: var(--space-4);
+  background: var(--color-gray-50);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-md);
+}
+
+.categories-summary-title {
+  cursor: pointer;
+  font-weight: var(--font-semibold);
+  color: var(--color-gray-800);
+  font-size: var(--text-base);
+  padding: var(--space-1) 0;
+  user-select: none;
+}
+
+.categories-summary-title:hover {
+  color: var(--color-primary-600);
+}
+
+.categories-summary-table {
+  width: 100%;
+  margin-top: var(--space-3);
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.categories-summary-table thead th {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-gray-100);
+  color: var(--color-gray-700);
+  font-weight: var(--font-semibold);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid var(--color-gray-300);
+}
+
+.categories-summary-table tbody td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-gray-200);
+}
+
+.categories-summary-table tbody tr:hover {
+  background: var(--color-white);
+}
+
+.categories-summary-table tbody tr.low-count {
+  color: var(--color-gray-600);
+  font-style: italic;
+}
+
+.categories-summary-table .summary-count {
+  text-align: right;
+  font-weight: var(--font-semibold);
+  font-variant-numeric: tabular-nums;
+  width: 100px;
+}
+
 /* ── Categories List ── */
 .categories-list {
   display: flex;

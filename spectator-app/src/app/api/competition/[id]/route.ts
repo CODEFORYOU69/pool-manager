@@ -14,7 +14,7 @@ export async function GET(
       },
     });
 
-    if (!competition) {
+    if (!competition || !competition.visibleInSpectator) {
       return NextResponse.json(
         { error: "Competition not found" },
         { status: 404 }

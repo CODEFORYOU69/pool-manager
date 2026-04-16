@@ -6,7 +6,7 @@ const { PrismaClient } = require("@prisma/client");
 const cors = require("cors");
 
 const prisma = new PrismaClient();
-const { triggerSync } = require("./neonSync");
+const { triggerSync, getNeonPrisma } = require("./neonSync");
 const app = express();
 
 // Ensure SQLite database tables exist by applying migration SQL directly
@@ -1006,6 +1006,86 @@ app.get("/api/competitions", async (req, res) => {
       error: "Erreur lors de la récupération des compétitions",
       details: error.message,
     });
+  }
+});
+
+// ─── Endpoints "Neon" pour gérer les compétitions présentes uniquement dans le cloud ───
+
+app.get("/api/neon/competitions", async (req, res) => {
+  try {
+    const neon = getNeonPrisma();
+    if (!neon) {
+      return res
+        .status(503)
+        .json({ error: "Neon non configuré (NEON_DATABASE_URL manquante)" });
+    }
+    const competitions = await neon.competition.findMany({
+      orderBy: { date: "desc" },
+      include: {
+        _count: { select: { groups: true, participants: true } },
+      },
+    });
+    res.json(competitions);
+  } catch (error) {
+    console.error("Erreur GET /api/neon/competitions:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch("/api/neon/competition/:id/visibility", async (req, res) => {
+  try {
+    const neon = getNeonPrisma();
+    if (!neon) return res.status(503).json({ error: "Neon non configuré" });
+    const { id } = req.params;
+    const { visibleInSpectator } = req.body;
+    if (typeof visibleInSpectator !== "boolean") {
+      return res
+        .status(400)
+        .json({ message: "visibleInSpectator (boolean) requis" });
+    }
+    const updated = await neon.competition.update({
+      where: { id },
+      data: { visibleInSpectator },
+    });
+    res.json(updated);
+  } catch (error) {
+    console.error("Erreur PATCH /api/neon/competition/:id/visibility:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete("/api/neon/competition/:id", async (req, res) => {
+  try {
+    const neon = getNeonPrisma();
+    if (!neon) return res.status(503).json({ error: "Neon non configuré" });
+    const { id } = req.params;
+    await neon.competition.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Erreur DELETE /api/neon/competition/:id:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Toggle visibilité d'une compétition dans la spectator view
+app.patch("/api/competition/:id/visibility", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { visibleInSpectator } = req.body;
+    if (typeof visibleInSpectator !== "boolean") {
+      return res
+        .status(400)
+        .json({ message: "visibleInSpectator (boolean) requis" });
+    }
+    const updated = await prisma.competition.update({
+      where: { id },
+      data: { visibleInSpectator },
+    });
+    triggerSync(prisma, id);
+    res.json(updated);
+  } catch (error) {
+    console.error("Erreur PATCH /competition/:id/visibility:", error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -2125,7 +2205,7 @@ app.get("/api/pool/:id/standings", async (req, res) => {
     const { id } = req.params;
 
     // Récupérer la poule avec ses participants
-    const pool = await prisma.pool.findUnique({
+    let pool = await prisma.pool.findUnique({
       where: { id },
       include: {
         poolParticipants: { include: { participant: true } },
@@ -2138,6 +2218,19 @@ app.get("/api/pool/:id/standings", async (req, res) => {
         },
       },
     });
+
+    // Cas spécial N=2 : la catégorie n'a pas de phase "pool",
+    // son unique match est directement phase="final". On l'inclut pour le classement.
+    if (pool && pool.matches.length === 0) {
+      const directFinalMatches = await prisma.match.findMany({
+        where: { poolId: id, phase: "final", status: "completed" },
+        include: {
+          matchParticipants: { include: { participant: true } },
+          rounds: true,
+        },
+      });
+      pool = { ...pool, matches: directFinalMatches };
+    }
 
     if (!pool) {
       return res.status(404).json({ message: "Poule non trouvée" });
@@ -2225,15 +2318,13 @@ app.get("/api/pool/:id/standings", async (req, res) => {
       const directWinner = getDirectWinner(a.participantId, b.participantId);
       if (directWinner === a.participantId) return -1;
       if (directWinner === b.participantId) return 1;
-      // 3. Rounds gagnés DESC
-      if (a.roundsWon !== b.roundsWon) return b.roundsWon - a.roundsWon;
+      // 3. Différence de rounds (roundsWon - roundsLost) DESC
+      const roundDiffA = a.roundsWon - (a.roundsLost || 0);
+      const roundDiffB = b.roundsWon - (b.roundsLost || 0);
+      if (roundDiffA !== roundDiffB) return roundDiffB - roundDiffA;
       // 4. Total points marqués DESC
       if (a.totalPoints !== b.totalPoints) return b.totalPoints - a.totalPoints;
-      // 5. Différence de points (marqués - encaissés) DESC
-      const diffA = a.totalPoints - a.totalPointsAgainst;
-      const diffB = b.totalPoints - b.totalPointsAgainst;
-      if (diffA !== diffB) return diffB - diffA;
-      // 6. Pénalités ASC
+      // 5. Pénalités ASC
       return a.penalties - b.penalties;
     });
 
@@ -2427,6 +2518,7 @@ app.post("/api/pool/:id/generateFinals", async (req, res) => {
         victories: 0,
         defeats: 0,
         roundsWon: 0,
+        roundsLost: 0,
         totalPoints: 0,
         totalPointsAgainst: 0,
         penalties: 0,
@@ -2462,29 +2554,57 @@ app.post("/api/pool/:id/generateFinals", async (req, res) => {
         standingsMap[pB.participantId].penalties += r.penaltyB || 0;
         if (r.winnerPosition === "A" || ((r.scoreA || 0) > (r.scoreB || 0) && !r.winnerPosition)) {
           standingsMap[pA.participantId].roundsWon++;
+          standingsMap[pB.participantId].roundsLost++;
         } else if (r.winnerPosition === "B" || ((r.scoreB || 0) > (r.scoreA || 0) && !r.winnerPosition)) {
           standingsMap[pB.participantId].roundsWon++;
+          standingsMap[pA.participantId].roundsLost++;
         }
       });
     });
 
+    // Helper confrontation directe pour le tri des finales
+    const getDirectWinnerFinals = (id1, id2) => {
+      const directMatch = completedMatches.find((m) => {
+        const pIds = m.matchParticipants.map((mp) => mp.participantId);
+        return pIds.includes(id1) && pIds.includes(id2);
+      });
+      if (directMatch && directMatch.winner) return directMatch.winner;
+      return null;
+    };
+
     const standings = Object.values(standingsMap).sort((a, b) => {
       // 1. Victoires DESC
       if (a.victories !== b.victories) return b.victories - a.victories;
-      // 2. Rounds gagnés DESC
-      if (a.roundsWon !== b.roundsWon) return b.roundsWon - a.roundsWon;
-      // 3. Total points marqués DESC
+      // 2. Confrontation directe
+      const dw = getDirectWinnerFinals(a.participantId, b.participantId);
+      if (dw === a.participantId) return -1;
+      if (dw === b.participantId) return 1;
+      // 3. Différence de rounds DESC
+      const roundDiffA = a.roundsWon - (a.roundsLost || 0);
+      const roundDiffB = b.roundsWon - (b.roundsLost || 0);
+      if (roundDiffA !== roundDiffB) return roundDiffB - roundDiffA;
+      // 4. Total points marqués DESC
       if (a.totalPoints !== b.totalPoints) return b.totalPoints - a.totalPoints;
-      // 4. Différence de points (marqués - encaissés) DESC
-      const diffA = a.totalPoints - a.totalPointsAgainst;
-      const diffB = b.totalPoints - b.totalPointsAgainst;
-      if (diffA !== diffB) return diffB - diffA;
       // 5. Pénalités ASC
       return a.penalties - b.penalties;
     });
 
     if (standings.length < 2) {
       return res.status(400).json({ message: "Il faut au moins 2 combattants pour les finales" });
+    }
+
+    // Si ≤3 combattants: la poule en round-robin donne le classement final,
+    // pas de phase finale à générer.
+    if (standings.length <= 3) {
+      await prisma.pool.update({
+        where: { id },
+        data: { phase: "completed" },
+      });
+      triggerSync(prisma, pool.group.competition.id);
+      return res.json({
+        matches: [],
+        message: "Classement final issu directement de la poule (≤3 combattants)",
+      });
     }
 
     // Utiliser la même aire que les matchs de poule de cette catégorie
@@ -2567,32 +2687,21 @@ app.post("/api/pool/:id/generateFinals", async (req, res) => {
       return match;
     };
 
-    if (standings.length >= 4) {
-      // Demi-finales: 1er vs 4e, 2e vs 3e
-      const semi1 = await createFinalsMatch("semi1", [
-        { participantId: standings[0].participantId, position: "A" },
-        { participantId: standings[3].participantId, position: "B" },
-      ]);
-      createdMatches.push({ ...semi1, phase: "semi1" });
+    // Demi-finales: 1er vs 4e, 2e vs 3e, puis finale
+    const semi1 = await createFinalsMatch("semi1", [
+      { participantId: standings[0].participantId, position: "A" },
+      { participantId: standings[3].participantId, position: "B" },
+    ]);
+    createdMatches.push({ ...semi1, phase: "semi1" });
 
-      const semi2 = await createFinalsMatch("semi2", [
-        { participantId: standings[1].participantId, position: "A" },
-        { participantId: standings[2].participantId, position: "B" },
-      ]);
-      createdMatches.push({ ...semi2, phase: "semi2" });
+    const semi2 = await createFinalsMatch("semi2", [
+      { participantId: standings[1].participantId, position: "A" },
+      { participantId: standings[2].participantId, position: "B" },
+    ]);
+    createdMatches.push({ ...semi2, phase: "semi2" });
 
-      // Finale (placeholder, sera remplie après les semis)
-      const finalMatch = await createFinalsMatch("final", []);
-      createdMatches.push({ ...finalMatch, phase: "final" });
-
-    } else {
-      // Moins de 4 combattants: juste une finale entre les 2 premiers
-      const finalMatch = await createFinalsMatch("final", [
-        { participantId: standings[0].participantId, position: "A" },
-        { participantId: standings[1].participantId, position: "B" },
-      ]);
-      createdMatches.push({ ...finalMatch, phase: "final" });
-    }
+    const finalMatch = await createFinalsMatch("final", []);
+    createdMatches.push({ ...finalMatch, phase: "final" });
 
     // Mettre à jour la phase de la poule
     await prisma.pool.update({

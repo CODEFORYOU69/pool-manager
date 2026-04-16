@@ -1293,6 +1293,9 @@ export const saveGeneratedMatches = async (competitionId, matchesByPool) => {
             areaNumber: match.areaNumber || 1, // Utiliser l'aire spécifiée ou la valeur par défaut
             startTime: match.startTime ? new Date(match.startTime) : new Date(),
             status: "pending",
+            // Pour les catégories à 2 combattants, persister directement en "final"
+            // afin d'être programmé pendant la phase finale.
+            phase: match.isTwoFighterFinal ? "final" : match.phase || "pool",
           };
 
           // Créer le match

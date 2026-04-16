@@ -346,6 +346,7 @@ const TournamentSetup = ({
       // Mettre à jour la configuration globale
       setTournamentConfig({
         ...config,
+        numAreas: config.numberOfAreas,
         tournamentType: config.tournamentType,
         stats: {
           totalParticipants: participants.length,

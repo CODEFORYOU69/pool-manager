@@ -107,6 +107,19 @@
   font-size: var(--text-sm);
 }
 
+.template-link {
+  display: inline-block;
+  margin-top: var(--space-2);
+  color: var(--color-primary-600);
+  font-size: var(--text-sm);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.template-link:hover {
+  color: var(--color-primary-700);
+}
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
   .import-actions {

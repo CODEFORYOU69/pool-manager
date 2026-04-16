@@ -22,6 +22,7 @@ model Competition {
   poolSize       Int           @default(4)
   tournamentType String        @default("pools")
   numAreas       Int           @default(6)
+  visibleInSpectator Boolean   @default(true)
   areas          Area[]
   groups         Group[]
   participants   Participant[]

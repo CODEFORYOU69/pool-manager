@@ -94,12 +94,8 @@ const createGroups = (participants, config) => {
 
     // Si nous avons des catégories prédéfinies, les utiliser directement
     if (Object.keys(categoryCounts).length > 0) {
-      // Créer un groupe pour chaque catégorie prédéfinie
+      // Créer un groupe pour chaque catégorie prédéfinie (toutes, même <3)
       for (const categoryName in categoryCounts) {
-        if (categoryCounts[categoryName] < 3) {
-          continue;
-        }
-
         // Extraire les informations de la catégorie (format: "gender-ageCat-weightCat")
         const parts = categoryName.split("-");
         if (parts.length < 3) {
@@ -118,12 +114,35 @@ const createGroups = (participants, config) => {
           continue;
         }
 
-        // Trouver la catégorie de poids correspondante
-        const weightCategory = config.weightCategories[gender]?.find(
-          (cat) => cat.name === weightCatName
-        );
+        // Trouver la catégorie de poids selon l'âge réel du participant,
+        // pas uniquement dans la tranche d'âge active dans config.weightCategories.
+        const genderKey = gender === "male" ? "MALE" : "FEMALE";
+        const ageKey = ageCatName.toUpperCase();
+        const kyorugiList = KYORUGI_CATEGORIES[genderKey]?.[ageKey] || [];
+        let weightCategory = kyorugiList.find((cat) => cat.name === weightCatName);
         if (!weightCategory) {
-          continue;
+          // Fallback sur la config si l'utilisateur a défini des poids custom
+          weightCategory = config.weightCategories[gender]?.find(
+            (cat) => cat.name === weightCatName
+          );
+        }
+        if (!weightCategory) {
+          // Dernier recours : construire l'objet directement depuis le nom
+          weightCategory = {
+            name: weightCatName,
+            max: weightCatName.startsWith("+")
+              ? 999
+              : parseInt(weightCatName.replace(/[^0-9]/g, ""), 10),
+          };
+        }
+        // Normaliser au format {name, max, pss?, hitLevel?}
+        if (weightCategory && typeof weightCategory.max === "undefined") {
+          weightCategory = {
+            ...weightCategory,
+            max: weightCategory.name.startsWith("+")
+              ? 999
+              : parseInt(weightCategory.name.replace(/[^0-9]/g, ""), 10),
+          };
         }
 
         // Filtrer les participants pour cette catégorie
@@ -141,12 +160,13 @@ const createGroups = (participants, config) => {
             config.poolSize
           );
 
-          if (group.pools.length > 0) {
-            groups.push(group);
-            stats.totalPools += group.pools.length;
-          } else {
-            stats.unusedParticipants += categoryParticipants.length;
+          // Toujours conserver la catégorie, même si elle n'a pas assez
+          // de participants pour former une poule (l'utilisateur décidera).
+          if (group.pools.length === 0 && categoryParticipants.length > 0) {
+            group.pools = [categoryParticipants.map((p) => p.id)];
           }
+          groups.push(group);
+          stats.totalPools += group.pools.length;
         } catch (error) {
           stats.unusedParticipants += categoryParticipants.length;
         }
@@ -309,55 +329,85 @@ const createGroups = (participants, config) => {
     if (diagnosticInfo.tempIds > 0) {
     }
 
-    for (const gender of ["male", "female"]) {
-      const weightCategories = config.weightCategories[gender] || [];
-      if (weightCategories.length === 0) {
+    // Itérer sur toutes les catégories réellement produites par categorizeParticipants,
+    // indépendamment de la tranche d'âge unique sélectionnée dans config.weightCategories.
+    const convertWeightList = (list) =>
+      (list || []).map((c) => ({
+        name: c.name,
+        max: c.name.startsWith("+")
+          ? 999
+          : parseInt(c.name.replace(/[^0-9]/g, ""), 10),
+        pss: c.pss || null,
+        hitLevel: c.hitLevel || null,
+      }));
+
+    for (const key of Object.keys(categories)) {
+      let categoryParticipants = (categories[key] || []).filter(
+        (p) => !usedParticipantIds.has(p.id)
+      );
+
+      if (categoryParticipants.length === 0) {
+        continue;
       }
 
-      for (const ageCategory of config.ageCategories) {
-        for (const weightCategory of weightCategories) {
-          const key = `${gender}-${ageCategory.name}-${weightCategory.name}`;
-          let categoryParticipants = categories[key] || [];
+      // Format de clé: "gender-AgeName-WeightName" où WeightName peut débuter par "-" ou "+".
+      const firstDash = key.indexOf("-");
+      const secondDash = key.indexOf("-", firstDash + 1);
+      if (firstDash === -1 || secondDash === -1) {
+        stats.unusedParticipants += categoryParticipants.length;
+        continue;
+      }
+      const gender = key.slice(0, firstDash);
+      const ageName = key.slice(firstDash + 1, secondDash);
+      const weightName = key.slice(secondDash + 1);
 
-          // Filtrer les participants déjà utilisés
-          categoryParticipants = categoryParticipants.filter(
-            (p) => !usedParticipantIds.has(p.id)
-          );
+      const ageCategory = config.ageCategories.find(
+        (c) => c.name === ageName
+      ) || { name: ageName, min: 0, max: 99 };
 
-          // Ne créer un groupe que s'il y a suffisamment de participants pour former au moins une poule minimale
-          if (categoryParticipants.length >= 3) {
-            try {
-              // Forcer la taille des poules à respecter la configuration
-              const group = createGroupWithFixedPoolSize(
-                gender,
-                ageCategory,
-                weightCategory,
-                categoryParticipants,
-                config.poolSize
-              );
+      const genderKey = gender === "male" ? "MALE" : "FEMALE";
+      const ageKey = ageName.toUpperCase();
+      const kyorugiList = convertWeightList(
+        KYORUGI_CATEGORIES[genderKey]?.[ageKey]
+      );
+      let weightCategory = kyorugiList.find((w) => w.name === weightName);
+      if (!weightCategory) {
+        weightCategory = {
+          name: weightName,
+          max: weightName.startsWith("+")
+            ? 999
+            : parseInt(weightName.replace(/[^0-9]/g, ""), 10),
+        };
+      }
 
-              stats.totalPools += group.pools.length;
+      try {
+        const group = createGroupWithFixedPoolSize(
+          gender,
+          ageCategory,
+          weightCategory,
+          categoryParticipants,
+          config.poolSize
+        );
 
-              // Vérifier que les poules ont été créées correctement
-              if (group.pools.length === 0) {
-                stats.unusedParticipants += categoryParticipants.length;
-              } else {
-                group.pools.forEach((pool) => {
-                  pool.forEach((participantId) => {
-                    usedParticipantIds.add(participantId);
-                  });
-                });
-
-                groups.push(group);
-              }
-            } catch (error) {
-              stats.unusedParticipants += categoryParticipants.length;
-            }
-          } else {
-            // Pas assez de participants pour cette catégorie
-            stats.unusedParticipants += categoryParticipants.length;
-          }
+        // Conserver aussi les catégories avec <3 athlètes sous forme de poule simple
+        if (group.pools.length === 0 && categoryParticipants.length > 0) {
+          group.pools = [categoryParticipants.map((p) => p.id)];
         }
+
+        stats.totalPools += group.pools.length;
+
+        if (group.pools.length === 0) {
+          stats.unusedParticipants += categoryParticipants.length;
+        } else {
+          group.pools.forEach((pool) => {
+            pool.forEach((participantId) => {
+              usedParticipantIds.add(participantId);
+            });
+          });
+          groups.push(group);
+        }
+      } catch (error) {
+        stats.unusedParticipants += categoryParticipants.length;
       }
     }
 

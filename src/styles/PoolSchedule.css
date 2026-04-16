@@ -32,6 +32,17 @@
   color: var(--color-primary-700);
 }
 
+.schedule-summary-global p {
+  margin: var(--space-1) 0;
+}
+
+.schedule-summary-global .duration-note {
+  font-size: var(--text-sm);
+  color: var(--color-gray-500);
+  font-style: italic;
+  margin-top: var(--space-2);
+}
+
 /* ── Export Buttons ── */
 .pool-schedule-container .export-buttons {
   display: flex;

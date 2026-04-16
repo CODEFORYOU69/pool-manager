@@ -258,11 +258,16 @@ const generatePoolMatches = (pool, groupId, poolIndex, groupParticipants) => {
       return;
     }
 
-    // Créer l'objet match
+    // Pour une catégorie à 2 combattants, marquer le match comme
+    // "final direct" : persisté en DB avec phase="final" pour jouer
+    // en même temps que les autres finales.
+    const isTwoFighterFinal = verifiedParticipants.length === 2;
+
     const match = {
       id: uuidv4(),
       groupId,
       poolIndex,
+      isTwoFighterFinal,
       participants: [
         { ...participantA, position: "A" },
         { ...participantB, position: "B" },

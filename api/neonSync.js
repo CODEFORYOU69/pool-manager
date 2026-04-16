@@ -76,6 +76,7 @@ async function syncCompetitionToNeon(localPrisma, competitionId) {
         poolSize: competition.poolSize,
         tournamentType: competition.tournamentType,
         numAreas: competition.numAreas,
+        visibleInSpectator: competition.visibleInSpectator ?? true,
         updatedAt: competition.updatedAt,
       },
       create: {
@@ -90,6 +91,7 @@ async function syncCompetitionToNeon(localPrisma, competitionId) {
         poolSize: competition.poolSize,
         tournamentType: competition.tournamentType,
         numAreas: competition.numAreas,
+        visibleInSpectator: competition.visibleInSpectator ?? true,
         createdAt: competition.createdAt,
         updatedAt: competition.updatedAt,
       },

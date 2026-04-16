@@ -186,6 +186,53 @@ const PoolSchedule = ({ tournamentConfig, nextStep, prevStep, setSchedule: setPa
 
   const groupedMatches = getMatchesByGroup();
 
+  // Estimation de la durée et heure de fin
+  const roundDuration = tournamentConfig?.roundDuration || 120;
+  const breakDuration = tournamentConfig?.breakDuration || 30;
+  const matchDurationSeconds = roundDuration * 3 + breakDuration * 2 + 60; // 3 rounds + 2 pauses + 60s setup
+  const breakBetweenMatchesSeconds = 60;
+
+  // Répartition par aire pour trouver le goulot d'étranglement
+  const matchesByArea = {};
+  matches.forEach((m) => {
+    const area = m.area?.areaNumber || m.areaNumber || 1;
+    matchesByArea[area] = (matchesByArea[area] || 0) + 1;
+  });
+  const maxMatchesPerArea = Math.max(0, ...Object.values(matchesByArea));
+  const totalDurationSeconds =
+    maxMatchesPerArea * matchDurationSeconds +
+    Math.max(0, maxMatchesPerArea - 1) * breakBetweenMatchesSeconds;
+
+  const formatDuration = (seconds) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    if (h > 0) return `${h}h${String(m).padStart(2, "0")}`;
+    return `${m} min`;
+  };
+
+  const formatTime = (date) => {
+    if (!date) return "—";
+    return new Date(date).toLocaleTimeString("fr-FR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  // Heure de début : plus tôt startTime trouvé, sinon config, sinon maintenant
+  const startTimes = matches
+    .map((m) => m.startTime)
+    .filter(Boolean)
+    .map((t) => new Date(t).getTime());
+  const earliestStart =
+    startTimes.length > 0
+      ? new Date(Math.min(...startTimes))
+      : tournamentConfig?.startTime
+      ? new Date(tournamentConfig.startTime)
+      : null;
+  const estimatedEndTime = earliestStart
+    ? new Date(earliestStart.getTime() + totalDurationSeconds * 1000)
+    : null;
+
   return (
     <div className="pool-schedule-container">
       <h2>Planning des combats - Poule Unique + Finales</h2>
@@ -201,6 +248,25 @@ const PoolSchedule = ({ tournamentConfig, nextStep, prevStep, setSchedule: setPa
               <strong>{matches.length}</strong> combat{matches.length > 1 ? "s" : ""} de poule au total
               {" | "}
               <strong>{groupedMatches.length}</strong> categorie{groupedMatches.length > 1 ? "s" : ""}
+              {" | "}
+              <strong>{Object.keys(matchesByArea).length}</strong> aire{Object.keys(matchesByArea).length > 1 ? "s" : ""}
+            </p>
+            <p>
+              Durée estimée (sur {Object.keys(matchesByArea).length} aire{Object.keys(matchesByArea).length > 1 ? "s" : ""}) :{" "}
+              <strong>{formatDuration(totalDurationSeconds)}</strong>
+              {earliestStart && (
+                <>
+                  {" | "}
+                  Début : <strong>{formatTime(earliestStart)}</strong>
+                  {" | "}
+                  Fin estimée : <strong>{formatTime(estimatedEndTime)}</strong>
+                </>
+              )}
+            </p>
+            <p className="duration-note">
+              Estimation basée sur l'aire la plus chargée ({maxMatchesPerArea} combats) ·{" "}
+              {Math.round(matchDurationSeconds / 60)} min par combat + {breakBetweenMatchesSeconds}s
+              de pause entre combats. Les finales ajouteront du temps supplémentaire.
             </p>
           </div>
 

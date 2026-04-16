@@ -411,8 +411,7 @@ export const parseCSV = (csvContent) => {
         !participant.prenom ||
         (participant.sexe !== "male" && participant.sexe !== "female") ||
         isNaN(participant.age) ||
-        isNaN(participant.poids) ||
-        !participant.ligue
+        isNaN(participant.poids)
       ) {
         return index;
       }
