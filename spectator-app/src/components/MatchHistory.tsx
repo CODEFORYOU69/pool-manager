@@ -50,103 +50,62 @@ export default function MatchHistory({
               ? "B"
               : null);
 
+          const getClub = (pos: string) =>
+            match.matchParticipants?.find((mp) => mp.position === pos)
+              ?.participant?.club || "";
+
           return (
             <div
               key={match.id}
-              className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200"
+              className="match-card-enhanced"
             >
-              <div className="bg-gray-50 px-4 py-3 flex justify-between items-center border-b border-gray-200">
-                <div className="flex items-center">
-                  <span className="font-bold text-gray-900">
-                    Match #{match.matchNumber}
+              {/* Header */}
+              <div className="bg-gray-900 text-white px-4 py-2 flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-sm">
+                    #{match.matchNumber}
                   </span>
                   {match.area && (
-                    <span className="ml-2 text-xs text-gray-600">
+                    <span className="text-xs text-gray-400">
                       Aire {match.area?.areaNumber || "-"}
                     </span>
                   )}
+                  <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-green-500 text-white">
+                    TERMINÉ
+                  </span>
                 </div>
-                <span className="text-xs font-medium text-gray-700">
+                <span className="text-xs text-gray-400">
                   {formatTime(match.endTime)}
                 </span>
               </div>
 
-              <div className="p-4">
-                <div className="flex flex-col sm:flex-row gap-3 mb-3">
-                  {/* Participant Bleu */}
-                  <div
-                    className={`flex-1 flex flex-col border-l-4 rounded-r pl-3 py-2 ${
-                      winnerPosition === "A"
-                        ? "border-blue-600 bg-blue-100 ring-2 ring-green-500"
-                        : "border-blue-300 bg-blue-50"
-                    }`}
-                  >
-                    <span
-                      className={`font-medium ${
-                        winnerPosition === "A"
-                          ? "text-blue-800 font-bold"
-                          : "text-blue-700"
-                      }`}
-                    >
+              {/* Fighters */}
+              <div>
+                <div
+                  className={`fighter-row bleu ${
+                    winnerPosition === "A" ? "winner" : ""
+                  }`}
+                >
+                  <span className="corner-label">BLEU</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="name truncate">
                       {getParticipantName(match, "A")}
-                      {winnerPosition === "A" && (
-                        <span className="ml-2 inline-block px-2 py-0.5 text-xs bg-green-100 text-green-800 rounded-full font-semibold">
-                          Vainqueur
-                        </span>
-                      )}
-                    </span>
-                    <span className="text-xs text-gray-600 mt-1">
-                      {match.matchParticipants?.find(
-                        (mp) => mp.position === "A"
-                      )?.participant?.club || ""}{" "}
-                      {match.matchParticipants?.find(
-                        (mp) => mp.position === "A"
-                      )?.participant?.ligue
-                        ? `(${
-                            match.matchParticipants?.find(
-                              (mp) => mp.position === "A"
-                            )?.participant?.ligue
-                          })`
-                        : ""}
-                    </span>
+                    </div>
+                    <div className="club truncate">{getClub("A")}</div>
                   </div>
+                </div>
 
-                  {/* Participant Rouge */}
-                  <div
-                    className={`flex-1 flex flex-col border-l-4 rounded-r pl-3 py-2 ${
-                      winnerPosition === "B"
-                        ? "border-rose-600 bg-rose-100 ring-2 ring-green-500"
-                        : "border-rose-300 bg-rose-50"
-                    }`}
-                  >
-                    <span
-                      className={`font-medium ${
-                        winnerPosition === "B"
-                          ? "text-rose-800 font-bold"
-                          : "text-rose-700"
-                      }`}
-                    >
+                <div
+                  className={`fighter-row rouge ${
+                    winnerPosition === "B" ? "winner" : ""
+                  }`}
+                >
+                  <span className="corner-label">ROUGE</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="name truncate">
                       {getParticipantName(match, "B")}
-                      {winnerPosition === "B" && (
-                        <span className="ml-2 inline-block px-2 py-0.5 text-xs bg-green-100 text-green-800 rounded-full font-semibold">
-                          Vainqueur
-                        </span>
-                      )}
-                    </span>
-                    <span className="text-xs text-gray-600 mt-1">
-                      {match.matchParticipants?.find(
-                        (mp) => mp.position === "B"
-                      )?.participant?.club || ""}{" "}
-                      {match.matchParticipants?.find(
-                        (mp) => mp.position === "B"
-                      )?.participant?.ligue
-                        ? `(${
-                            match.matchParticipants?.find(
-                              (mp) => mp.position === "B"
-                            )?.participant?.ligue
-                          })`
-                        : ""}
-                    </span>
+                    </div>
+                    <div className="club truncate">{getClub("B")}</div>
                   </div>
                 </div>
 

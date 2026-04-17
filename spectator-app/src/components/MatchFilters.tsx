@@ -28,21 +28,21 @@ export default function MatchFilters({
   clubs = [],
 }: MatchFiltersProps) {
   return (
-    <div className="bg-white shadow-sm border-b border-gray-200">
+    <div className="glass-filters">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
           {/* Filtre par aire */}
           <div>
             <label
               htmlFor="area"
-              className="block text-sm font-semibold text-gray-900 mb-1"
+              className="block text-sm font-semibold text-white/70 mb-1"
             >
               Aire
             </label>
             <select
               id="area"
               name="area"
-              className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm rounded-md bg-white shadow-sm text-gray-900"
+              className="mt-1 block w-full pl-3 pr-10 py-2 text-base border border-white/10 focus:outline-none focus:ring-1 focus:ring-[#7eb10e]/50 focus:border-[#7eb10e]/40 sm:text-sm rounded-lg bg-white/5 text-white cursor-pointer"
               value={filters.areaNumber}
               onChange={(e) => onFilterChange({ areaNumber: e.target.value })}
             >
@@ -59,7 +59,7 @@ export default function MatchFilters({
           <div>
             <label
               htmlFor="name"
-              className="block text-sm font-semibold text-gray-900 mb-1"
+              className="block text-sm font-semibold text-white/70 mb-1"
             >
               Nom du participant
             </label>
@@ -67,7 +67,7 @@ export default function MatchFilters({
               type="text"
               name="name"
               id="name"
-              className="mt-1 block w-full px-3 py-2 text-base border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm rounded-md bg-white shadow-sm text-gray-900 placeholder-gray-500"
+              className="mt-1 block w-full px-3 py-2 text-base border border-white/10 focus:outline-none focus:ring-1 focus:ring-[#7eb10e]/50 focus:border-[#7eb10e]/40 sm:text-sm rounded-lg bg-white/5 text-white placeholder-white/25"
               placeholder="Rechercher un participant..."
               value={filters.participantName}
               onChange={(e) =>
@@ -80,14 +80,14 @@ export default function MatchFilters({
           <div>
             <label
               htmlFor="ligue"
-              className="block text-sm font-semibold text-gray-900 mb-1"
+              className="block text-sm font-semibold text-white/70 mb-1"
             >
               Ligue
             </label>
             <select
               id="ligue"
               name="ligue"
-              className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm rounded-md bg-white shadow-sm text-gray-900"
+              className="mt-1 block w-full pl-3 pr-10 py-2 text-base border border-white/10 focus:outline-none focus:ring-1 focus:ring-[#7eb10e]/50 focus:border-[#7eb10e]/40 sm:text-sm rounded-lg bg-white/5 text-white cursor-pointer"
               value={filters.ligue}
               onChange={(e) => onFilterChange({ ligue: e.target.value })}
             >
@@ -104,14 +104,14 @@ export default function MatchFilters({
           <div>
             <label
               htmlFor="club"
-              className="block text-sm font-semibold text-gray-900 mb-1"
+              className="block text-sm font-semibold text-white/70 mb-1"
             >
               Club
             </label>
             <select
               id="club"
               name="club"
-              className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm rounded-md bg-white shadow-sm text-gray-900"
+              className="mt-1 block w-full pl-3 pr-10 py-2 text-base border border-white/10 focus:outline-none focus:ring-1 focus:ring-[#7eb10e]/50 focus:border-[#7eb10e]/40 sm:text-sm rounded-lg bg-white/5 text-white cursor-pointer"
               value={filters.club}
               onChange={(e) => onFilterChange({ club: e.target.value })}
             >
@@ -128,14 +128,14 @@ export default function MatchFilters({
           <div>
             <label
               htmlFor="status"
-              className="block text-sm font-semibold text-gray-900 mb-1"
+              className="block text-sm font-semibold text-white/70 mb-1"
             >
               Statut
             </label>
             <select
               id="status"
               name="status"
-              className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm rounded-md bg-white shadow-sm text-gray-900"
+              className="mt-1 block w-full pl-3 pr-10 py-2 text-base border border-white/10 focus:outline-none focus:ring-1 focus:ring-[#7eb10e]/50 focus:border-[#7eb10e]/40 sm:text-sm rounded-lg bg-white/5 text-white cursor-pointer"
               value={filters.status}
               onChange={(e) => onFilterChange({ status: e.target.value })}
             >
@@ -158,7 +158,7 @@ export default function MatchFilters({
                   status: "",
                 })
               }
-              className="w-full inline-flex justify-center items-center px-4 py-2 border-2 border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors duration-200"
+              className="w-full inline-flex justify-center items-center px-4 py-2 border border-white/10 shadow-sm text-sm font-medium rounded-md text-white/60 bg-white/5 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors duration-200 cursor-pointer"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"

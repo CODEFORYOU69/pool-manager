@@ -224,8 +224,25 @@ export default function Home() {
         // Organiser les matchs par aire avec une meilleure logique de détection d'aires
         const matchesByArea: { [key: number]: Match[] } = {};
 
-        // Initialiser toutes les aires possibles (de 1 à 6 par défaut)
-        for (let i = 1; i <= 6; i++) {
+        // Détecter dynamiquement le nombre d'aires : max entre la config compétition,
+        // le numéro d'aire max trouvé dans les matchs, et un fallback de 6.
+        const maxAreaFromMatches = matches.reduce((max, m) => {
+          const a =
+            (m.area && typeof m.area.areaNumber === "number"
+              ? m.area.areaNumber
+              : null) ??
+            (typeof m.areaNumber === "number" ? m.areaNumber : null) ??
+            0;
+          return a > max ? a : max;
+        }, 0);
+        const numAreas = Math.max(
+          competitionDetails?.numAreas || 0,
+          maxAreaFromMatches,
+          6
+        );
+
+        // Initialiser toutes les aires possibles
+        for (let i = 1; i <= numAreas; i++) {
           matchesByArea[i] = [];
         }
 
@@ -259,13 +276,13 @@ export default function Home() {
           }
           // Distribution cyclique si aucune aire n'est définie
           else {
-            // Répartir cycliquement entre les aires 1 à 6 si aucune aire n'est définie
-            areaNum = (match.matchNumber % 6) + 1;
+            // Répartir cycliquement entre les aires si aucune aire n'est définie
+            areaNum = (match.matchNumber % numAreas) + 1;
           }
 
-          // Assurer que l'aire est dans la plage valide (1-6)
-          if (areaNum < 1 || areaNum > 6) {
-            areaNum = (areaNum % 6) + 1; // Ramener dans la plage 1-6
+          // Assurer que l'aire est dans la plage valide
+          if (areaNum < 1 || areaNum > numAreas) {
+            areaNum = (areaNum % numAreas) + 1;
           }
 
           // Ajouter le match à son aire
@@ -332,12 +349,13 @@ export default function Home() {
         const clubsSorted = Array.from(clubs).sort();
         setAvailableClubs(clubsSorted);
 
-        // Garantir que toutes les aires configurées sont disponibles (de 1 à 6 par défaut)
-        // même si elles n'ont pas de matchs actuellement
-        const maxArea = Math.max(6, ...Object.keys(matchesByArea).map(Number)); // Au moins 6 aires ou le plus grand numéro trouvé
+        // Garantir que toutes les aires configurées sont disponibles (même vides)
+        const maxArea = Math.max(
+          numAreas,
+          ...Object.keys(matchesByArea).map(Number)
+        );
         const allAreas: { [key: number]: Match[] } = {};
 
-        // Initialiser toutes les aires possibles (même vides)
         for (let i = 1; i <= maxArea; i++) {
           allAreas[i] = matchesByArea[i] || [];
         }
@@ -502,12 +520,11 @@ export default function Home() {
             matchAreaNum = parseInt(match.areaNumber);
           } else {
             // Par défaut, utiliser la même assignation cyclique
-            matchAreaNum = (match.matchNumber % 6) + 1;
+            matchAreaNum = (match.matchNumber % numAreas) + 1;
           }
 
-          // Assurer que l'aire est dans la plage valide (1-6)
-          if (matchAreaNum < 1 || matchAreaNum > 6) {
-            matchAreaNum = (matchAreaNum % 6) + 1;
+          if (matchAreaNum < 1 || matchAreaNum > numAreas) {
+            matchAreaNum = (matchAreaNum % numAreas) + 1;
           }
 
           return matchAreaNum === areaNum;
@@ -524,6 +541,9 @@ export default function Home() {
       setRecentMatches(allRecentMatches);
     }
   }, [filters, allUpcomingMatchesByArea, allRecentMatches, loading]);
+
+  // Nombre d'aires effectif : config compétition (>=12 ici) ou fallback 6
+  const numAreas = competitionDetails?.numAreas || 6;
 
   // Gestionnaire de changement de filtre
   const handleFilterChange = (newFilters: {
@@ -577,7 +597,7 @@ export default function Home() {
       } else if (match.areaNumber) {
         areaNum = match.areaNumber;
       } else {
-        areaNum = (match.matchNumber % 6) + 1;
+        areaNum = (match.matchNumber % numAreas) + 1;
       }
 
       if (!completedMatchesByArea[areaNum]) {
@@ -658,7 +678,7 @@ export default function Home() {
     } else if (match.areaNumber) {
       areaNum = match.areaNumber;
     } else {
-      areaNum = (match.matchNumber % 6) + 1;
+      areaNum = (match.matchNumber % numAreas) + 1;
     }
 
     // Récupérer les informations de retard pour cette aire
@@ -691,7 +711,13 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
+    <div className="page-bg">
+      {/* Aurora background */}
+      <div className="aurora-blob aurora-blob-1" aria-hidden="true" />
+      <div className="aurora-blob aurora-blob-2" aria-hidden="true" />
+      <div className="aurora-blob aurora-blob-3" aria-hidden="true" />
+      <div className="dot-grid-overlay" aria-hidden="true" />
+
       <TournamentHeader
         competitionId={competitionId}
         competitions={competitions}
@@ -703,7 +729,7 @@ export default function Home() {
 
       {/* Bandeau infos compétition */}
       {competitionDetails && !loading && (
-        <div className="bg-white border-b border-gray-200">
+        <div className="competition-glass">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
             {(() => {
               const totalMatches = allMatches.length;
@@ -743,42 +769,42 @@ export default function Home() {
                 <div className="flex flex-col gap-2">
                   {/* Ligne 1 : Nom, lieu, date */}
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                    <h2 className="text-lg font-bold text-gray-900">{competitionDetails.name}</h2>
+                    <h2 className="text-lg font-bold text-white">{competitionDetails.name}</h2>
                     {competitionDetails.location && (
-                      <span className="text-sm text-gray-600 flex items-center gap-1">
+                      <span className="text-sm text-white/55 flex items-center gap-1">
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                         {competitionDetails.location}
                       </span>
                     )}
                     {dateStr && (
-                      <span className="text-sm text-gray-500 capitalize">{dateStr}</span>
+                      <span className="text-sm text-white/40 capitalize">{dateStr}</span>
                     )}
                   </div>
 
                   {/* Ligne 2 : Stats combats */}
                   {totalMatches > 0 && (
                     <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
-                      <span className="text-gray-700">
-                        <span className="font-semibold text-gray-900">{totalMatches}</span> combats programmés
+                      <span className="text-white/60">
+                        <span className="font-semibold text-white">{totalMatches}</span> combats programmés
                       </span>
-                      <span className="text-gray-700">
-                        <span className="font-semibold text-green-700">{completedMatches}</span> terminés
+                      <span className="text-white/60">
+                        <span className="font-semibold text-[#7eb10e]">{completedMatches}</span> terminés
                       </span>
                       <div className="flex items-center gap-2">
-                        <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
+                        <div className="progress-bar-track">
                           <div
-                            className="h-full rounded-full transition-all duration-500"
+                            className="progress-bar-fill"
                             style={{
                               width: `${pct}%`,
-                              backgroundColor: pct === 100 ? "#22C55E" : "#6366F1",
+                              backgroundColor: pct === 100 ? "#7eb10e" : "#6366F1",
                             }}
                           />
                         </div>
-                        <span className="font-semibold text-gray-900">{pct}%</span>
+                        <span className="font-semibold text-white">{pct}%</span>
                       </div>
                       {estimatedEnd && (
-                        <span className="text-gray-700">
-                          Fin estimée : <span className="font-semibold text-primary-700">{estimatedEnd}</span>
+                        <span className="text-white/60">
+                          Fin estimée : <span className="font-semibold text-[#7eb10e]">{estimatedEnd}</span>
                         </span>
                       )}
                     </div>
@@ -790,52 +816,31 @@ export default function Home() {
         </div>
       )}
 
-      <div className="bg-white shadow-sm border-b border-gray-200">
-        {/* Indicateur de rafraîchissement */}
-        {refreshing && (
-          <div className="bg-primary-50 text-primary-700 text-center text-xs py-1 animate-pulse">
-            Mise à jour des données en cours...
-          </div>
-        )}
+      <div className="glass-nav">
+        {refreshing && <div className="refresh-scan-bar" aria-hidden="true" />}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex space-x-8 overflow-x-auto">
+          <div className="tabs-pill-group">
             <button
               onClick={() => setActiveTab("live")}
-              className={`py-4 px-1 font-medium text-sm border-b-2 whitespace-nowrap transition-colors ${
-                activeTab === "live"
-                  ? "border-primary-500 text-primary-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-              }`}
+              className={`tab-pill-btn${activeTab === "live" ? " active" : ""}`}
             >
               Matchs par aire
             </button>
             <button
               onClick={() => setActiveTab("history")}
-              className={`py-4 px-1 font-medium text-sm border-b-2 whitespace-nowrap transition-colors ${
-                activeTab === "history"
-                  ? "border-primary-500 text-primary-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-              }`}
+              className={`tab-pill-btn${activeTab === "history" ? " active" : ""}`}
             >
-              Historique des résultats
+              Résultats récents
             </button>
             <button
               onClick={() => setActiveTab("all")}
-              className={`py-4 px-1 font-medium text-sm border-b-2 whitespace-nowrap transition-colors ${
-                activeTab === "all"
-                  ? "border-primary-500 text-primary-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-              }`}
+              className={`tab-pill-btn${activeTab === "all" ? " active" : ""}`}
             >
               Tous les matchs
             </button>
             <button
               onClick={() => setActiveTab("results")}
-              className={`py-4 px-1 font-medium text-sm border-b-2 whitespace-nowrap transition-colors ${
-                activeTab === "results"
-                  ? "border-primary-500 text-primary-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-              }`}
+              className={`tab-pill-btn${activeTab === "results" ? " active" : ""}`}
             >
               Résultats des poules
             </button>
@@ -855,63 +860,29 @@ export default function Home() {
 
       <main className="flex-grow pt-2 pb-8">
         {loading ? (
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 text-center">
-            <div className="flex flex-col items-center justify-center">
-              <svg
-                className="animate-spin h-10 w-10 text-primary-500 mb-4"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                ></circle>
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                ></path>
-              </svg>
-              <h3 className="text-lg font-semibold text-gray-900">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
+            <div className="flex flex-col items-center justify-center gap-4">
+              <div className="loading-spinner-branded" />
+              <h3 className="text-lg font-semibold text-white">
                 Chargement des données...
               </h3>
-              <p className="text-gray-500 mt-1 text-sm">
-                Nous récupérons les informations des matchs pour cette
-                compétition.
+              <p className="text-white/35 text-sm">
+                Récupération des informations de la compétition
               </p>
             </div>
           </div>
         ) : error ? (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-            <div className="bg-red-50 p-4 rounded-md border border-red-200">
+            <div className="bg-red-950/40 p-4 rounded-xl border border-red-500/20 backdrop-blur-sm">
               <div className="flex">
                 <div className="flex-shrink-0">
-                  <svg
-                    className="h-5 w-5 text-red-400"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                      clipRule="evenodd"
-                    />
+                  <svg className="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                   </svg>
                 </div>
                 <div className="ml-3">
-                  <h3 className="text-sm font-bold text-red-800">
-                    Erreur de chargement
-                  </h3>
-                  <div className="mt-2 text-sm text-red-700">
-                    <p>{error}</p>
-                  </div>
+                  <h3 className="text-sm font-bold text-red-400">Erreur de chargement</h3>
+                  <div className="mt-2 text-sm text-red-300"><p>{error}</p></div>
                 </div>
               </div>
             </div>
@@ -947,6 +918,7 @@ export default function Home() {
                   "Taekwondo Tournament Manager"
                 }
                 competitionDate={competitionDate}
+                numAreas={numAreas}
               />
             )}
 
@@ -957,7 +929,7 @@ export default function Home() {
         )}
       </main>
 
-      <footer className="bg-gray-100 border-t-2 border-red-500 py-4">
+      <footer className="footer-dark py-4">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
@@ -968,19 +940,19 @@ export default function Home() {
                 height={48}
                 className="object-contain"
               />
-              <span className="text-sm font-bold text-gray-800 tracking-wide">KYO</span>
+              <span className="text-sm font-bold text-white tracking-wide">KYO</span>
             </div>
             <div className="text-center">
-              <p className="text-xs font-medium text-gray-600">
+              <p className="text-xs font-medium text-white/50">
                 &copy; {new Date().getFullYear()} KYO - Tous droits r&eacute;serv&eacute;s
               </p>
-              <p className="text-[10px] text-gray-400 mt-0.5">
+              <p className="text-[10px] text-white/30 mt-0.5">
                 Gestionnaire de comp&eacute;titions de Taekwondo
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-[10px] text-gray-400 bg-gray-200 px-2 py-0.5 rounded-full">v1.0.0</span>
-              <span className="text-[10px] text-gray-400">
+              <span className="text-[10px] text-white/30 bg-white/5 px-2 py-0.5 rounded-full">v1.0.0</span>
+              <span className="text-[10px] text-white/30">
                 MAJ : {formatTime(lastUpdate.toISOString())}
               </span>
             </div>
