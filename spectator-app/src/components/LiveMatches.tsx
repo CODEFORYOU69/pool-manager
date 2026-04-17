@@ -218,168 +218,168 @@ export default function LiveMatches({
     }
   };
 
+  // Helper : récupère le club d'un combattant
+  const getClub = (match: Match, position: string) => {
+    const mp = match.matchParticipants?.find((p) => p.position === position);
+    return mp?.participant?.club || "";
+  };
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 2xl:grid-cols-6 gap-3 p-2 sm:p-0">
-      {areaNumbers.map((areaNumber) => (
-        <div
-          key={areaNumber}
-          className="mb-4 bg-white rounded-lg shadow-sm p-3 h-full flex flex-col"
-        >
-          <h2 className="text-xl font-bold text-gray-900 mb-2 flex flex-wrap items-center">
-            Aire {areaNumber}{" "}
-            <span className="text-sm font-medium text-gray-700 ml-2">
-              ({upcomingMatchesByArea[areaNumber].length})
-            </span>
-            {delayInfoByArea[areaNumber] && getDelayIndicator(areaNumber)}
-          </h2>
-          {delayInfoByArea[areaNumber]?.lastCompletedMatch && (
-            <div className="text-xs text-gray-500 mb-2">
-              Dernier match: #{delayInfoByArea[areaNumber].lastCompletedMatch}
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 p-2 sm:p-0">
+      {areaNumbers.map((areaNumber) => {
+        const areaMatches = upcomingMatchesByArea[areaNumber] || [];
+        const delay = delayInfoByArea[areaNumber];
+
+        return (
+          <div
+            key={areaNumber}
+            className="mb-2 rounded-xl bg-white shadow-sm border border-gray-100 overflow-hidden flex flex-col"
+          >
+            {/* Area header - dark & compact */}
+            <div className="bg-gray-900 text-white px-4 py-2.5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-lg font-bold tracking-tight">
+                  Aire {areaNumber}
+                </span>
+                <span className="text-xs text-gray-400 font-medium">
+                  {areaMatches.length} combat{areaMatches.length > 1 ? "s" : ""}
+                </span>
+              </div>
+              {delay && getDelayIndicator(areaNumber)}
             </div>
-          )}
 
-          <div className="space-y-3 flex-grow overflow-y-auto">
-            {upcomingMatchesByArea[areaNumber].map((match, index) => {
-              const isFirstMatch = index === 0;
-              const isPending = match.status === "pending";
-              const isInProgress = match.status === "in_progress";
+            {/* Matches */}
+            <div className="p-2 space-y-2 flex-grow overflow-y-auto">
+              {areaMatches.length === 0 && (
+                <div className="text-center text-gray-400 text-sm py-6">
+                  Aucun combat en attente
+                </div>
+              )}
 
-              // Utiliser l'heure ajustée si disponible, sinon l'heure originale
-              const adjustedStartTime = getAdjustedStartTime
-                ? getAdjustedStartTime(match)
-                : match.startTime;
+              {areaMatches.map((match, index) => {
+                const isFirstMatch = index === 0;
+                const isPending = match.status === "pending";
+                const isInProgress = match.status === "in_progress";
+                const adjustedStartTime = getAdjustedStartTime
+                  ? getAdjustedStartTime(match)
+                  : match.startTime;
 
-              return (
-                <div
-                  key={match.id}
-                  className={`bg-white rounded-lg shadow-sm overflow-hidden border ${
-                    isFirstMatch ? "border-yellow-500" : "border-gray-200"
-                  }`}
-                >
+                return (
                   <div
-                    className={`px-3 py-2 flex flex-wrap justify-between items-center border-b ${
-                      isFirstMatch
-                        ? "bg-yellow-50 border-yellow-200"
-                        : "bg-gray-50 border-gray-200"
+                    key={match.id}
+                    className={`match-card-enhanced ${
+                      isFirstMatch ? "next-up" : ""
                     }`}
                   >
-                    <div className="flex items-center flex-wrap">
-                      <span className="font-bold text-gray-900 text-sm">
-                        #{match.matchNumber}
-                      </span>
-                      <span
-                        className={`ml-1 px-1.5 py-0.5 text-xs rounded ${
-                          isInProgress
-                            ? "bg-green-100 text-green-800"
-                            : isPending
-                            ? "bg-yellow-100 text-yellow-800"
-                            : "bg-primary-100 text-primary-800"
-                        }`}
-                      >
-                        {match.status === "in_progress"
-                          ? "En cours"
-                          : match.status === "completed"
-                          ? "Terminé"
-                          : "En attente"}
+                    {/* Match header */}
+                    <div
+                      className={`px-3 py-1.5 flex items-center justify-between border-b ${
+                        isFirstMatch
+                          ? "bg-amber-50 border-amber-200"
+                          : "bg-gray-50 border-gray-100"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-gray-900 text-sm">
+                          #{match.matchNumber}
+                        </span>
+                        {isInProgress && <span className="live-dot" />}
+                        <span
+                          className={`px-1.5 py-0.5 text-[10px] font-semibold rounded ${
+                            isInProgress
+                              ? "bg-green-500 text-white"
+                              : isPending
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-primary-100 text-primary-800"
+                          }`}
+                        >
+                          {isInProgress
+                            ? "EN COURS"
+                            : match.status === "completed"
+                            ? "TERMINÉ"
+                            : "ATTENTE"}
+                        </span>
+                        {match.phase && match.phase !== "pool" && (
+                          <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-purple-600 text-white">
+                            {match.phase === "semi1"
+                              ? "DEMI 1"
+                              : match.phase === "semi2"
+                              ? "DEMI 2"
+                              : match.phase === "final"
+                              ? "FINALE"
+                              : match.phase.toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-gray-500 font-medium max-w-[50%] text-right truncate">
+                        {getCategoryInfo(match)}
                       </span>
                     </div>
-                    <span className="text-xs bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded">
-                      {getCategoryInfo(match)}
-                    </span>
-                    {match.phase && match.phase !== "pool" && (
-                      <span className="text-xs bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded">
-                        {match.phase === "semi1" ? "Demi 1" : match.phase === "semi2" ? "Demi 2" : match.phase === "final" ? "Finale" : match.phase}
-                      </span>
-                    )}
-                    {match.tour && match.tour > 0 && (
-                      <span className="text-xs bg-primary-100 text-primary-700 px-1.5 py-0.5 rounded">
-                        Tour {match.tour}
-                      </span>
-                    )}
-                  </div>
 
-                  <div className="p-2">
-                    {/* Combattant BLEU en haut */}
-                    <div className="flex flex-col gap-1 mb-2">
-                      <div className="flex-1 flex flex-col border-l-4 border-blue-500 bg-blue-50 rounded-r pl-2 py-1.5">
-                        <span className="font-medium text-blue-700 text-sm line-clamp-1">
-                          {getParticipantName(match, "A")}
-                        </span>
-                        <span className="text-xs text-gray-600 line-clamp-1">
-                          {match.matchParticipants?.find(
-                            (mp) => mp.position === "A"
-                          )?.participant?.club || "Club inconnu"}{" "}
-                          {match.matchParticipants?.find(
-                            (mp) => mp.position === "A"
-                          )?.participant?.ligue
-                            ? `(${
-                                match.matchParticipants?.find(
-                                  (mp) => mp.position === "A"
-                                )?.participant?.ligue
-                              })`
-                            : ""}
-                        </span>
-                      </div>
-
-                      {/* Combattant ROUGE en bas */}
-                      <div className="flex-1 flex flex-col border-l-4 border-rose-500 bg-rose-50 rounded-r pl-2 py-1.5">
-                        <span className="font-medium text-rose-700 text-sm line-clamp-1">
-                          {getParticipantName(match, "B")}
-                        </span>
-                        <span className="text-xs text-gray-600 line-clamp-1">
-                          {match.matchParticipants?.find(
-                            (mp) => mp.position === "B"
-                          )?.participant?.club || "Club inconnu"}{" "}
-                          {match.matchParticipants?.find(
-                            (mp) => mp.position === "B"
-                          )?.participant?.ligue
-                            ? `(${
-                                match.matchParticipants?.find(
-                                  (mp) => mp.position === "B"
-                                )?.participant?.ligue
-                              })`
-                            : ""}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex justify-between items-center text-xs">
-                      {isPending ? (
-                        <div>
-                          <div className="text-gray-700">
-                            {/* Afficher l'heure originale prévue */}
-                            Prévu: {formatTime(match.startTime)}
+                    {/* Fighters */}
+                    <div>
+                      {/* BLEU (Chung) - position A */}
+                      <div className="fighter-row bleu">
+                        <span className="corner-label">BLEU</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="name truncate">
+                            {getParticipantName(match, "A")}
                           </div>
-                          {/* Afficher l'heure ajustée si différente de l'originale */}
-                          {adjustedStartTime !== match.startTime &&
-                            delayInfoByArea[areaNumber] && (
-                              <div
-                                className={
-                                  delayInfoByArea[areaNumber].delayInMinutes > 0
-                                    ? "text-red-700"
-                                    : delayInfoByArea[areaNumber]
-                                        .delayInMinutes < 0
-                                    ? "text-green-700"
-                                    : "text-blue-700"
-                                }
-                              >
-                                Est.: {formatTime(adjustedStartTime)}
-                              </div>
-                            )}
+                          <div className="club truncate">{getClub(match, "A")}</div>
+                        </div>
+                      </div>
+
+                      {/* ROUGE (Hong) - position B */}
+                      <div className="fighter-row rouge">
+                        <span className="corner-label">ROUGE</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="name truncate">
+                            {getParticipantName(match, "B")}
+                          </div>
+                          <div className="club truncate">{getClub(match, "B")}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Time footer */}
+                    <div className="px-3 py-1.5 bg-gray-50 border-t border-gray-100 flex items-center justify-between text-[11px]">
+                      {match.tour && match.tour > 0 ? (
+                        <span className="text-primary-600 font-semibold">
+                          Tour {match.tour}
+                        </span>
+                      ) : (
+                        <span />
+                      )}
+                      {isPending ? (
+                        <div className="text-right">
+                          <span className="text-gray-500">
+                            {formatTime(match.startTime)}
+                          </span>
+                          {adjustedStartTime !== match.startTime && delay && (
+                            <span
+                              className={`ml-1 font-semibold ${
+                                delay.delayInMinutes > 0
+                                  ? "text-red-600"
+                                  : "text-green-600"
+                              }`}
+                            >
+                              → {formatTime(adjustedStartTime)}
+                            </span>
+                          )}
                         </div>
                       ) : (
-                        <div className="text-gray-700">
-                          Début: {formatTime(match.startTime)}
-                        </div>
+                        <span className="text-gray-500">
+                          {formatTime(match.startTime)}
+                        </span>
                       )}
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

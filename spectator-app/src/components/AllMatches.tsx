@@ -48,6 +48,7 @@ interface AllMatchesProps {
   getParticipantName: (match: Match, position: string) => string;
   competitionName?: string;
   competitionDate?: Date | null;
+  numAreas?: number;
 }
 
 export default function AllMatches({
@@ -57,6 +58,7 @@ export default function AllMatches({
   getParticipantName,
   competitionName = "Taekwondo Tournament Manager",
   competitionDate = null,
+  numAreas = 6,
 }: AllMatchesProps) {
   const [filteredMatches, setFilteredMatches] = useState<Match[]>([]);
   const [isExporting, setIsExporting] = useState(false);
@@ -198,12 +200,11 @@ export default function AllMatches({
         ) {
           matchAreaNum = parseInt(match.areaNumber);
         } else {
-          matchAreaNum = (match.matchNumber % 6) + 1;
+          matchAreaNum = (match.matchNumber % numAreas) + 1;
         }
 
-        // Assurer que l'aire est dans la plage valide (1-6)
-        if (matchAreaNum < 1 || matchAreaNum > 6) {
-          matchAreaNum = (matchAreaNum % 6) + 1;
+        if (matchAreaNum < 1 || matchAreaNum > numAreas) {
+          matchAreaNum = (matchAreaNum % numAreas) + 1;
         }
 
         return matchAreaNum === areaNum;
