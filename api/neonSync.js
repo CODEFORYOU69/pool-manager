@@ -309,7 +309,7 @@ async function syncCompetitionToNeon(localPrisma, competitionId) {
  * Does not block the response.
  */
 function triggerSync(localPrisma, competitionId) {
-  if (!NEON_DATABASE_URL || !competitionId) return;
+  if (!CLOUD_DATABASE_URL || !competitionId) return;
   // Run in background, don't await
   syncCompetitionToNeon(localPrisma, competitionId).catch((err) => {
     console.error("[NeonSync] Background sync failed:", err.message);
