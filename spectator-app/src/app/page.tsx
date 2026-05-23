@@ -238,7 +238,7 @@ export default function Home() {
         const numAreas = Math.max(
           competitionDetails?.numAreas || 0,
           maxAreaFromMatches,
-          6
+          1
         );
 
         // Initialiser toutes les aires possibles
@@ -318,14 +318,14 @@ export default function Home() {
 
         console.log("Aires avec matchs après organisation:", airesAvecMatchs);
 
-        // Filtrer les matchs terminés récemment (50 derniers)
+        // Tous les matchs terminés, triés du plus récent au plus ancien.
+        // La pagination est gérée côté UI (MatchHistory).
         const completedMatches = matches
           .filter((match) => match.status === "completed" && match.endTime)
           .sort(
             (a, b) =>
               new Date(b.endTime!).getTime() - new Date(a.endTime!).getTime()
-          )
-          .slice(0, 50);
+          );
 
         // Extraire les ligues uniques des participants
         const ligues = new Set<string>();
@@ -402,8 +402,9 @@ export default function Home() {
     // Charger les données immédiatement
     fetchMatches();
 
-    // Puis rafraîchir toutes les 30 secondes au lieu de 10 secondes
-    const intervalId = setInterval(fetchMatches, 30000);
+    // Rafraîchir toutes les 60s. Combiné au cache Vercel (revalidate=10), ça
+    // permet d'absorber des milliers de spectateurs sans saturer Supabase.
+    const intervalId = setInterval(fetchMatches, 60000);
 
     // Nettoyer l'intervalle lors du démontage du composant
     return () => clearInterval(intervalId);
@@ -542,8 +543,8 @@ export default function Home() {
     }
   }, [filters, allUpcomingMatchesByArea, allRecentMatches, loading]);
 
-  // Nombre d'aires effectif : config compétition (>=12 ici) ou fallback 6
-  const numAreas = competitionDetails?.numAreas || 6;
+  // Nombre d'aires effectif : config compétition (fallback 1 si non chargée)
+  const numAreas = competitionDetails?.numAreas || 1;
 
   // Gestionnaire de changement de filtre
   const handleFilterChange = (newFilters: {

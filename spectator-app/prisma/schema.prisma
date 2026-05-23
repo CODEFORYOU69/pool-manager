@@ -25,6 +25,22 @@ model Competition {
   areas          Area[]
   groups         Group[]
   participants   Participant[]
+  apiKeys        ApiKey[]
+}
+
+model ApiKey {
+  id             String      @id @default(uuid())
+  key            String      @unique
+  name           String?
+  competitionId  String
+  competition    Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  expiresAt      DateTime
+  lastUsedAt     DateTime?
+  createdAt      DateTime    @default(now())
+  revokedAt      DateTime?
+
+  @@index([competitionId])
+  @@index([key])
 }
 
 model Group {

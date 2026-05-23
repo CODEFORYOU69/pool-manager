@@ -225,7 +225,12 @@ export default function LiveMatches({
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 p-2 sm:p-0">
+    <div
+      className="grid gap-4 p-2 sm:p-0"
+      style={{
+        gridTemplateColumns: `repeat(auto-fit, minmax(280px, 1fr))`,
+      }}
+    >
       {areaNumbers.map((areaNumber) => {
         const areaMatches = upcomingMatchesByArea[areaNumber] || [];
         const delay = delayInfoByArea[areaNumber];

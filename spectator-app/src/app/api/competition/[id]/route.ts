@@ -1,6 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 
+// Cache la réponse 10s côté Vercel pour absorber les pics de spectateurs
+// (jusqu'à 30x moins de requêtes DB en cas d'affluence).
+export const revalidate = 10;
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

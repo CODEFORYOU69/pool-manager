@@ -93,7 +93,7 @@ export default function DisplayPage() {
         0;
       return a > max ? a : max;
     }, 0);
-    return Math.max(competitionDetails?.numAreas || 0, fromMatches, 6);
+    return Math.max(competitionDetails?.numAreas || 0, fromMatches, 1);
   }, [matches, competitionDetails]);
 
   const matchesByArea = useMemo(() => {

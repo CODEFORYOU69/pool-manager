@@ -1,6 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
+// Cache la réponse 10s côté Vercel pour absorber les pics de spectateurs
+// (jusqu'à 30x moins de requêtes DB en cas d'affluence). 10s de latence est
+// invisible pour un visiteur, et la sync Supabase dépasse déjà ce délai.
+export const revalidate = 10;
+
 export async function GET() {
   try {
     const competitions = await prisma.competition.findMany({

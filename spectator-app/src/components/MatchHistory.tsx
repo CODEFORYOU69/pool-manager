@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { Match } from "@/types";
 
 type MatchHistoryProps = {
@@ -8,11 +9,31 @@ type MatchHistoryProps = {
   formatTime: (dateString?: string) => string;
 };
 
+const PAGE_SIZE = 10;
+
 export default function MatchHistory({
   recentMatches,
   getParticipantName,
   formatTime,
 }: MatchHistoryProps) {
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const totalPages = Math.max(1, Math.ceil(recentMatches.length / PAGE_SIZE));
+
+  // Si la liste raccourcit (filtres, refresh), s'assurer que la page reste valide.
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [totalPages, currentPage]);
+
+  const pageMatches = useMemo(
+    () =>
+      recentMatches.slice(
+        (currentPage - 1) * PAGE_SIZE,
+        currentPage * PAGE_SIZE
+      ),
+    [recentMatches, currentPage]
+  );
+
   if (recentMatches.length === 0) {
     return (
       <div className="bg-white rounded-lg shadow-sm p-6 text-center">
@@ -37,7 +58,7 @@ export default function MatchHistory({
       </h2>
 
       <div className="space-y-4">
-        {recentMatches.map((match) => {
+        {pageMatches.map((match) => {
           const winnerPosition =
             match.winnerPosition ||
             (match.winner ===
@@ -138,6 +159,38 @@ export default function MatchHistory({
           );
         })}
       </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between gap-3 pt-2">
+          <button
+            type="button"
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            className="px-4 py-2 rounded-md bg-gray-900 text-white text-sm font-medium disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed hover:bg-gray-800 transition-colors"
+          >
+            ← Précédent
+          </button>
+
+          <div className="text-sm text-gray-700">
+            Page <span className="font-bold">{currentPage}</span> sur{" "}
+            <span className="font-bold">{totalPages}</span>
+            <span className="ml-2 text-gray-500">
+              ({(currentPage - 1) * PAGE_SIZE + 1}–
+              {Math.min(currentPage * PAGE_SIZE, recentMatches.length)} sur{" "}
+              {recentMatches.length})
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages}
+            className="px-4 py-2 rounded-md bg-gray-900 text-white text-sm font-medium disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed hover:bg-gray-800 transition-colors"
+          >
+            Suivant →
+          </button>
+        </div>
+      )}
     </div>
   );
 }
