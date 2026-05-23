@@ -8,15 +8,17 @@ try {
 
 let neonPrisma = null;
 
-const NEON_DATABASE_URL = process.env.NEON_DATABASE_URL;
+// Accept either SUPABASE_DATABASE_URL (new) or NEON_DATABASE_URL (historical name)
+const CLOUD_DATABASE_URL =
+  process.env.SUPABASE_DATABASE_URL || process.env.NEON_DATABASE_URL;
 
 function getNeonPrisma() {
-  if (!NEON_DATABASE_URL || !neonPrismaModule) return null;
+  if (!CLOUD_DATABASE_URL || !neonPrismaModule) return null;
   if (!neonPrisma) {
     neonPrisma = new neonPrismaModule.PrismaClient({
-      datasources: { db: { url: NEON_DATABASE_URL } },
+      datasources: { db: { url: CLOUD_DATABASE_URL } },
     });
-    console.log("[NeonSync] Client Neon initialisé");
+    console.log("[NeonSync] Client cloud initialisé");
   }
   return neonPrisma;
 }

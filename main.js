@@ -24,31 +24,37 @@ function startApiServer() {
     const dbPath = getDbPath();
     const apiPath = getApiPath();
 
-    // Lire le NEON_DATABASE_URL depuis api/.env ou api/.env.neon
-    let neonUrl = process.env.NEON_DATABASE_URL || "";
-    if (!neonUrl) {
+    // Lire l'URL de la base cloud (Supabase aujourd'hui, Neon historiquement).
+    // On accepte les deux noms de variable pour ne pas casser les anciennes installs.
+    let cloudUrl =
+      process.env.SUPABASE_DATABASE_URL ||
+      process.env.NEON_DATABASE_URL ||
+      "";
+    if (!cloudUrl) {
       const apiDir = isPackaged
         ? path.join(process.resourcesPath, "api")
         : path.join(__dirname, "api");
-      // Essayer .env.neon d'abord (inclus dans le bundle), puis .env (dev)
       for (const file of [".env.neon", ".env"]) {
         try {
           const content = fs.readFileSync(path.join(apiDir, file), "utf-8");
-          const match = content.match(/^NEON_DATABASE_URL=["']?([^"'\r\n]+)/m);
-          if (match) { neonUrl = match[1]; break; }
+          const match =
+            content.match(/^SUPABASE_DATABASE_URL=["']?([^"'\r\n]+)/m) ||
+            content.match(/^NEON_DATABASE_URL=["']?([^"'\r\n]+)/m);
+          if (match) { cloudUrl = match[1]; break; }
         } catch (e) { /* fichier absent, on continue */ }
       }
     }
-    if (neonUrl) {
-      console.log("[Electron] NEON_DATABASE_URL: configured");
+    if (cloudUrl) {
+      console.log("[Electron] Cloud DB URL: configured");
     } else {
-      console.log("[Electron] NEON_DATABASE_URL: not found (sync disabled)");
+      console.log("[Electron] Cloud DB URL: not found (sync disabled)");
     }
 
     const env = {
       ...process.env,
       DATABASE_URL: `file:${dbPath}`,
-      NEON_DATABASE_URL: neonUrl,
+      NEON_DATABASE_URL: cloudUrl,
+      SUPABASE_DATABASE_URL: cloudUrl,
       PORT: "3001",
       NODE_ENV: isPackaged ? "production" : "development",
     };
@@ -80,18 +86,47 @@ function startApiServer() {
       apiProcess = null;
     });
 
-    // Wait for IPC "ready" message from server
-    const timeout = setTimeout(() => {
-      reject(new Error("API server startup timeout (30s)"));
-    }, 30000);
+    // Poll HTTP /health au lieu d'attendre un message IPC (le canal IPC
+    // est cassé dans Electron packagé). On poll toutes les 500ms.
+    const API_PORT = env.PORT || "3001";
+    const MAX_WAIT_MS = 60000;
+    const POLL_INTERVAL_MS = 500;
+    let elapsed = 0;
 
+    const pollHealth = () => {
+      const http = require("http");
+      const req = http.get(`http://127.0.0.1:${API_PORT}/health`, (res) => {
+        if (res.statusCode === 200) {
+          console.log(`[Electron] API ready on port ${API_PORT} (health OK)`);
+          resolve(parseInt(API_PORT, 10));
+        } else {
+          scheduleRetry();
+        }
+        res.resume();
+      });
+      req.on("error", () => scheduleRetry());
+      req.setTimeout(2000, () => { req.destroy(); scheduleRetry(); });
+    };
+
+    const scheduleRetry = () => {
+      elapsed += POLL_INTERVAL_MS;
+      if (elapsed >= MAX_WAIT_MS) {
+        reject(new Error(`API server startup timeout (${MAX_WAIT_MS / 1000}s)`));
+        return;
+      }
+      setTimeout(pollHealth, POLL_INTERVAL_MS);
+    };
+
+    // Écouter aussi le message IPC en fallback (marche en dev)
     apiProcess.on("message", (msg) => {
       if (msg && msg.type === "ready") {
-        clearTimeout(timeout);
-        console.log(`[Electron] API ready on port ${msg.port}`);
+        console.log(`[Electron] API ready via IPC on port ${msg.port}`);
         resolve(msg.port);
       }
     });
+
+    // Démarrer le polling après 1s (laisser le temps au process de fork)
+    setTimeout(pollHealth, 1000);
   });
 }
 

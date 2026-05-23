@@ -5,7 +5,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("NEON_DATABASE_URL")
+  url      = env("SUPABASE_DATABASE_URL")
 }
 
 model Competition {
@@ -22,9 +22,26 @@ model Competition {
   poolSize       Int           @default(4)
   tournamentType String        @default("pools")
   numAreas       Int           @default(6)
+  visibleInSpectator Boolean   @default(true)
   areas          Area[]
   groups         Group[]
   participants   Participant[]
+  apiKeys        ApiKey[]
+}
+
+model ApiKey {
+  id             String      @id @default(uuid())
+  key            String      @unique
+  name           String?
+  competitionId  String
+  competition    Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  expiresAt      DateTime
+  lastUsedAt     DateTime?
+  createdAt      DateTime    @default(now())
+  revokedAt      DateTime?
+
+  @@index([competitionId])
+  @@index([key])
 }
 
 model Group {

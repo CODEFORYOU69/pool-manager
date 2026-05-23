@@ -2,6 +2,8 @@ require("dotenv").config({ path: __dirname + "/.env" });
 const express = require("express");
 const path = require("path");
 const fs = require("fs");
+const os = require("os");
+const crypto = require("crypto");
 const { PrismaClient } = require("@prisma/client");
 const cors = require("cors");
 
@@ -9,47 +11,440 @@ const prisma = new PrismaClient();
 const { triggerSync, getNeonPrisma } = require("./neonSync");
 const app = express();
 
-// Ensure SQLite database tables exist by applying migration SQL directly
+// Apply any pending SQLite migrations. Keeps track of what's been applied in
+// a local _app_migrations table so new migrations shipped with future updates
+// are picked up automatically without overwriting existing data.
 async function ensureDatabase() {
-  try {
-    await prisma.competition.findFirst();
-    console.log("[API] Database OK");
-  } catch (err) {
-    console.log("[API] Database needs initialization, applying migrations...");
-    const migrationsDir = path.join(__dirname, "prisma", "migrations");
-    if (fs.existsSync(migrationsDir)) {
-      const dirs = fs
-        .readdirSync(migrationsDir)
-        .filter((d) => !d.includes("."))
-        .sort();
+  // 1. Make sure the tracking table exists
+  await prisma.$executeRawUnsafe(
+    `CREATE TABLE IF NOT EXISTS "_app_migrations" (
+      "name" TEXT PRIMARY KEY,
+      "appliedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  );
+
+  // 2. List which migrations have already been applied
+  const appliedRows = await prisma.$queryRawUnsafe(
+    `SELECT name FROM "_app_migrations"`
+  );
+  const applied = new Set(appliedRows.map((r) => r.name));
+
+  // 3. Walk migrations dir, apply anything new in chronological order
+  const migrationsDir = path.join(__dirname, "prisma", "migrations");
+  if (!fs.existsSync(migrationsDir)) {
+    console.log("[API] No migrations dir, skipping init");
+    return;
+  }
+  const dirs = fs
+    .readdirSync(migrationsDir)
+    .filter((d) => !d.includes(".") && fs.statSync(path.join(migrationsDir, d)).isDirectory())
+    .sort();
+
+  // First-run baseline detection: if competitions already exist but no migrations
+  // are tracked, the DB was bootstrapped by an older build via the old logic.
+  // Mark every migration up to and including 20260416 as already applied so we
+  // don't re-run init SQL against a populated DB.
+  if (applied.size === 0) {
+    let hasExistingData = false;
+    try {
+      const c = await prisma.competition.findFirst();
+      hasExistingData = !!c;
+    } catch (_) { /* table missing = fresh DB */ }
+    if (hasExistingData) {
+      console.log("[API] Existing DB detected, baselining old migrations");
       for (const dir of dirs) {
-        const sqlPath = path.join(migrationsDir, dir, "migration.sql");
-        if (fs.existsSync(sqlPath)) {
-          const sql = fs.readFileSync(sqlPath, "utf-8");
-          const statements = sql
-            .split(";")
-            .map((s) => s.trim())
-            .filter((s) => s.length > 0);
-          for (const stmt of statements) {
-            try {
-              await prisma.$executeRawUnsafe(stmt);
-            } catch (e) {
-              // Table might already exist, ignore
-            }
-          }
+        // Only baseline migrations older than today's date (assume new ones must run)
+        if (dir < "20260417") {
+          await prisma.$executeRawUnsafe(
+            `INSERT OR IGNORE INTO "_app_migrations" (name) VALUES (?)`,
+            dir
+          );
+          applied.add(dir);
         }
       }
     }
-    console.log("[API] Database initialized");
   }
+
+  for (const dir of dirs) {
+    if (applied.has(dir)) continue;
+    const sqlPath = path.join(migrationsDir, dir, "migration.sql");
+    if (!fs.existsSync(sqlPath)) continue;
+    console.log(`[API] Applying migration ${dir}`);
+    const sql = fs.readFileSync(sqlPath, "utf-8");
+    const statements = sql
+      .split(";")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    for (const stmt of statements) {
+      try {
+        await prisma.$executeRawUnsafe(stmt);
+      } catch (e) {
+        // Most likely "table already exists" — tolerate so the migration
+        // can still be recorded as applied and we don't loop on it.
+        console.warn(`[API] Migration ${dir} stmt skipped: ${e.message}`);
+      }
+    }
+    await prisma.$executeRawUnsafe(
+      `INSERT OR IGNORE INTO "_app_migrations" (name) VALUES (?)`,
+      dir
+    );
+  }
+  console.log("[API] Database OK");
 }
 
 app.use(cors());
 app.use(express.json());
 
-// Health check endpoint
+// Health check endpoint (utilisé par FightandCo pour vérifier dispo)
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
+});
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok" });
+});
+
+// Retourne les IPv4 LAN non-loopback de la machine, à donner à la console PSS.
+// Les vraies adresses LAN privées (RFC1918) sont triées en premier ; les
+// link-local (169.254.x) en dernier.
+app.get("/api/network/lan-ips", (req, res) => {
+  const ifaces = os.networkInterfaces();
+  const ips = [];
+  for (const [name, addrs] of Object.entries(ifaces)) {
+    if (!addrs) continue;
+    for (const a of addrs) {
+      if (a.family === "IPv4" && !a.internal) {
+        ips.push({ interface: name, address: a.address });
+      }
+    }
+  }
+  const score = (addr) => {
+    if (/^192\.168\./.test(addr)) return 0;
+    if (/^10\./.test(addr)) return 1;
+    if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(addr)) return 2;
+    if (/^169\.254\./.test(addr)) return 9; // link-local en dernier
+    return 5;
+  };
+  ips.sort((a, b) => score(a.address) - score(b.address));
+  // hostname mDNS : <name>.local résolu par Bonjour sur n'importe quel lien.
+  const rawHost = os.hostname();
+  const mdnsHost = rawHost.endsWith(".local") ? rawHost : `${rawHost}.local`;
+  res.json({ port: PORT, ips, hostname: mdnsHost });
+});
+
+// ─── API Keys (intégration FightandCo / clients externes) ───
+
+const API_KEY_TTL_DAYS = 30;
+const generateApiKey = () =>
+  "ak_" + crypto.randomBytes(24).toString("base64url");
+
+// Liste des clés actives d'une compétition (sans exposer le secret entier)
+app.get("/api/competition/:id/apiKeys", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const keys = await prisma.apiKey.findMany({
+      where: { competitionId: id, revokedAt: null },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json(
+      keys.map((k) => ({
+        id: k.id,
+        name: k.name,
+        keyPreview: k.key.slice(0, 8) + "…" + k.key.slice(-4),
+        expiresAt: k.expiresAt,
+        lastUsedAt: k.lastUsedAt,
+        createdAt: k.createdAt,
+      }))
+    );
+  } catch (error) {
+    console.error("Erreur GET apiKeys:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Créer une clé API. Renvoie le secret en clair UNE SEULE FOIS.
+app.post("/api/competition/:id/apiKey", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name } = req.body || {};
+    const competition = await prisma.competition.findUnique({
+      where: { id },
+    });
+    if (!competition) {
+      return res.status(404).json({ message: "Compétition non trouvée" });
+    }
+    const key = generateApiKey();
+    const expiresAt = new Date(
+      Date.now() + API_KEY_TTL_DAYS * 24 * 60 * 60 * 1000
+    );
+    const created = await prisma.apiKey.create({
+      data: {
+        key,
+        name: name || null,
+        competitionId: id,
+        expiresAt,
+      },
+    });
+    res.json({
+      id: created.id,
+      key, // secret en clair, à copier maintenant
+      name: created.name,
+      expiresAt: created.expiresAt,
+      createdAt: created.createdAt,
+    });
+  } catch (error) {
+    console.error("Erreur POST apiKey:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete("/api/apiKey/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.apiKey.update({
+      where: { id },
+      data: { revokedAt: new Date() },
+    });
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Erreur DELETE apiKey:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─── Endpoint de réception des résultats FightandCo ───
+//
+// Format payload attendu (identique à andco-sys) :
+// {
+//   messageType: "kyorugi",
+//   court: 4,
+//   timestamp: "2026-04-16T15:23:00Z",
+//   data: {
+//     Number: "423", Status: "FINISHED" | "RUNNING" | ...,
+//     ScoreHome, ScoreAway, PenHome, PenAway, Round, RoundWinnerId,
+//     WinnerId: "home" | "away", Decision, ...
+//   }
+// }
+//
+// On accepte tous les statuts mais ne PERSISTE qu'au Status === "FINISHED".
+// Les états intermédiaires sont accumulés en mémoire pour reconstruire
+// les rounds (chaque changement de Round = snapshot d'un round terminé).
+
+const liveMatchState = new Map(); // key: `${competitionId}|${court}|${matchNumber}`
+
+function getOrInitMatchState(stateKey) {
+  if (!liveMatchState.has(stateKey)) {
+    liveMatchState.set(stateKey, {
+      currentRound: 1,
+      currentScoreA: 0,
+      currentScoreB: 0,
+      currentPenA: 0,
+      currentPenB: 0,
+      finishedRounds: [], // [{ roundNumber, scoreA, scoreB, penaltyA, penaltyB, winnerPosition }]
+    });
+  }
+  return liveMatchState.get(stateKey);
+}
+
+app.post("/api/live/results", async (req, res) => {
+  try {
+    const apiKeyHeader = req.header("X-API-Key");
+    if (!apiKeyHeader) {
+      return res.status(401).json({ error: "X-API-Key manquant" });
+    }
+    const apiKey = await prisma.apiKey.findUnique({
+      where: { key: apiKeyHeader },
+    });
+    if (!apiKey || apiKey.revokedAt || apiKey.expiresAt < new Date()) {
+      return res.status(401).json({ error: "Clé invalide ou expirée" });
+    }
+
+    // Bump lastUsedAt en arrière-plan (best-effort)
+    prisma.apiKey
+      .update({ where: { id: apiKey.id }, data: { lastUsedAt: new Date() } })
+      .catch(() => {});
+
+    const body = req.body || {};
+    const court = body.court;
+    const data = body.data || {};
+    const matchNumberRaw = data.Number;
+    const status = data.Status;
+
+    if (!court || !matchNumberRaw) {
+      return res.status(400).json({
+        error: "court et data.Number requis",
+      });
+    }
+
+    const matchNumber = parseInt(matchNumberRaw, 10);
+    if (isNaN(matchNumber)) {
+      return res.status(400).json({ error: "data.Number doit être numérique" });
+    }
+
+    const stateKey = `${apiKey.competitionId}|${court}|${matchNumber}`;
+    const state = getOrInitMatchState(stateKey);
+
+    // Mettre à jour les scores courants
+    state.currentScoreA = Number(data.ScoreHome || 0);
+    state.currentScoreB = Number(data.ScoreAway || 0);
+    state.currentPenA = Number(data.PenHome || 0);
+    state.currentPenB = Number(data.PenAway || 0);
+
+    // Détecter changement de round → snapshot du round précédent
+    const incomingRound = Number(data.Round || state.currentRound);
+    if (incomingRound > state.currentRound) {
+      state.finishedRounds.push({
+        roundNumber: state.currentRound,
+        scoreA: state.currentScoreA,
+        scoreB: state.currentScoreB,
+        penaltyA: state.currentPenA,
+        penaltyB: state.currentPenB,
+        winnerPosition:
+          data.RoundWinnerId === "home"
+            ? "A"
+            : data.RoundWinnerId === "away"
+            ? "B"
+            : state.currentScoreA > state.currentScoreB
+            ? "A"
+            : state.currentScoreB > state.currentScoreA
+            ? "B"
+            : null,
+      });
+      state.currentRound = incomingRound;
+      // Reset des scores pour le nouveau round (Daedo envoie scores par round)
+      state.currentScoreA = Number(data.ScoreHome || 0);
+      state.currentScoreB = Number(data.ScoreAway || 0);
+      state.currentPenA = Number(data.PenHome || 0);
+      state.currentPenB = Number(data.PenAway || 0);
+    }
+
+    if (status !== "FINISHED") {
+      // Etat intermédiaire : on accuse réception, rien à persister
+      return res.json({ success: true, status: "buffered", round: incomingRound });
+    }
+
+    // ── Status === FINISHED : on persiste ──
+
+    // Snapshot du round courant comme dernier round terminé
+    state.finishedRounds.push({
+      roundNumber: state.currentRound,
+      scoreA: state.currentScoreA,
+      scoreB: state.currentScoreB,
+      penaltyA: state.currentPenA,
+      penaltyB: state.currentPenB,
+      winnerPosition:
+        data.RoundWinnerId === "home"
+          ? "A"
+          : data.RoundWinnerId === "away"
+          ? "B"
+          : state.currentScoreA > state.currentScoreB
+          ? "A"
+          : state.currentScoreB > state.currentScoreA
+          ? "B"
+          : null,
+    });
+
+    // Trouver le match dans cette compétition
+    const match = await prisma.match.findFirst({
+      where: {
+        matchNumber,
+        group: { competitionId: apiKey.competitionId },
+        area: { areaNumber: parseInt(court, 10) },
+      },
+      include: {
+        matchParticipants: true,
+      },
+    });
+
+    if (!match) {
+      liveMatchState.delete(stateKey);
+      return res.status(404).json({
+        error: `Match introuvable (matchNumber=${matchNumber}, court=${court}, competition=${apiKey.competitionId})`,
+      });
+    }
+
+    const pA = match.matchParticipants.find((mp) => mp.position === "A");
+    const pB = match.matchParticipants.find((mp) => mp.position === "B");
+    if (!pA || !pB) {
+      liveMatchState.delete(stateKey);
+      return res
+        .status(400)
+        .json({ error: "Participants A/B incomplets sur ce match" });
+    }
+
+    // Déterminer vainqueur : explicite si fourni, sinon depuis les rounds
+    const roundsWonByA = state.finishedRounds.filter(
+      (r) => r.winnerPosition === "A"
+    ).length;
+    const roundsWonByB = state.finishedRounds.filter(
+      (r) => r.winnerPosition === "B"
+    ).length;
+    let winnerPosition =
+      data.WinnerId === "home"
+        ? "A"
+        : data.WinnerId === "away"
+        ? "B"
+        : roundsWonByA > roundsWonByB
+        ? "A"
+        : roundsWonByB > roundsWonByA
+        ? "B"
+        : null;
+    const winnerId =
+      winnerPosition === "A"
+        ? pA.participantId
+        : winnerPosition === "B"
+        ? pB.participantId
+        : null;
+
+    // Persister en transaction : delete old rounds, create new ones, update match
+    await prisma.$transaction(async (tx) => {
+      await tx.round.deleteMany({ where: { matchId: match.id } });
+      await tx.round.createMany({
+        data: state.finishedRounds.map((r) => ({
+          matchId: match.id,
+          roundNumber: r.roundNumber,
+          scoreA: r.scoreA,
+          scoreB: r.scoreB,
+          penaltyA: r.penaltyA,
+          penaltyB: r.penaltyB,
+          winnerPosition: r.winnerPosition,
+          winner:
+            r.winnerPosition === "A"
+              ? pA.participantId
+              : r.winnerPosition === "B"
+              ? pB.participantId
+              : null,
+        })),
+      });
+      await tx.match.update({
+        where: { id: match.id },
+        data: {
+          status: "completed",
+          winner: winnerId,
+          endTime: body.timestamp ? new Date(body.timestamp) : new Date(),
+          pointMatch: winnerId ? 3 : 0,
+        },
+      });
+    });
+
+    triggerSync(prisma, apiKey.competitionId);
+    liveMatchState.delete(stateKey);
+
+    console.log(
+      `[FightandCo] Match ${matchNumber} aire ${court} → vainqueur ${winnerPosition}, ${state.finishedRounds.length} rounds`
+    );
+
+    res.json({
+      success: true,
+      matchId: match.id,
+      winner: winnerId,
+      winnerPosition,
+      rounds: state.finishedRounds.length,
+      message: "Match enregistré",
+    });
+  } catch (error) {
+    console.error("Erreur POST /api/live/results:", error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Route pour initialiser/sauvegarder une compétition
@@ -83,6 +478,7 @@ app.post("/api/competition", async (req, res) => {
         breakDuration: competitionData.breakDuration,
         breakFrequency: competitionData.breakFrequency,
         poolSize: competitionData.poolSize || 4, // Valeur par défaut 4 si non spécifiée
+        tournamentType: competitionData.tournamentType || "pools",
       },
     });
 
@@ -169,6 +565,8 @@ app.put("/api/competition/:id", async (req, res) => {
         breakFrequency:
           competitionData.breakFrequency || existingCompetition.breakFrequency,
         poolSize: competitionData.poolSize || existingCompetition.poolSize,
+        tournamentType:
+          competitionData.tournamentType || existingCompetition.tournamentType,
       },
     });
 
@@ -807,6 +1205,9 @@ app.put("/api/match/:id", async (req, res) => {
             scoreA: round.scoreA || round.fighterA || 0,
             scoreB: round.scoreB || round.fighterB || 0,
             winner: round.winner,
+            winnerPosition: round.winnerPosition || null,
+            penaltyA: round.penaltyA || 0,
+            penaltyB: round.penaltyB || 0,
           })),
         },
       },
@@ -994,6 +1395,7 @@ app.get("/api/competitions", async (req, res) => {
           select: {
             groups: true,
             participants: true,
+            areas: true,
           },
         },
       },
@@ -1063,6 +1465,28 @@ app.delete("/api/neon/competition/:id", async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error("Erreur DELETE /api/neon/competition/:id:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Changer le type de tournoi d'une compétition
+app.patch("/api/competition/:id/tournamentType", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { tournamentType } = req.body;
+    if (!["pools", "poolFinals", "elimination"].includes(tournamentType)) {
+      return res.status(400).json({
+        message: "tournamentType doit être 'pools', 'poolFinals' ou 'elimination'",
+      });
+    }
+    const updated = await prisma.competition.update({
+      where: { id },
+      data: { tournamentType },
+    });
+    triggerSync(prisma, id);
+    res.json(updated);
+  } catch (error) {
+    console.error("Erreur PATCH tournamentType:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1499,7 +1923,14 @@ app.get("/api/competition/:id/groupsWithDetails", async (req, res) => {
               },
             },
             matches: {
-              select: { id: true, matchNumber: true, status: true, phase: true },
+              select: {
+                id: true,
+                matchNumber: true,
+                status: true,
+                phase: true,
+                areaId: true,
+                area: { select: { areaNumber: true } },
+              },
               orderBy: { matchNumber: "asc" },
             },
           },
@@ -2151,6 +2582,37 @@ app.delete(
         return { count: deletedMatches.count };
       });
 
+      // Sync vers Neon : supprimer tous les matchs de la compétition
+      const neon = getNeonPrisma();
+      if (neon) {
+        try {
+          const neonMatches = await neon.match.findMany({
+            where: { group: { competitionId } },
+            select: { id: true },
+          });
+          const neonMatchIds = neonMatches.map((m) => m.id);
+          if (neonMatchIds.length > 0) {
+            await neon.round.deleteMany({
+              where: { matchId: { in: neonMatchIds } },
+            });
+            await neon.matchParticipant.deleteMany({
+              where: { matchId: { in: neonMatchIds } },
+            });
+            await neon.match.deleteMany({
+              where: { id: { in: neonMatchIds } },
+            });
+            console.log(
+              `[NeonSync] ${neonMatchIds.length} matchs supprimés sur Neon`
+            );
+          }
+        } catch (neonErr) {
+          console.error(
+            `[NeonSync] Erreur suppression bulk matchs sur Neon:`,
+            neonErr.message
+          );
+        }
+      }
+
       console.log(`${result.count} matchs supprimés avec succès`);
       res.json({
         success: true,
@@ -2170,6 +2632,62 @@ app.delete(
     }
   }
 );
+
+// Route pour supprimer un match individuel (avec ses rounds et matchParticipants)
+app.delete("/api/match/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log(`Demande de suppression du match ${id}`);
+
+    const existingMatch = await prisma.match.findUnique({ where: { id } });
+    if (!existingMatch) {
+      return res.status(404).json({
+        success: false,
+        message: "Match non trouvé",
+        details: `Aucun match trouvé avec l'ID: ${id}`,
+      });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.round.deleteMany({ where: { matchId: id } });
+      await tx.matchParticipant.deleteMany({ where: { matchId: id } });
+      await tx.match.delete({ where: { id } });
+    });
+
+    // Sync vers Neon : suppression cascade (rounds + matchParticipants + match)
+    const neon = getNeonPrisma();
+    if (neon) {
+      try {
+        await neon.round.deleteMany({ where: { matchId: id } });
+        await neon.matchParticipant.deleteMany({ where: { matchId: id } });
+        await neon.match.deleteMany({ where: { id } });
+        console.log(`[NeonSync] Match ${id} supprimé sur Neon`);
+      } catch (neonErr) {
+        console.error(
+          `[NeonSync] Erreur suppression match ${id} sur Neon:`,
+          neonErr.message
+        );
+        // Ne pas faire échouer la requête si Neon est indisponible
+      }
+    }
+
+    console.log(`Match ${id} supprimé avec succès`);
+    res.json({
+      success: true,
+      message: `Match ${id} supprimé avec succès`,
+    });
+  } catch (error) {
+    console.error(
+      `Erreur lors de la suppression du match ${req.params.id}:`,
+      error
+    );
+    res.status(500).json({
+      success: false,
+      message: "Erreur lors de la suppression du match",
+      details: error.message,
+    });
+  }
+});
 
 // ======== Pool Finals Endpoints ========
 
@@ -2279,14 +2797,18 @@ app.get("/api/pool/:id/standings", async (req, res) => {
       match.rounds.forEach((round) => {
         const scoreA = round.scoreA || 0;
         const scoreB = round.scoreB || 0;
+        const penaltyA = round.penaltyA || 0;
+        const penaltyB = round.penaltyB || 0;
 
-        standings[aId].totalPoints += scoreA;
-        standings[aId].totalPointsAgainst += scoreB;
-        standings[bId].totalPoints += scoreB;
-        standings[bId].totalPointsAgainst += scoreA;
+        // Points réels = score brut - gamjeon de l'adversaire
+        // (chaque gamjeon adverse donne 1 point inclus dans le score)
+        standings[aId].totalPoints += scoreA - penaltyB;
+        standings[aId].totalPointsAgainst += scoreB - penaltyA;
+        standings[bId].totalPoints += scoreB - penaltyA;
+        standings[bId].totalPointsAgainst += scoreA - penaltyB;
 
-        standings[aId].penalties += round.penaltyA || 0;
-        standings[bId].penalties += round.penaltyB || 0;
+        standings[aId].penalties += penaltyA;
+        standings[bId].penalties += penaltyB;
 
         if (round.winnerPosition === "A" || (scoreA > scoreB && !round.winnerPosition)) {
           standings[aId].roundsWon++;
@@ -2546,12 +3068,17 @@ app.post("/api/pool/:id/generateFinals", async (req, res) => {
       }
 
       match.rounds.forEach((r) => {
-        standingsMap[pA.participantId].totalPoints += r.scoreA || 0;
-        standingsMap[pA.participantId].totalPointsAgainst += r.scoreB || 0;
-        standingsMap[pB.participantId].totalPoints += r.scoreB || 0;
-        standingsMap[pB.participantId].totalPointsAgainst += r.scoreA || 0;
-        standingsMap[pA.participantId].penalties += r.penaltyA || 0;
-        standingsMap[pB.participantId].penalties += r.penaltyB || 0;
+        const sA = r.scoreA || 0;
+        const sB = r.scoreB || 0;
+        const pnA = r.penaltyA || 0;
+        const pnB = r.penaltyB || 0;
+        // Points réels = score brut - gamjeon de l'adversaire
+        standingsMap[pA.participantId].totalPoints += sA - pnB;
+        standingsMap[pA.participantId].totalPointsAgainst += sB - pnA;
+        standingsMap[pB.participantId].totalPoints += sB - pnA;
+        standingsMap[pB.participantId].totalPointsAgainst += sA - pnB;
+        standingsMap[pA.participantId].penalties += pnA;
+        standingsMap[pB.participantId].penalties += pnB;
         if (r.winnerPosition === "A" || ((r.scoreA || 0) > (r.scoreB || 0) && !r.winnerPosition)) {
           standingsMap[pA.participantId].roundsWon++;
           standingsMap[pB.participantId].roundsLost++;
@@ -2765,6 +3292,346 @@ app.delete("/api/participant/:id", async (req, res) => {
     res.json({ groupIds });
   } catch (error) {
     console.error("Erreur lors de la suppression du participant:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Logique réutilisable de réordonnancement (utilisée par reorderPoolSchedule
+// et applyAreaMoves). Effectue les updates en transaction et renvoie le nombre
+// de matchs touchés.
+async function reorderPoolScheduleInternal(competitionId) {
+  const competition = await prisma.competition.findUnique({
+    where: { id: competitionId },
+  });
+  if (!competition) {
+    throw new Error("Compétition non trouvée");
+  }
+
+  const matches = await prisma.match.findMany({
+    where: {
+      phase: "pool",
+      group: { competitionId },
+    },
+    include: { area: true },
+  });
+
+  if (matches.length === 0) return 0;
+
+  // Grouper par areaId
+  const byArea = new Map();
+  for (const m of matches) {
+    const aid = m.areaId;
+    if (!byArea.has(aid)) byArea.set(aid, []);
+    byArea.get(aid).push(m);
+  }
+
+  const chunkPairs = (pools) => {
+    const out = [];
+    let i = 0;
+    while (i < pools.length) {
+      const remaining = pools.length - i;
+      const size = remaining === 3 ? 3 : Math.min(remaining, 2);
+      out.push(pools.slice(i, i + size));
+      i += size;
+    }
+    return out;
+  };
+
+  const matchParticipants = await prisma.matchParticipant.findMany({
+    where: { matchId: { in: matches.map((m) => m.id) } },
+  });
+  const fightersByMatch = new Map();
+  for (const mp of matchParticipants) {
+    if (!fightersByMatch.has(mp.matchId)) fightersByMatch.set(mp.matchId, []);
+    fightersByMatch.get(mp.matchId).push(mp.participantId);
+  }
+
+  const organizePool = (poolMatches) => {
+    const unassigned = [...poolMatches];
+    const rounds = [];
+    while (unassigned.length > 0) {
+      const used = new Set();
+      const round = [];
+      for (let i = 0; i < unassigned.length; i++) {
+        const fighters = fightersByMatch.get(unassigned[i].id) || [];
+        if (fighters.some((f) => used.has(f))) continue;
+        fighters.forEach((f) => used.add(f));
+        round.push(unassigned[i]);
+        unassigned.splice(i, 1);
+        i--;
+      }
+      if (round.length === 0 && unassigned.length > 0) {
+        rounds.push([unassigned.shift()]);
+      } else if (round.length > 0) {
+        rounds.push(round);
+      }
+    }
+    return rounds;
+  };
+
+  const roundDurationSeconds = competition.roundDuration || 120;
+  const matchDurationSeconds = roundDurationSeconds * 3 + 30 * 2 + 60;
+  const breakBetweenMatchesSeconds = 60;
+
+  const updates = [];
+
+  for (const [, areaMatches] of byArea.entries()) {
+    const areaNumber = areaMatches[0].area?.areaNumber || 1;
+
+    const poolMap = new Map();
+    for (const m of areaMatches) {
+      const key = `${m.groupId}|${m.poolIndex ?? 0}`;
+      if (!poolMap.has(key)) poolMap.set(key, []);
+      poolMap.get(key).push(m);
+    }
+    const pools = Array.from(poolMap.values());
+
+    const chunks = chunkPairs(pools);
+
+    const ordered = [];
+    for (const chunk of chunks) {
+      const poolRounds = chunk.map(organizePool);
+      const maxRounds = Math.max(...poolRounds.map((r) => r.length));
+      for (let r = 0; r < maxRounds; r++) {
+        for (const pr of poolRounds) {
+          if (r < pr.length) ordered.push(...pr[r]);
+        }
+      }
+    }
+
+    const baseMatchNumber = areaNumber * 100;
+    let counter = 1;
+    let currentTime = new Date(competition.startTime);
+    for (const m of ordered) {
+      updates.push(
+        prisma.match.update({
+          where: { id: m.id },
+          data: {
+            matchNumber: baseMatchNumber + counter,
+            startTime: new Date(currentTime),
+          },
+        })
+      );
+      counter++;
+      currentTime = new Date(
+        currentTime.getTime() +
+          (matchDurationSeconds + breakBetweenMatchesSeconds) * 1000
+      );
+    }
+  }
+
+  await prisma.$transaction(updates);
+  return updates.length;
+}
+
+// POST /api/competition/:id/reorderPoolSchedule
+app.post("/api/competition/:id/reorderPoolSchedule", async (req, res) => {
+  try {
+    const reordered = await reorderPoolScheduleInternal(req.params.id);
+    triggerSync(prisma, req.params.id);
+    res.json({ reordered });
+  } catch (error) {
+    console.error("Erreur reorderPoolSchedule:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/competition/:id/applyAreaAssignments
+// Body : { assignments: [{ matchId, areaNumber }] }
+// Met à jour les areaId de chaque match individuellement (granularité combat),
+// puis renumérote l'ensemble du planning.
+app.post("/api/competition/:id/applyAreaAssignments", async (req, res) => {
+  try {
+    const competitionId = req.params.id;
+    const { assignments } = req.body || {};
+    if (!Array.isArray(assignments) || assignments.length === 0) {
+      return res.json({ updated: 0, reordered: 0 });
+    }
+
+    const areas = await prisma.area.findMany({ where: { competitionId } });
+    const areaByNumber = new Map(areas.map((a) => [a.areaNumber, a]));
+
+    const tx = [];
+    for (const a of assignments) {
+      const target = areaByNumber.get(a.areaNumber);
+      if (!target || !a.matchId) continue;
+      tx.push(
+        prisma.match.update({
+          where: { id: a.matchId },
+          data: { areaId: target.id },
+        })
+      );
+    }
+    await prisma.$transaction(tx);
+
+    const reordered = await reorderPoolScheduleInternal(competitionId);
+    triggerSync(prisma, competitionId);
+
+    res.json({ updated: tx.length, reordered });
+  } catch (error) {
+    console.error("Erreur applyAreaAssignments:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/match/:id/moveToArea
+// Body : { targetAreaNumber }
+// Déplace un seul match vers une autre aire en l'ajoutant à la suite des
+// matchs existants (matchNumber = max + 1 sur l'aire cible). Ne renumérote
+// pas les autres matchs.
+app.post("/api/match/:id/moveToArea", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { targetAreaNumber } = req.body || {};
+    if (!targetAreaNumber || isNaN(parseInt(targetAreaNumber, 10))) {
+      return res.status(400).json({ error: "targetAreaNumber requis" });
+    }
+    const targetNum = parseInt(targetAreaNumber, 10);
+
+    const match = await prisma.match.findUnique({
+      where: { id },
+      include: { area: true, group: { include: { competition: true } } },
+    });
+    if (!match) {
+      return res.status(404).json({ error: "Match introuvable" });
+    }
+    if (match.status === "running" || match.status === "completed") {
+      return res
+        .status(409)
+        .json({ error: `Match ${match.status}, déplacement refusé` });
+    }
+    if (match.area?.areaNumber === targetNum) {
+      return res.status(400).json({ error: "Le match est déjà sur cette aire" });
+    }
+
+    const competitionId = match.group.competitionId;
+    const targetArea = await prisma.area.findFirst({
+      where: { competitionId, areaNumber: targetNum },
+    });
+    if (!targetArea) {
+      return res
+        .status(404)
+        .json({ error: `Aire ${targetNum} non trouvée pour cette compétition` });
+    }
+
+    // matchNumber = base + (max + 1) sur l'aire cible
+    const maxOnTarget = await prisma.match.aggregate({
+      where: { areaId: targetArea.id },
+      _max: { matchNumber: true },
+    });
+    const base = targetNum * 100;
+    const nextNumber = maxOnTarget._max.matchNumber
+      ? maxOnTarget._max.matchNumber + 1
+      : base + 1;
+
+    // startTime = endTime du dernier match cible + 60s, sinon competition.startTime
+    const lastOnTarget = await prisma.match.findFirst({
+      where: { areaId: targetArea.id },
+      orderBy: { startTime: "desc" },
+    });
+    const competition = match.group.competition;
+    const roundDurationSeconds = competition.roundDuration || 120;
+    const matchDurationSeconds = roundDurationSeconds * 3 + 30 * 2 + 60;
+    const breakBetweenMatchesSeconds = 60;
+    let nextStart;
+    if (lastOnTarget) {
+      nextStart = new Date(lastOnTarget.startTime);
+      nextStart.setSeconds(
+        nextStart.getSeconds() +
+          matchDurationSeconds +
+          breakBetweenMatchesSeconds
+      );
+    } else {
+      nextStart = new Date(competition.startTime);
+    }
+
+    const updated = await prisma.match.update({
+      where: { id },
+      data: {
+        areaId: targetArea.id,
+        matchNumber: nextNumber,
+        startTime: nextStart,
+      },
+    });
+
+    triggerSync(prisma, competitionId);
+
+    res.json({
+      id: updated.id,
+      matchNumber: updated.matchNumber,
+      areaNumber: targetNum,
+      startTime: updated.startTime,
+    });
+  } catch (error) {
+    console.error("Erreur moveToArea:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/competition/:id/area/:areaNumber/nextMatchNumber
+// Preview du futur matchNumber sur une aire (max + 1)
+app.get("/api/competition/:id/area/:areaNumber/nextMatchNumber", async (req, res) => {
+  try {
+    const { id, areaNumber } = req.params;
+    const num = parseInt(areaNumber, 10);
+    if (isNaN(num)) return res.status(400).json({ error: "areaNumber invalide" });
+
+    const area = await prisma.area.findFirst({
+      where: { competitionId: id, areaNumber: num },
+    });
+    if (!area) return res.status(404).json({ error: "Aire non trouvée" });
+
+    const maxOnTarget = await prisma.match.aggregate({
+      where: { areaId: area.id },
+      _max: { matchNumber: true },
+    });
+    const base = num * 100;
+    const nextNumber = maxOnTarget._max.matchNumber
+      ? maxOnTarget._max.matchNumber + 1
+      : base + 1;
+    res.json({ areaNumber: num, nextMatchNumber: nextNumber });
+  } catch (error) {
+    console.error("Erreur nextMatchNumber:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/competition/:id/applyAreaMoves
+// Body : { moves: [{ poolId, targetAreaNumber }] }
+// Déplace les matchs des poules listées vers l'aire cible puis renumérote
+// l'ensemble du planning de la compétition (interleaving par paires conservé).
+app.post("/api/competition/:id/applyAreaMoves", async (req, res) => {
+  try {
+    const competitionId = req.params.id;
+    const { moves } = req.body || {};
+    if (!Array.isArray(moves) || moves.length === 0) {
+      return res.json({ moved: 0, reordered: 0 });
+    }
+
+    const areas = await prisma.area.findMany({ where: { competitionId } });
+    const areaByNumber = new Map(areas.map((a) => [a.areaNumber, a]));
+
+    // Appliquer les déplacements en transaction
+    const tx = [];
+    for (const m of moves) {
+      const target = areaByNumber.get(m.targetAreaNumber);
+      if (!target) continue;
+      tx.push(
+        prisma.match.updateMany({
+          where: { poolId: m.poolId, phase: "pool" },
+          data: { areaId: target.id },
+        })
+      );
+    }
+    await prisma.$transaction(tx);
+
+    // Puis renuméroter
+    const reordered = await reorderPoolScheduleInternal(competitionId);
+    triggerSync(prisma, competitionId);
+
+    res.json({ moved: moves.length, reordered });
+  } catch (error) {
+    console.error("Erreur applyAreaMoves:", error);
     res.status(500).json({ error: error.message });
   }
 });
