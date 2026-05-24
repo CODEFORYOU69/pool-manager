@@ -110,8 +110,10 @@ export const calculatePoolStandings = (poolFighters, poolMatches) => {
     const directWinner = getDirectWinner(a.participantId, b.participantId);
     if (directWinner === a.participantId) return -1;
     if (directWinner === b.participantId) return 1;
-    // 3. Rounds gagnés DESC
-    if (a.roundsWon !== b.roundsWon) return b.roundsWon - a.roundsWon;
+    // 3. Différentiel de rounds (gagnés - perdus) DESC
+    const aRoundDiff = (a.roundsWon || 0) - (a.roundsLost || 0);
+    const bRoundDiff = (b.roundsWon || 0) - (b.roundsLost || 0);
+    if (aRoundDiff !== bRoundDiff) return bRoundDiff - aRoundDiff;
     // 4. Total points DESC
     if (a.totalPoints !== b.totalPoints) return b.totalPoints - a.totalPoints;
     // 5. Pénalités ASC (moins = mieux)
@@ -856,8 +858,11 @@ const calculateRankings = (participantStats, matches, matchResults) => {
     if (directWinner === a.id) return -1;
     if (directWinner === b.id) return 1;
 
-    // 3. Nombre de rounds gagnés
-    if (a.roundsWon !== b.roundsWon) return b.roundsWon - a.roundsWon;
+    // 3. Différentiel de rounds (gagnés - perdus). Best-of-3 : un 2-0 vaut
+    // mieux qu'un 2-1, une défaite 1-2 mieux qu'un 0-2.
+    const aRoundDiff = (a.roundsWon || 0) - (a.roundsLost || 0);
+    const bRoundDiff = (b.roundsWon || 0) - (b.roundsLost || 0);
+    if (aRoundDiff !== bRoundDiff) return bRoundDiff - aRoundDiff;
 
     // 4. Différentiel de points (points marqués - points encaissés)
     if (a.pointsDiff !== b.pointsDiff) return b.pointsDiff - a.pointsDiff;

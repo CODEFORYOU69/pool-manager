@@ -690,9 +690,11 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
                   if (directWinner === a.id) return -1;
                   if (directWinner === b.id) return 1;
 
-                  // 3. Nombre de rounds gagnés
-                  if (a.roundsWon !== b.roundsWon)
-                    return b.roundsWon - a.roundsWon;
+                  // 3. Différentiel de rounds (gagnés - perdus). Best-of-3 :
+                  // un 2-0 vaut mieux qu'un 2-1, une défaite 1-2 mieux qu'un 0-2.
+                  const aRoundDiff = (a.roundsWon || 0) - (a.roundsLost || 0);
+                  const bRoundDiff = (b.roundsWon || 0) - (b.roundsLost || 0);
+                  if (aRoundDiff !== bRoundDiff) return bRoundDiff - aRoundDiff;
 
                   // 4. Différentiel de points (aligné sur l'app Electron qui
                   // fait foi pour la qualification en finales — pas de critère
