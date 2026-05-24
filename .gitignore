@@ -12,3 +12,4 @@ dist/
 # macOS / agent noise
 .DS_Store
 .claude/
+.vercel

@@ -235,18 +235,19 @@ export const parseCSV = (csvContent) => {
       result.ageCategory = "Baby";
     }
 
-    // Détecter la catégorie de poids (format "-33 kg", "-33kg", "33kg", etc.)
-    const weightMatch = groupStr.match(/([+-]?\d+)\s*kg/i);
-    if (weightMatch) {
-      result.weight = parseFloat(
-        weightMatch[1].replace("+", "").replace("-", "")
-      );
-      result.weightCategory = weightMatch[1] + "kg";
-
-      // Normaliser le format (ajouter - si pas de signe)
-      if (!weightMatch[1].startsWith("+") && !weightMatch[1].startsWith("-")) {
-        result.weightCategory = "-" + result.weightCategory;
-      }
+    // Détecter la catégorie de poids. Le signe "+" (catégorie la plus lourde,
+    // sans limite haute) peut être collé OU séparé du nombre selon les sources :
+    // "+57kg", "+57 kg", "+ 57 kg", "+de 57 kg", "+ de 57 kg", "plus de 57 kg".
+    // On analyse donc le texte qui précède le nombre pour déterminer le signe.
+    const numMatch = groupStr.match(/(\d+)\s*kg/i);
+    if (numMatch) {
+      const num = numMatch[1];
+      const before = groupStr.slice(0, numMatch.index).toLowerCase();
+      // "+", "+de", "+ de", "plus de", "au-dessus", "sup" => catégorie haute (+)
+      const isPlus = /(\+|plus\s*de|au[-\s]?dessus|sup[ée]rieur)/.test(before);
+      const sign = isPlus ? "+" : "-";
+      result.weight = parseFloat(num);
+      result.weightCategory = `${sign}${num}kg`;
     }
 
     console.log(`📊 Résultat parsing group:`, result);
