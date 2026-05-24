@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { useCompetition } from "../context/CompetitionContext";
 import {
   API_URL,
+  deleteMatch,
   getCompletedMatches,
   getMatchByNumber,
   loadResults,
@@ -10,8 +11,9 @@ import {
   updateMatchResult,
 } from "../services/dbService";
 import "../styles/ScoreInput.css";
+import MatchMover from "./MatchMover";
 import { findPssInfo } from "../utils/categories";
-import { findPowerThreshold } from "../utils/constants";
+import { findPowerThreshold, findPunchThreshold } from "../utils/constants";
 
 // Classe utilitaire pour limiter le nombre de requêtes API simultanées
 class RequestQueue {
@@ -80,6 +82,10 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep, tournam
   const [error, setError] = useState(null);
   const [dataSource, setDataSource] = useState(""); // 'new' ou 'existing'
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [showDelayInfo, setShowDelayInfo] = useState(() => {
+    const saved = localStorage.getItem("showDelayInfo");
+    return saved === null ? true : saved === "true";
+  });
   // Nouvel état pour stocker la date de la compétition
   const [competitionDate, setCompetitionDate] = useState(null);
   // Nouvel état pour suivre les retards par aire et les heures de fin estimées
@@ -1383,16 +1389,23 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep, tournam
           }
         }
 
-        // Filtre par recherche
+        // Filtre par recherche. En poolFinals, les matchs de finale n'ont pas
+        // toujours match.participants tant que les vainqueurs de poule ne sont
+        // pas tirés — d'où le guard, sinon le filter throw et fige l'app.
         if (searchTerm) {
           const searchLower = searchTerm.toLowerCase();
-          const participantNames = match.participants.map((p) =>
-            `${p.prenom} ${p.nom}`.toLowerCase()
+          const sources = [
+            ...(match.participants || []),
+            ...(match.matchParticipants || []).map((mp) => mp.participant).filter(Boolean),
+          ];
+          const participantNames = sources.map((p) =>
+            `${p?.prenom || ""} ${p?.nom || ""}`.toLowerCase().trim()
           );
 
+          const matchNumStr = String(match.matchNumber ?? "");
           if (
-            !participantNames.some((name) => name.includes(searchLower)) &&
-            !match.matchNumber.toString().includes(searchLower)
+            !participantNames.some((name) => name && name.includes(searchLower)) &&
+            !matchNumStr.includes(searchLower)
           ) {
             return false;
           }
@@ -1722,11 +1735,13 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep, tournam
       "HomeName",
       "HomeCountry",
       "HomeOrgId",
+      "HomeOrgName",
       "HomeCompetitorType",
       "HomeCompetitorId",
       "AwayName",
       "AwayCountry",
       "AwayOrgId",
+      "AwayOrgName",
       "AwayCompetitorType",
       "AwayCompetitorId",
       "Rules",
@@ -1738,6 +1753,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep, tournam
       "TimingInjury",
       "ThresholdBody",
       "ThresholdHead",
+      "ThresholdPunch",
       "GoldenPointEnabled",
       "GoldenPointTime",
       "HomeOrg",
@@ -1909,9 +1925,19 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep, tournam
       //DETERMINER EventID en incrementant de 1 par match commencant à 100
       let indexEventId = 100;
 
-      //DETERMINER HomeOrgId en commencant à 200 et AwayOrgId en commencant à 300 et en incrementant de 1 par match
-      let homeOrgId = 200;
-      let awayOrgId = 300;
+      // Mapping nom de club/ligue → orgId stable. Tous les athlètes d'un même
+      // club partagent le même orgId, qu'ils soient en position A ou B.
+      const orgIdByName = new Map();
+      let nextOrgId = 200;
+      const resolveOrgId = (orgName) => {
+        const normalized = (orgName || "").trim();
+        if (!normalized) return "";
+        if (!orgIdByName.has(normalized)) {
+          orgIdByName.set(normalized, nextOrgId);
+          nextOrgId++;
+        }
+        return orgIdByName.get(normalized);
+      };
 
       for (let index = 0; index < allMatches.length; index++) {
         const match = allMatches[index];
@@ -1968,12 +1994,13 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep, tournam
 
         // Construire le nom de l'événement
 
-        // Déterminer les régions
-        const homeOrg = participantA.ligue || "";
-        const awayOrg = participantB.ligue || "";
+        // Club/ligue : on privilégie le club, sinon la ligue.
+        const homeOrgName = participantA.club || participantA.ligue || "";
+        const awayOrgName = participantB.club || participantB.ligue || "";
+        const homeOrgId = resolveOrgId(homeOrgName);
+        const awayOrgId = resolveOrgId(awayOrgName);
 
         // Formater les IDs selon les règles demandées
-        // 1. Enlever les lettres et garder les 4 premiers chiffres pour les IDs de compétiteurs
         const homeCompetitorId = (participantA.id || "")
           .replace(/[^0-9]/g, "")
           .substring(0, 4);
@@ -1982,9 +2009,6 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep, tournam
           .substring(0, 4);
 
         // Obtenir le seuil PSS pour ce match spécifique
-        console.log(
-          `Récupération du seuil PSS pour match #${match.matchNumber}`
-        );
         const thresholdBody = await getPssThresholdForMatch(
           match.id,
           match.groupId,
@@ -1992,10 +2016,8 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep, tournam
           gender,
           weightCategory
         );
-        console.log(
-          `Seuil PSS déterminé pour match #${match.matchNumber}:`,
-          thresholdBody
-        );
+
+        const thresholdPunch = findPunchThreshold(ageCategory);
 
         // Générer un ID à 3 chiffres
         const formattedId = String(index + 1).padStart(3, "0");
@@ -2008,47 +2030,47 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep, tournam
           ? `-${weightCategory}`.replace(/--/g, "-")
           : "";
 
-        // Incrémenter les IDs pour ce match
         indexEventId = indexEventId + 1;
-        homeOrgId = homeOrgId + 1;
-        awayOrgId = awayOrgId + 1;
 
         // Créer la ligne CSV
         const row = [
           formattedId, // MatchId
-          mat, // Mat - utiliser l'aire de combat
+          mat, // Mat
           match.matchNumber || index + 1, // Number
           "R16", // Phase
           "SCHEDULED", // Status
           getParticipantName(match, "A"), // HomeName
           "FRA", // HomeCountry
-          homeOrgId, // HomeOrgId - incrémenté pour chaque match
-          "A", // HomeCompetitorType - format modifié
-          homeCompetitorId, // HomeCompetitorId - format modifié
+          homeOrgId, // HomeOrgId (stable par club)
+          homeOrgName, // HomeOrgName
+          "A", // HomeCompetitorType
+          homeCompetitorId, // HomeCompetitorId
           getParticipantName(match, "B"), // AwayName
           "FRA", // AwayCountry
-          awayOrgId, // AwayOrgId - incrémenté pour chaque match
-          "A", // AwayCompetitorType - format modifié
-          awayCompetitorId, // AwayCompetitorId - format modifié
+          awayOrgId, // AwayOrgId (stable par club)
+          awayOrgName, // AwayOrgName
+          "A", // AwayCompetitorType
+          awayCompetitorId, // AwayCompetitorId
           "BESTOF3", // Rules
           "3", // Rounds
           "99", // MaxDiff
           "5", // MaxPen
-          roundDuration, // TimingRound - directement de l'API
-          breakDuration, // TimingRest - directement de l'API
+          roundDuration, // TimingRound
+          breakDuration, // TimingRest
           "60", // TimingInjury
-          thresholdBody, // ThresholdBody - valeur spécifique au match
+          thresholdBody, // ThresholdBody
           "0", // ThresholdHead
+          thresholdPunch, // ThresholdPunch (1 pour Benjamins/Minimes, 0 sinon)
           "False", // GoldenPointEnabled
           "60", // GoldenPointTime
-          homeOrg, // HomeOrg
-          awayOrg, // AwayOrg
+          homeOrgName, // HomeOrg
+          awayOrgName, // AwayOrg
           "Taekwondo Kyorugi", // Discipline
           ageCategory, // Division
           gender, // Gender
-          formattedWeightCategory, // WeightCategory - utiliser directement weightCategoryName du groupe
+          formattedWeightCategory, // WeightCategory
           "ATHLETE", // Role
-          indexEventId, // EventID - incrémenté pour chaque match
+          indexEventId, // EventID
           "1", // VideoReplayHome
           "1", // VideoReplayAway
         ];
@@ -2062,8 +2084,8 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep, tournam
     // Exécuter le traitement et créer le fichier CSV
     processMatches()
       .then((rows) => {
-        // Combiner toutes les lignes
-        const csvString = [headers.join(","), ...rows].join("\n");
+        // Combiner toutes les lignes (BOM UTF-8 pour Excel Windows)
+        const csvString = "\uFEFF" + [headers.join(","), ...rows].join("\n");
 
         // Créer un objet blob pour le téléchargement
         const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
@@ -2473,7 +2495,26 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep, tournam
                         onClick={() => resetMatch(match)}
                         className="delete-btn"
                         style={{
-                          backgroundColor: "#f44336",
+                          backgroundColor: "#ff9800",
+                          color: "white",
+                          padding: "5px 10px",
+                          borderRadius: "4px",
+                          border: "none",
+                          cursor: "pointer",
+                          fontWeight: "bold",
+                          display: "block",
+                          width: "100%",
+                          marginBottom: "5px",
+                        }}
+                        title="Efface les scores mais garde le combat"
+                      >
+                        Réinitialiser
+                      </button>
+                      <button
+                        onClick={() => handleDeleteMatch(match)}
+                        className="delete-btn"
+                        style={{
+                          backgroundColor: "#d32f2f",
                           color: "white",
                           padding: "5px 10px",
                           borderRadius: "4px",
@@ -2483,8 +2524,9 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep, tournam
                           display: "block",
                           width: "100%",
                         }}
+                        title="Supprime définitivement le combat"
                       >
-                        Supprimer
+                        Supprimer le combat
                       </button>
                     </td>
                   </tr>
@@ -2927,6 +2969,39 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep, tournam
     showCompleted,
   ]);
 
+  // Fonction pour supprimer définitivement un combat
+  const handleDeleteMatch = async (match) => {
+    if (
+      !window.confirm(
+        `Êtes-vous sûr de vouloir SUPPRIMER définitivement le combat #${match.matchNumber} ?\n\nCette action est irréversible.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await deleteMatch(match.id);
+
+      setCurrentMatches((prev) => prev.filter((m) => m.id !== match.id));
+      setCompletedMatches((prev) => prev.filter((m) => m.id !== match.id));
+      setMatchResults((prev) => {
+        const next = { ...prev };
+        delete next[match.id];
+        return next;
+      });
+
+      await loadCompletedMatches();
+
+      const updatedDelayInfo = calculateAreasDelayInfo();
+      setAreasDelayInfo(updatedDelayInfo);
+
+      alert(`Le combat #${match.matchNumber} a été supprimé.`);
+    } catch (error) {
+      console.error("Erreur lors de la suppression du combat:", error);
+      alert("Erreur lors de la suppression du combat. Veuillez réessayer.");
+    }
+  };
+
   // Fonction pour réinitialiser un match (supprimer les résultats et remettre en statut "pending")
   const resetMatch = async (match) => {
     if (
@@ -3062,12 +3137,27 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep, tournam
         `}
       </style>
 
-      {/* Header fixe avec informations de retard */}
-      <div className="fixed-header-delay-info">
+      {/* Header fixe avec informations de retard (collapsible) */}
+      <div
+        className={`fixed-header-delay-info ${
+          showDelayInfo ? "expanded" : "collapsed"
+        }`}
+      >
         <div className="header-content">
-          <div className="header-title">
+          <button
+            type="button"
+            className="header-title delay-toggle"
+            onClick={() => {
+              const next = !showDelayInfo;
+              setShowDelayInfo(next);
+              localStorage.setItem("showDelayInfo", String(next));
+            }}
+            aria-expanded={showDelayInfo}
+          >
             <span>⏱️ Estimations de fin par aire</span>
-          </div>
+            <span className="toggle-chevron">{showDelayInfo ? "▾" : "▸"}</span>
+          </button>
+          {showDelayInfo && (
           <div className="areas-delay-cards">
             {Object.keys(areasDelayInfo).length === 0 ? (
               <div className="no-data-message">
@@ -3115,6 +3205,7 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep, tournam
               })
             )}
           </div>
+          )}
         </div>
       </div>
 
@@ -3239,6 +3330,12 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep, tournam
                   />
                 </div>
               </div>
+
+              <MatchMover
+                competitionId={competitionId}
+                numAreas={areasCount}
+                onMoved={() => loadMatchesAndResults()}
+              />
 
               <div className="matches-list">
                 {filteredMatches.length === 0 ? (
@@ -3513,20 +3610,56 @@ const ScoreInput = ({ matches, schedule, setResults, nextStep, prevStep, tournam
                                     ? "Sauvegarde..."
                                     : "Valider et Sauvegarder"}
                                 </button>
+
+                                <button
+                                  className="delete-match-btn"
+                                  onClick={() => handleDeleteMatch(match)}
+                                  style={{
+                                    backgroundColor: "#f44336",
+                                    color: "white",
+                                    padding: "8px 12px",
+                                    borderRadius: "4px",
+                                    border: "none",
+                                    cursor: "pointer",
+                                    fontWeight: "bold",
+                                  }}
+                                  title="Supprimer définitivement ce combat"
+                                >
+                                  Supprimer le combat
+                                </button>
                               </>
                             )}
 
                             {matchResult.completed && (
-                              <div className="match-result">
-                                <span>
-                                  Vainqueur:{" "}
-                                  {matchResult.winner === "A"
-                                    ? getParticipantName(match, "A")
-                                    : matchResult.winner === "B"
-                                    ? getParticipantName(match, "B")
-                                    : "Match nul"}
-                                </span>
-                              </div>
+                              <>
+                                <div className="match-result">
+                                  <span>
+                                    Vainqueur:{" "}
+                                    {matchResult.winner === "A"
+                                      ? getParticipantName(match, "A")
+                                      : matchResult.winner === "B"
+                                      ? getParticipantName(match, "B")
+                                      : "Match nul"}
+                                  </span>
+                                </div>
+                                <button
+                                  className="delete-match-btn"
+                                  onClick={() => handleDeleteMatch(match)}
+                                  style={{
+                                    backgroundColor: "#f44336",
+                                    color: "white",
+                                    padding: "8px 12px",
+                                    borderRadius: "4px",
+                                    border: "none",
+                                    cursor: "pointer",
+                                    fontWeight: "bold",
+                                    marginLeft: "10px",
+                                  }}
+                                  title="Supprimer définitivement ce combat"
+                                >
+                                  Supprimer le combat
+                                </button>
+                              </>
                             )}
                           </div>
                         </div>
