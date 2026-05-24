@@ -9,3 +9,6 @@ config.env
 *.db-journal
 # Electron builder output
 dist/
+# macOS / agent noise
+.DS_Store
+.claude/

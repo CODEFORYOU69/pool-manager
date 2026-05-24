@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- V8 / Chromium JIT — required for any Electron app with hardened runtime. -->
+    <key>com.apple.security.cs.allow-jit</key><true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+
+    <!-- Required to load unsigned .node native modules (Prisma engine, etc.). -->
+    <key>com.apple.security.cs.disable-library-validation</key><true/>
+
+    <!-- Required by Node runtime (DYLD_LIBRARY_PATH used internally). -->
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key><true/>
+
+    <!-- Network client : sync Neon (HTTPS), checks update, etc. -->
+    <key>com.apple.security.network.client</key><true/>
+
+    <!-- Network server : the embedded Express API listens on localhost:3001
+         for the React frontend AND for FightandCo POSTing match results. -->
+    <key>com.apple.security.network.server</key><true/>
+</dict>
+</plist>
