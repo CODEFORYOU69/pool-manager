@@ -218,6 +218,13 @@ async function syncCompetitionToNeon(localPrisma, competitionId) {
               startTime: match.startTime,
               endTime: match.endTime,
               winner: match.winner,
+              // areaId/groupId/poolId DOIVENT être resynchronisés : un
+              // rééquilibrage ou une réassignation d'aire change l'areaId ET
+              // le matchNumber. Sans ça, Supabase garde l'ancienne aire avec
+              // le nouveau numéro → numéro de combat ≠ aire affichée.
+              areaId: match.areaId,
+              groupId: match.groupId,
+              poolId: match.poolId,
               poolIndex: match.poolIndex,
               pointMatch: match.pointMatch,
               phase: match.phase,
