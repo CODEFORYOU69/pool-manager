@@ -345,18 +345,12 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
         });
       }
 
-      // Compter les matchs complétés
+      // Compter les matchs complétés (info seulement — on calcule les poules
+      // même sans résultats pour que le spectateur voie la composition).
       const completedMatchCount = matches.filter(
         (m: Match) => m.status === "completed"
       ).length;
       console.log(`Matchs complétés: ${completedMatchCount}`);
-
-      if (completedMatchCount === 0) {
-        setNoCompletedMatches(true);
-        setIsLoading(false);
-        setRefreshing(false);
-        return;
-      }
 
       // Fonction locale pour calculer les résultats
       const calculateAndSetResults = (
@@ -700,15 +694,14 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
                   if (a.roundsWon !== b.roundsWon)
                     return b.roundsWon - a.roundsWon;
 
-                  // 4. Total points marqués DESC
-                  if (a.pointsGained !== b.pointsGained)
-                    return b.pointsGained - a.pointsGained;
-
-                  // 5. Différence de points
+                  // 4. Différentiel de points (aligné sur l'app Electron qui
+                  // fait foi pour la qualification en finales — pas de critère
+                  // "total points marqués" intermédiaire, sinon le classement
+                  // public peut diverger de la qualification réelle).
                   if (a.pointsDiff !== b.pointsDiff)
                     return b.pointsDiff - a.pointsDiff;
 
-                  // 6. Moins de gamjeon reçus = mieux classé
+                  // 5. Moins de gamjeon reçus = mieux classé
                   if (a.gamjeonReceived !== b.gamjeonReceived)
                     return a.gamjeonReceived - b.gamjeonReceived;
 
@@ -905,11 +898,11 @@ const Results: React.FC<{ competitionId: string }> = ({ competitionId }) => {
     return (
       <div className="p-6 bg-yellow-50 rounded-lg border border-yellow-300">
         <h3 className="text-lg font-semibold text-yellow-700 mb-2">
-          Aucun match complété
+          Aucune poule configurée
         </h3>
         <p className="text-yellow-600 mb-4">
-          Il n&apos;y a pas encore de matchs complétés pour calculer les
-          résultats.
+          Les poules de cette compétition ne sont pas encore définies. Reviens
+          quand l&apos;organisateur aura fait les tirages.
         </p>
         <button
           className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
