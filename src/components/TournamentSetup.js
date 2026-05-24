@@ -1,6 +1,10 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useCompetition } from "../context/CompetitionContext";
-import { saveGroupsAndPools, saveParticipants } from "../services/dbService";
+import {
+  checkExistingGroupsAndPools,
+  saveGroupsAndPools,
+  saveParticipants,
+} from "../services/dbService";
 import "../styles/TournamentSetup.css";
 import {
   createGroups,
@@ -20,6 +24,7 @@ const TournamentSetup = ({
   setTournamentConfig,
   nextStep,
   prevStep,
+  selectedCompetition,
 }) => {
   const { competitionName, setCompetitionName, initializeCompetition } =
     useCompetition();
@@ -116,6 +121,27 @@ const TournamentSetup = ({
     ageCategories: generateAgeCategories(),
     weightCategories: generateWeightCategories(),
   });
+
+  // Pré-remplir le formulaire avec les données de la compétition existante
+  // (sinon les defaults locaux écraseraient les vraies valeurs à la sauvegarde).
+  useEffect(() => {
+    if (!selectedCompetition) return;
+    const c = selectedCompetition;
+    setConfig((prev) => ({
+      ...prev,
+      name: c.name || prev.name,
+      date: c.date ? new Date(c.date) : prev.date,
+      startTime: c.startTime ? new Date(c.startTime) : prev.startTime,
+      tournamentType: c.tournamentType || prev.tournamentType,
+      roundDuration: c.roundDuration ?? prev.roundDuration,
+      breakDuration: c.breakDuration ?? prev.breakDuration,
+      breakFrequency: c.breakFrequency ?? prev.breakFrequency,
+      numberOfAreas:
+        c.numAreas ?? c.numberOfAreas ?? c.areas?.length ?? prev.numberOfAreas,
+      poolSize: c.poolSize ?? prev.poolSize,
+    }));
+    if (c.name) setCompetitionName(c.name);
+  }, [selectedCompetition, setCompetitionName]);
 
   // Convertir les secondes en format minutes:secondes pour l'affichage
   const secondsToMinSec = (totalSeconds) => {
@@ -476,6 +502,21 @@ const TournamentSetup = ({
         ...config,
         poolSize: config.poolSize, // Utiliser 4 comme valeur par défaut si non défini
       };
+
+      // Si la compétition a déjà des groupes (re-édition), on ne recrée RIEN.
+      // Sinon on créerait des doublons (groupes, poules, matchs).
+      const existing = await checkExistingGroupsAndPools(savedCompetitionId);
+      if (existing?.exists && existing?.count > 0) {
+        console.log(
+          `Compétition existante avec ${existing.count} groupe(s) — création de groupes/poules SKIP.`
+        );
+        setSaveSuccess(true);
+        setTimeout(() => {
+          setSaveSuccess(false);
+          nextStep();
+        }, 800);
+        return;
+      }
 
       // Créer les groupes selon le type de tournoi
       if (config.tournamentType === "pools") {

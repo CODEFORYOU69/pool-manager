@@ -64,6 +64,7 @@ export const saveCompetitionState = async (competitionData) => {
       breakFrequency: competitionData.breakFrequency,
       poolSize: competitionData.poolSize,
       numAreas: competitionData.numAreas || competitionData.numberOfAreas,
+      tournamentType: competitionData.tournamentType,
     };
 
     console.log("Données préparées pour la sauvegarde:", competitionToSave);
@@ -1119,6 +1120,31 @@ export const updateMatchResult = async (matchId, matchData) => {
     return result;
   } catch (error) {
     console.error("Erreur lors de la mise à jour du match:", error);
+    throw error;
+  }
+};
+
+// Suppression d'un match individuel
+export const deleteMatch = async (matchId) => {
+  try {
+    console.log("Tentative de suppression du match:", matchId);
+
+    const response = await fetch(`${API_URL}/match/${matchId}`, {
+      method: "DELETE",
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        errorData.message || "Erreur lors de la suppression du match"
+      );
+    }
+
+    const result = await response.json();
+    console.log("Match supprimé avec succès:", result);
+    return result;
+  } catch (error) {
+    console.error("Erreur lors de la suppression du match:", error);
     throw error;
   }
 };
@@ -2204,6 +2230,102 @@ export const fetchPoolStandings = async (poolId) => {
  * @param {number} fightsPerPerson
  * @param {Array<number>} [allowedAreas] - Numéros d'aires autorisées (mode PSS)
  */
+/**
+ * Applique une liste d'assignations matchId→areaNumber puis renumérote.
+ * @param {string} competitionId
+ * @param {Array<{matchId:string, areaNumber:number}>} assignments
+ */
+export const applyAreaAssignments = async (competitionId, assignments) => {
+  const response = await fetch(
+    `${API_URL}/competition/${competitionId}/applyAreaAssignments`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assignments }),
+    }
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(
+      err.message || `Erreur applyAreaAssignments: ${response.status}`
+    );
+  }
+  return response.json();
+};
+
+/**
+ * Déplace un combat vers une autre aire (matchNumber = max+1 sur la cible).
+ * @param {string} matchId
+ * @param {number} targetAreaNumber
+ */
+export const moveMatchToArea = async (matchId, targetAreaNumber) => {
+  const response = await fetch(`${API_URL}/match/${matchId}/moveToArea`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ targetAreaNumber }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || `Erreur moveToArea: ${response.status}`);
+  }
+  return response.json();
+};
+
+/**
+ * Récupère le prochain matchNumber disponible sur une aire (max+1).
+ * @param {string} competitionId
+ * @param {number} areaNumber
+ */
+export const getNextMatchNumber = async (competitionId, areaNumber) => {
+  const response = await fetch(
+    `${API_URL}/competition/${competitionId}/area/${areaNumber}/nextMatchNumber`
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || `Erreur nextMatchNumber: ${response.status}`);
+  }
+  return response.json();
+};
+
+/**
+ * Applique des déplacements de poules entre aires puis renumérote tout le
+ * planning. Body : { moves: [{poolId, targetAreaNumber}] }.
+ * @param {string} competitionId
+ * @param {Array<{poolId:string, targetAreaNumber:number}>} moves
+ */
+export const applyAreaMoves = async (competitionId, moves) => {
+  const response = await fetch(
+    `${API_URL}/competition/${competitionId}/applyAreaMoves`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ moves }),
+    }
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.message || `Erreur applyAreaMoves: ${response.status}`);
+  }
+  return response.json();
+};
+
+/**
+ * Réordonne les matchs de phase "pool" en entrelaçant les poules par paires
+ * sur chaque aire (pour le mode Poule Unique + Finales).
+ * @param {string} competitionId
+ */
+export const reorderPoolSchedule = async (competitionId) => {
+  const response = await fetch(
+    `${API_URL}/competition/${competitionId}/reorderPoolSchedule`,
+    { method: "POST", headers: { "Content-Type": "application/json" } }
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.message || `Erreur reorder: ${response.status}`);
+  }
+  return response.json();
+};
+
 export const performDraw = async (poolId, fights, tours, fightsPerPerson, allowedAreas) => {
   const body = { fights, tours, fightsPerPerson };
   if (allowedAreas && allowedAreas.length > 0) {

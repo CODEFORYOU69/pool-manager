@@ -609,10 +609,35 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: var(--space-2);
   margin-bottom: var(--space-2-5);
   font-weight: var(--font-semibold);
   color: var(--color-gray-800);
   font-size: var(--text-md);
+}
+
+.fixed-header-delay-info .delay-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-md);
+  transition: background-color var(--transition-fast);
+  font: inherit;
+  color: inherit;
+}
+
+.fixed-header-delay-info .delay-toggle:hover {
+  background-color: var(--color-gray-100);
+}
+
+.fixed-header-delay-info .toggle-chevron {
+  font-size: var(--text-sm);
+  color: var(--color-gray-500);
+}
+
+.fixed-header-delay-info.collapsed .header-title {
+  margin-bottom: 0;
 }
 
 .fixed-header-delay-info .header-icon {

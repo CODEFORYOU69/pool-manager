@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useCompetition } from "../context/CompetitionContext";
-import { API_URL } from "../services/dbService";
+import { API_URL, applyAreaMoves } from "../services/dbService";
 import { exportMatchesToDaedoCsv } from "../utils/csvExporter";
+import { computeRebalanceMoves } from "../utils/areaRebalancer";
 import "../styles/PoolSchedule.css";
 
 const PoolSchedule = ({ tournamentConfig, nextStep, prevStep, setSchedule: setParentSchedule, setMatches: setParentMatches }) => {
@@ -11,6 +12,10 @@ const PoolSchedule = ({ tournamentConfig, nextStep, prevStep, setSchedule: setPa
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [exportLoading, setExportLoading] = useState(false);
+  const [rebalancing, setRebalancing] = useState(false);
+  // Surcharge utilisateur de la durée par combat (minutes) — recalcule l'estim.
+  const [customMatchMinutes, setCustomMatchMinutes] = useState("");
+  const [customBreakSeconds, setCustomBreakSeconds] = useState("");
 
   useEffect(() => {
     if (!competitionId) return;
@@ -163,6 +168,88 @@ const PoolSchedule = ({ tournamentConfig, nextStep, prevStep, setSchedule: setPa
     }
   };
 
+  /**
+   * Rééquilibre les aires : calcule les déplacements de poules pour égaliser
+   * la charge entre aires d'un même slot PSS, puis applique côté backend.
+   */
+  const handleRebalanceAreas = async () => {
+    const pools = [];
+    for (const group of groups) {
+      const pool = group.pools?.[0];
+      if (!pool) continue;
+      const poolMatches = pool.matches || [];
+      if (poolMatches.length === 0) continue;
+      const currentAreaNumber =
+        poolMatches[0]?.area?.areaNumber || poolMatches[0]?.areaNumber || null;
+      if (!currentAreaNumber) continue;
+      pools.push({
+        id: pool.id,
+        group,
+        currentAreaNumber,
+        matchCount: poolMatches.length,
+      });
+    }
+
+    if (pools.length === 0) {
+      alert("Aucune poule avec des combats à rééquilibrer.");
+      return;
+    }
+
+    const { moves, summary } = computeRebalanceMoves(pools);
+
+    if (moves.length === 0) {
+      alert(
+        `Les aires sont déjà équilibrées (min ${summary.before.min}, max ${summary.before.max} combats).`
+      );
+      return;
+    }
+
+    const confirmMsg =
+      `Rééquilibrage proposé :\n` +
+      `Charge avant : min ${summary.before.min}, max ${summary.before.max}\n` +
+      `Charge après : min ${summary.after.min}, max ${summary.after.max}\n` +
+      `Poules déplacées : ${moves.length}\n\n` +
+      moves
+        .map(
+          (m) =>
+            `  • aire ${m.fromAreaNumber} → aire ${m.toAreaNumber} (${m.matchCount} combats)`
+        )
+        .join("\n") +
+      `\n\nAppliquer ?`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    setRebalancing(true);
+    try {
+      await applyAreaMoves(
+        competitionId,
+        moves.map((m) => ({
+          poolId: m.poolId,
+          targetAreaNumber: m.toAreaNumber,
+        }))
+      );
+      // Refetch matches + groups au lieu d'un reload complet
+      const [mRes, gRes] = await Promise.all([
+        fetch(`${API_URL}/competition/${competitionId}/matchesWithDetails`),
+        fetch(`${API_URL}/competition/${competitionId}/groupsWithDetails`),
+      ]);
+      if (mRes.ok) {
+        const mData = await mRes.json();
+        setMatches((mData || []).filter((m) => m.phase === "pool"));
+      }
+      if (gRes.ok) {
+        const gData = await gRes.json();
+        setGroups(gData || []);
+      }
+      alert(`Rééquilibrage appliqué : ${moves.length} poule(s) déplacée(s).`);
+    } catch (err) {
+      console.error("Erreur rebalance:", err);
+      alert(`Erreur lors du rééquilibrage : ${err.message}`);
+    } finally {
+      setRebalancing(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="pool-schedule-container">
@@ -189,8 +276,16 @@ const PoolSchedule = ({ tournamentConfig, nextStep, prevStep, setSchedule: setPa
   // Estimation de la durée et heure de fin
   const roundDuration = tournamentConfig?.roundDuration || 120;
   const breakDuration = tournamentConfig?.breakDuration || 30;
-  const matchDurationSeconds = roundDuration * 3 + breakDuration * 2 + 60; // 3 rounds + 2 pauses + 60s setup
-  const breakBetweenMatchesSeconds = 60;
+  const computedMatchSeconds = roundDuration * 3 + breakDuration * 2 + 60; // 3 rounds + 2 pauses + 60s setup
+  // Si l'utilisateur a saisi une durée custom, on l'utilise. Sinon valeur calculée.
+  const matchDurationSeconds =
+    customMatchMinutes !== "" && !isNaN(parseFloat(customMatchMinutes))
+      ? Math.max(1, parseFloat(customMatchMinutes)) * 60
+      : computedMatchSeconds;
+  const breakBetweenMatchesSeconds =
+    customBreakSeconds !== "" && !isNaN(parseInt(customBreakSeconds, 10))
+      ? Math.max(0, parseInt(customBreakSeconds, 10))
+      : 60;
 
   // Répartition par aire pour trouver le goulot d'étranglement
   const matchesByArea = {};
@@ -262,11 +357,56 @@ const PoolSchedule = ({ tournamentConfig, nextStep, prevStep, setSchedule: setPa
                   Fin estimée : <strong>{formatTime(estimatedEndTime)}</strong>
                 </>
               )}
+              {" | "}
+              <strong>
+                {Math.round(
+                  3600 / (matchDurationSeconds + breakBetweenMatchesSeconds)
+                )}
+              </strong>{" "}
+              combats/h/aire
+              {" · "}
+              <strong>
+                {Math.round(
+                  (3600 / (matchDurationSeconds + breakBetweenMatchesSeconds)) *
+                    Object.keys(matchesByArea).length
+                )}
+              </strong>{" "}
+              combats/h total
             </p>
             <p className="duration-note">
               Estimation basée sur l'aire la plus chargée ({maxMatchesPerArea} combats) ·{" "}
-              {Math.round(matchDurationSeconds / 60)} min par combat + {breakBetweenMatchesSeconds}s
-              de pause entre combats. Les finales ajouteront du temps supplémentaire.
+              <label>
+                Durée par combat :{" "}
+                <input
+                  type="number"
+                  min="1"
+                  step="0.5"
+                  value={
+                    customMatchMinutes !== ""
+                      ? customMatchMinutes
+                      : Math.round((computedMatchSeconds / 60) * 10) / 10
+                  }
+                  onChange={(e) => setCustomMatchMinutes(e.target.value)}
+                  style={{ width: 60, margin: "0 4px" }}
+                />
+                min
+              </label>{" "}
+              +{" "}
+              <label>
+                pause{" "}
+                <input
+                  type="number"
+                  min="0"
+                  step="5"
+                  value={
+                    customBreakSeconds !== "" ? customBreakSeconds : 60
+                  }
+                  onChange={(e) => setCustomBreakSeconds(e.target.value)}
+                  style={{ width: 60, margin: "0 4px" }}
+                />
+                s entre combats
+              </label>
+              . Les finales ajouteront du temps supplémentaire.
             </p>
           </div>
 
@@ -277,6 +417,14 @@ const PoolSchedule = ({ tournamentConfig, nextStep, prevStep, setSchedule: setPa
               disabled={exportLoading}
             >
               {exportLoading ? "Export en cours..." : "Exporter CSV (format scoring)"}
+            </button>
+            <button
+              className="export-btn"
+              onClick={handleRebalanceAreas}
+              disabled={rebalancing}
+              title="Équilibre les combats entre aires d'un même slot PSS"
+            >
+              {rebalancing ? "Rééquilibrage..." : "Rééquilibrer les aires"}
             </button>
           </div>
 

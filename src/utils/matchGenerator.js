@@ -297,25 +297,85 @@ const generatePoolMatches = (pool, groupId, poolIndex, groupParticipants) => {
  * @returns {Array} - Liste des paires d'indices des participants
  */
 const generateMatchups = (poolSize) => {
-  // Cas spécial pour une poule de 4
+  // Pool de 4 : ordre éprouvé qui alterne les athlètes (un athlète ne fait
+  // jamais deux combats consécutifs).
   if (poolSize === 4) {
     return [
-      [0, 1], // A vs B
-      [2, 3], // C vs D
-      [0, 2], // A vs C
-      [1, 3], // B vs D
-      [0, 3], // A vs D
-      [1, 2], // B vs C
+      [0, 1], [2, 3], [0, 2], [1, 3], [0, 3], [1, 2],
     ];
   }
 
-  // Pour les autres tailles de poule, générer toutes les combinaisons possibles
-  const matchups = [];
-  for (let i = 0; i < poolSize; i++) {
-    for (let j = i + 1; j < poolSize; j++) {
-      matchups.push([i, j]);
+  // Round-robin par méthode du cercle (Berger). Génère un ordonnancement
+  // dans lequel chaque athlète n'enchaîne pas deux combats d'affilée :
+  // chaque "round" du cercle représente un ensemble de combats simultanés
+  // (chaque athlète au plus 1 fois). En linéarisant les rounds dans l'ordre,
+  // on garantit l'alternance.
+  const allPairs = circleRoundRobin(poolSize); // [[round1Pairs], [round2Pairs], ...]
+
+  // Aplatir et réordonner pour minimiser les combats consécutifs du même
+  // athlète quand on enchaîne deux rounds (l'athlète qui combat en dernier
+  // d'un round ne doit pas combattre en premier du suivant).
+  const flat = [];
+  let lastFighters = new Set();
+  allPairs.forEach((roundPairs) => {
+    const ordered = [...roundPairs];
+    // Trier dans le round : placer en premier les paires qui ne contiennent
+    // aucun des combattants ayant terminé le round précédent.
+    ordered.sort((a, b) => {
+      const aOverlap =
+        (lastFighters.has(a[0]) ? 1 : 0) + (lastFighters.has(a[1]) ? 1 : 0);
+      const bOverlap =
+        (lastFighters.has(b[0]) ? 1 : 0) + (lastFighters.has(b[1]) ? 1 : 0);
+      return aOverlap - bOverlap;
+    });
+    flat.push(...ordered);
+    lastFighters = new Set();
+    if (ordered.length > 0) {
+      const last = ordered[ordered.length - 1];
+      lastFighters.add(last[0]);
+      lastFighters.add(last[1]);
     }
+  });
+
+  return flat;
+};
+
+/**
+ * Round-robin "circle method" : génère le calendrier d'un round-robin
+ * complet pour N participants, regroupé par tour. Chaque tour contient
+ * floor(N/2) combats, chaque athlète au plus 1 fois.
+ *
+ * @param {number} n - Nombre de participants
+ * @returns {Array<Array<[number, number]>>} - Liste de tours, chacun = liste de paires d'indices
+ */
+const circleRoundRobin = (n) => {
+  const isOdd = n % 2 !== 0;
+  const size = isOdd ? n + 1 : n; // Ajouter un "bye" virtuel si impair
+  const players = Array.from({ length: size }, (_, i) => i);
+  const rounds = [];
+  const numRounds = size - 1;
+
+  for (let r = 0; r < numRounds; r++) {
+    const roundPairs = [];
+    for (let i = 0; i < size / 2; i++) {
+      const a = players[i];
+      const b = players[size - 1 - i];
+      // Ignorer les paires qui contiennent le "bye" (index >= n)
+      if (a < n && b < n) {
+        roundPairs.push([Math.min(a, b), Math.max(a, b)]);
+      }
+    }
+    rounds.push(roundPairs);
+
+    // Rotation : le premier reste fixe, les autres tournent
+    const fixed = players[0];
+    const rotated = [
+      fixed,
+      players[size - 1],
+      ...players.slice(1, size - 1),
+    ];
+    for (let i = 0; i < size; i++) players[i] = rotated[i];
   }
 
-  return matchups;
+  return rounds;
 };

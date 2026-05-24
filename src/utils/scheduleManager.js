@@ -32,6 +32,11 @@ const createSchedule = (matches, config) => {
   // Heure de début (commune à toutes les aires)
   const startTime = config.startTime || new Date();
 
+  // Mode "Poule Unique + Finales" : intercaler les poules par paires
+  // (paquet de 3 si nombre impair) au lieu d'entrelacer toutes les
+  // poules de l'aire en parallèle.
+  const pairwisePoolsMode = config.tournamentType === "poolFinals";
+
   // MODIFICATION: Vérifier si les matchs ont déjà des attributions d'aires (via phaseManager)
   const hasPreAssignedAreas = matches.some(
     (match) => match.areaNumber !== undefined
@@ -201,7 +206,8 @@ const createSchedule = (matches, config) => {
         // Organiser les matchs de cette aire pour cette phase
         const organizedMatches = organizePoolMatchesWithSpacing(
           poolsForThisArea,
-          poolSizes
+          poolSizes,
+          pairwisePoolsMode
         );
 
         // Planifier chaque match
@@ -348,7 +354,8 @@ const createSchedule = (matches, config) => {
       // Organisez intelligemment les matchs pour éviter que le même combattant combat deux fois de suite
       const allMatches = organizePoolMatchesWithSpacing(
         poolsForThisArea,
-        poolSizes
+        poolSizes,
+        pairwisePoolsMode
       );
 
       // Planifier chaque match
@@ -612,7 +619,19 @@ const countPoolsOfSize3 = (poolsInArea, poolSizes) => {
  * @param {Object} poolSizes - Tailles des poules
  * @returns {Array} - Liste organisée de matchs
  */
-const organizePoolMatchesWithSpacing = (pools, poolSizes) => {
+const organizePoolMatchesWithSpacing = (pools, poolSizes, pairwise = false) => {
+  // Mode "Poule Unique + Finales" : intercaler 2 poules à la fois (3 si
+  // nombre impair), puis enchaîner sur les paires suivantes une fois les
+  // précédentes terminées.
+  if (pairwise) {
+    const chunks = chunkPoolsPairwise(pools);
+    const result = [];
+    for (const chunk of chunks) {
+      result.push(...organizeStandardPools(chunk));
+    }
+    return result;
+  }
+
   // Séparer les poules par taille
   const poolsBySize = {
     size3: [],
@@ -636,6 +655,24 @@ const organizePoolMatchesWithSpacing = (pools, poolSizes) => {
 
   // Combiner les deux listes en alternant entre elles pour un meilleur équilibre
   return interleaveLists(organizedOtherMatches, organizedSize3Matches);
+};
+
+/**
+ * Découpe une liste de poules en paquets de 2, le dernier paquet contenant 3
+ * poules si le nombre total est impair (ex: 5 → [2, 3], 7 → [2, 2, 3]).
+ * @param {Array} pools
+ * @returns {Array<Array>} - Liste de paquets de poules
+ */
+const chunkPoolsPairwise = (pools) => {
+  const chunks = [];
+  let i = 0;
+  while (i < pools.length) {
+    const remaining = pools.length - i;
+    const size = remaining === 3 ? 3 : Math.min(remaining, 2);
+    chunks.push(pools.slice(i, i + size));
+    i += size;
+  }
+  return chunks;
 };
 
 /**

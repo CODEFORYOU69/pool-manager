@@ -6,6 +6,7 @@ import {
   fetchCompetitions,
 } from "../services/dbService";
 import "../styles/CompetitionList.css";
+import ApiKeysPanel from "./ApiKeysPanel";
 
 const CompetitionList = ({ onNewCompetition, onSelectCompetition }) => {
   const { setCompetitionId, setCompetitionName, competitionId } =
@@ -14,6 +15,7 @@ const CompetitionList = ({ onNewCompetition, onSelectCompetition }) => {
   const [neonOnlyCompetitions, setNeonOnlyCompetitions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [apiKeysFor, setApiKeysFor] = useState(null);
 
   useEffect(() => {
     loadCompetitions();
@@ -202,6 +204,20 @@ const CompetitionList = ({ onNewCompetition, onSelectCompetition }) => {
               </div>
               <div className="competition-stats">
                 <div className="stat">
+                  <span className="label">Type:</span>{" "}
+                  {competition.tournamentType === "poolFinals"
+                    ? "Poule Unique + Finales"
+                    : competition.tournamentType === "elimination"
+                    ? "Élimination directe"
+                    : "Poules"}
+                </div>
+                <div className="stat">
+                  <span className="label">Aires:</span>{" "}
+                  {competition._count?.areas ||
+                    competition.numAreas ||
+                    "?"}
+                </div>
+                <div className="stat">
                   <span className="label">Participants:</span>{" "}
                   {competition._count.participants}
                 </div>
@@ -211,6 +227,16 @@ const CompetitionList = ({ onNewCompetition, onSelectCompetition }) => {
                 </div>
               </div>
               <div className="competition-actions">
+                <button
+                  className="api-keys-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setApiKeysFor(competition);
+                  }}
+                  title="Gérer les clés API (intégration FightandCo)"
+                >
+                  Clés API
+                </button>
                 <button
                   className={`visibility-btn ${
                     competition.visibleInSpectator === false
@@ -244,6 +270,13 @@ const CompetitionList = ({ onNewCompetition, onSelectCompetition }) => {
             </div>
           ))}
         </div>
+      )}
+
+      {apiKeysFor && (
+        <ApiKeysPanel
+          competition={apiKeysFor}
+          onClose={() => setApiKeysFor(null)}
+        />
       )}
 
       {neonOnlyCompetitions.length > 0 && (

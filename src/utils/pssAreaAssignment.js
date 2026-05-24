@@ -285,6 +285,43 @@ export const computePssAreaAssignment = (groups, numAreas, defaultK = 3) => {
     }
   }
 
+  // 4b. Passe de reequilibrage : transferer une aire d'un slot moins charge
+  //     vers le slot le plus surcharge tant que ca reduit la charge max.
+  //     Resout les cas type [10 aires/530 combats, 2 aires/37 combats] qui
+  //     devraient etre [11 aires/530, 1 aire/37] pour minimiser max(perArea).
+  if (slots.length > 1) {
+    let rebalancing = true;
+    while (rebalancing) {
+      rebalancing = false;
+      const perArea = slots.map((s, i) =>
+        areaAllocation[i] > 0 ? s.matchEstimate / areaAllocation[i] : 0
+      );
+      const maxIdx = perArea.indexOf(Math.max(...perArea));
+
+      for (let donor = 0; donor < slots.length; donor++) {
+        if (donor === maxIdx || areaAllocation[donor] <= 1) continue;
+        const newMaxRecipient =
+          slots[maxIdx].matchEstimate / (areaAllocation[maxIdx] + 1);
+        const newMaxDonor =
+          slots[donor].matchEstimate / (areaAllocation[donor] - 1);
+        const otherMax = Math.max(
+          ...perArea.filter((_, i) => i !== maxIdx && i !== donor)
+        );
+        const newGlobalMax = Math.max(
+          newMaxRecipient,
+          newMaxDonor,
+          otherMax || 0
+        );
+        if (newGlobalMax < perArea[maxIdx] - 1e-9) {
+          areaAllocation[donor]--;
+          areaAllocation[maxIdx]++;
+          rebalancing = true;
+          break;
+        }
+      }
+    }
+  }
+
   // 5. Assigner les numeros d'aires
   let areaCounter = 1;
   const pssSummary = [];

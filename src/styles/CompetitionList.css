@@ -189,6 +189,22 @@
   background-color: var(--color-gray-500, #6b7280);
 }
 
+.api-keys-btn {
+  background-color: var(--color-primary-500, #3b82f6);
+  color: var(--color-white);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-2-5);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+
+.api-keys-btn:hover {
+  background-color: var(--color-primary-600, #2563eb);
+}
+
 /* ── Section Neon-only ── */
 .neon-only-section {
   margin-top: var(--space-8, 2rem);

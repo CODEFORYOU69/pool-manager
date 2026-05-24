@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useCompetition } from "../context/CompetitionContext";
 import { API_URL } from "../services/dbService";
-import { performDraw } from "../services/dbService";
+import { performDraw, reorderPoolSchedule } from "../services/dbService";
+import ManualAreaAssignment from "./ManualAreaAssignment";
 import {
   validateFightsChoice,
   generateKRegularDraw,
@@ -33,6 +34,7 @@ const PoolConfig = ({
   const [globalK, setGlobalK] = useState(3);
   const [bulkDrawing, setBulkDrawing] = useState(false);
   const [bulkValidating, setBulkValidating] = useState(false);
+  const [showAreaPanel, setShowAreaPanel] = useState(false);
 
   // Per-category state keyed by group id
   const [selectedK, setSelectedK] = useState({});
@@ -379,7 +381,7 @@ const PoolConfig = ({
     const participantsMap = buildParticipantsMap(group);
 
     try {
-      const fights = generateKRegularDraw(fighterIds, k);
+      const fights = generateKRegularDraw(fighterIds, k, participantsMap);
       const tours = organizeFightsIntoTours(fights);
       const summary = summarizeDraw(fights, participantsMap);
 
@@ -481,17 +483,22 @@ const PoolConfig = ({
       const k = selectedK[groupId] || 3;
       const fighterIds = getFighterIds(group);
       const n = fighterIds.length;
-      const validation = validateFightsChoice(n, k);
 
+      // Catégorie trop petite pour un tirage K-régulier : pas d'erreur, juste
+      // un skip silencieux. L'athlète (N=1) ou la paire (N=2) passera direct
+      // en finale via matchGenerator.
+      if (n <= 2) return;
+
+      const validation = validateFightsChoice(n, k);
       if (!validation.valid) {
         errors.push(`${getCategoryName(group)}: K=${k} invalide`);
         return;
       }
 
       try {
-        const fights = generateKRegularDraw(fighterIds, k);
-        const tours = organizeFightsIntoTours(fights);
         const participantsMap = buildParticipantsMap(group);
+        const fights = generateKRegularDraw(fighterIds, k, participantsMap);
+        const tours = organizeFightsIntoTours(fights);
         const summary = summarizeDraw(fights, participantsMap);
 
         newDrawFights[groupId] = fights;
@@ -545,6 +552,20 @@ const PoolConfig = ({
       }
     }
 
+    // Réordonner le planning pour entrelacer les poules par paires sur chaque aire
+    // (mode "Poule Unique + Finales" seulement — sinon chaque catégorie reste à sa place).
+    if (
+      errors.length === 0 &&
+      competitionId &&
+      tournamentConfig?.tournamentType === "poolFinals"
+    ) {
+      try {
+        await reorderPoolSchedule(competitionId);
+      } catch (err) {
+        console.warn("Réorganisation du planning échouée:", err);
+      }
+    }
+
     setBulkValidating(false);
 
     if (errors.length > 0) {
@@ -566,7 +587,10 @@ const PoolConfig = ({
    */
   const countNeedDraw = () => {
     return categories.filter(
-      (g) => !validated[g.id] && !drawFights[g.id]
+      (g) =>
+        !validated[g.id] &&
+        !drawFights[g.id] &&
+        getFighterIds(g).length > 2 // N ≤ 2 → pas de tirage, finale directe
     ).length;
   };
 
@@ -574,7 +598,12 @@ const PoolConfig = ({
    * Check if all categories have been validated.
    */
   const allValidated = () => {
-    return categories.length > 0 && categories.every((g) => validated[g.id]);
+    return (
+      categories.length > 0 &&
+      categories.every(
+        (g) => validated[g.id] || getFighterIds(g).length <= 2
+      )
+    );
   };
 
   /**
@@ -747,6 +776,15 @@ const PoolConfig = ({
             {bulkValidating
               ? "Validation en cours..."
               : `Valider tous les tirages (${countReadyToValidate()})`}
+          </button>
+          <button
+            type="button"
+            className="bulk-btn"
+            onClick={() => setShowAreaPanel(true)}
+            disabled={!allValidated()}
+            title="Glisser-déposer les catégories sur les aires de votre choix"
+          >
+            Affecter les aires manuellement
           </button>
         </div>
 
@@ -1054,6 +1092,18 @@ const PoolConfig = ({
         onSave={handleSaveParticipant}
         participant={editingParticipant}
       />
+
+      {showAreaPanel && (
+        <ManualAreaAssignment
+          groups={categories}
+          numAreas={numAreas}
+          onValidate={() => {
+            setShowAreaPanel(false);
+            alert("Affectation appliquée. Tu peux maintenant aller au planning.");
+          }}
+          onCancel={() => setShowAreaPanel(false)}
+        />
+      )}
     </div>
   );
 };

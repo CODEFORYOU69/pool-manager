@@ -909,76 +909,112 @@ const createBalancedPool = (participants, targetPoolSize) => {
     // Initialiser les poules vides
     const pools = Array.from({ length: numPools }, () => []);
 
-    // Regrouper les participants par ligue
-    const participantsByLigue = {};
+    // Regrouper les participants par CLUB d'abord (priorité 1), puis par ligue.
+    // La phase 1 distribue un participant de chaque CLUB dans chaque poule,
+    // ce qui garantit la séparation même quand la ligue est absente.
+    const participantsByClub = {};
     validParticipants.forEach((participant) => {
-      const ligue = participant.ligue || "Inconnue";
-      if (!participantsByLigue[ligue]) {
-        participantsByLigue[ligue] = [];
+      const club = participant.club || participant.ligue || "Inconnu";
+      if (!participantsByClub[club]) {
+        participantsByClub[club] = [];
       }
-      participantsByLigue[ligue].push(participant);
+      participantsByClub[club].push(participant);
     });
 
-    // Trier les ligues par nombre de participants (de la plus nombreuse à la moins nombreuse)
-    const sortedLigues = Object.keys(participantsByLigue).sort(
-      (a, b) => participantsByLigue[b].length - participantsByLigue[a].length
+    // Trier les clubs par nombre de participants (du plus nombreux au moins)
+    const sortedClubs = Object.keys(participantsByClub).sort(
+      (a, b) => participantsByClub[b].length - participantsByClub[a].length
     );
 
     // Liste pour stocker les participants non encore placés
     let remainingParticipants = [];
 
-    // Première phase: distribuer un participant de chaque ligue dans chaque poule
-    sortedLigues.forEach((ligue) => {
-      const ligueParticipants = [...participantsByLigue[ligue]]; // Copie pour ne pas modifier l'original
+    // Première phase: distribuer les clubs en round-robin sur les poules.
+    // Pour chaque club, on place un participant par poule (en commençant
+    // par la poule qui a le moins de participants du même club/ligue).
+    sortedClubs.forEach((club) => {
+      const clubParticipants = [...participantsByClub[club]];
 
-      // Distribuer un participant par poule
-      pools.forEach((pool, poolIndex) => {
-        if (ligueParticipants.length > 0 && pool.length < targetPoolSize) {
-          const participant = ligueParticipants.shift(); // Retirer le premier participant
-          pool.push(participant.id);
+      clubParticipants.forEach((participant) => {
+        const ligue = participant.ligue || "Inconnue";
+
+        // Trouver la poule la plus appropriée pour ce participant
+        let bestPoolIndex = 0;
+        let bestScore = null; // [sameClub, sameLigue, poolSize]
+
+        pools.forEach((pool, poolIndex) => {
+          if (pool.length >= targetPoolSize) return;
+
+          let sameClubCount = 0;
+          let sameLigueCount = 0;
+          pool.forEach((pid) => {
+            const pp = validParticipants.find((p) => p.id === pid);
+            if (!pp) return;
+            if ((pp.club || pp.ligue || "Inconnu") === club) sameClubCount++;
+            if ((pp.ligue || "Inconnue") === ligue) sameLigueCount++;
+          });
+
+          const score = [sameClubCount, sameLigueCount, pool.length];
+          if (
+            bestScore === null ||
+            score[0] < bestScore[0] ||
+            (score[0] === bestScore[0] && score[1] < bestScore[1]) ||
+            (score[0] === bestScore[0] &&
+              score[1] === bestScore[1] &&
+              score[2] < bestScore[2])
+          ) {
+            bestScore = score;
+            bestPoolIndex = poolIndex;
+          }
+        });
+
+        if (pools[bestPoolIndex].length >= targetPoolSize) {
+          // Toutes les poules pleines → mettre en restant pour la phase 2
+          remainingParticipants.push(participant);
+        } else {
+          pools[bestPoolIndex].push(participant.id);
         }
       });
-
-      // Ajouter les participants restants à la liste des restants
-      remainingParticipants = remainingParticipants.concat(ligueParticipants);
     });
 
     // Deuxième phase: placer les participants restants dans les poules les plus appropriées
+    // Priorité (ordre lexicographique) :
+    //   1. Moins de participants du même CLUB
+    //   2. Moins de participants de la même LIGUE
+    //   3. Poule la moins remplie
     remainingParticipants.forEach((participant) => {
-      // Trouver la poule avec le moins de participants de cette ligue
       const ligue = participant.ligue || "Inconnue";
+      const club = participant.club || "Inconnu";
 
       let bestPoolIndex = 0;
-      let minSameLigue = Infinity;
-      let minPoolSize = Infinity;
+      let bestScore = null; // [sameClub, sameLigue, poolSize]
 
       pools.forEach((pool, poolIndex) => {
-        // Ne considérer que les poules qui ne sont pas pleines
-        if (pool.length < targetPoolSize) {
-          // Compter combien de participants de la même ligue sont déjà dans cette poule
-          const sameLigueCount = pool.reduce((count, participantId) => {
-            const poolParticipant = validParticipants.find(
-              (p) => p.id === participantId
-            );
-            return poolParticipant &&
-              (poolParticipant.ligue || "Inconnue") === ligue
-              ? count + 1
-              : count;
-          }, 0);
+        if (pool.length >= targetPoolSize) return;
 
-          // Meilleure poule = moins de participants de même ligue, puis moins remplie
-          if (
-            sameLigueCount < minSameLigue ||
-            (sameLigueCount === minSameLigue && pool.length < minPoolSize)
-          ) {
-            minSameLigue = sameLigueCount;
-            minPoolSize = pool.length;
-            bestPoolIndex = poolIndex;
-          }
+        let sameClubCount = 0;
+        let sameLigueCount = 0;
+        pool.forEach((pid) => {
+          const pp = validParticipants.find((p) => p.id === pid);
+          if (!pp) return;
+          if ((pp.club || "Inconnu") === club) sameClubCount++;
+          if ((pp.ligue || "Inconnue") === ligue) sameLigueCount++;
+        });
+
+        const score = [sameClubCount, sameLigueCount, pool.length];
+        if (
+          bestScore === null ||
+          score[0] < bestScore[0] ||
+          (score[0] === bestScore[0] && score[1] < bestScore[1]) ||
+          (score[0] === bestScore[0] &&
+            score[1] === bestScore[1] &&
+            score[2] < bestScore[2])
+        ) {
+          bestScore = score;
+          bestPoolIndex = poolIndex;
         }
       });
 
-      // Si toutes les poules sont pleines, créer une nouvelle poule
       if (pools[bestPoolIndex].length >= targetPoolSize) {
         pools.push([participant.id]);
       } else {
@@ -1002,7 +1038,7 @@ const createBalancedPool = (participants, targetPoolSize) => {
       // Aplatir les petites poules
       const participantsToRedistribute = [].concat(...smallPools);
 
-      // MODIFICATION: Améliorer la redistribution pour équilibrer les tailles des poules
+      // Redistribution : priorité moins de même club > moins de même ligue > taille
       participantsToRedistribute.forEach((participantId) => {
         const participant = validParticipants.find(
           (p) => p.id === participantId
@@ -1010,31 +1046,33 @@ const createBalancedPool = (participants, targetPoolSize) => {
         if (!participant) return;
 
         const ligue = participant.ligue || "Inconnue";
+        const club = participant.club || "Inconnu";
 
-        // Trouver la poule avec:
-        // 1) Le moins de participants de la même ligue
-        // 2) La plus petite taille actuelle
         let bestPoolIndex = 0;
-        let minSameLigue = Infinity;
-        let minPoolSize = Infinity;
+        let bestScore = null;
 
         validPools.forEach((pool, poolIndex) => {
-          // Compter les participants de la même ligue dans cette poule
-          const sameLigueCount = pool.reduce((count, id) => {
-            const poolParticipant = validParticipants.find((p) => p.id === id);
-            return poolParticipant &&
-              (poolParticipant.ligue || "Inconnue") === ligue
-              ? count + 1
-              : count;
-          }, 0);
+          let sameClubCount = 0;
+          let sameLigueCount = 0;
+          pool.forEach((id) => {
+            const pp = validParticipants.find((p) => p.id === id);
+            if (!pp) return;
+            if ((pp.club || "Inconnu") === club) sameClubCount++;
+            if ((pp.ligue || "Inconnue") === ligue) sameLigueCount++;
+          });
 
-          // Priorité à l'équilibre des tailles de poules, puis à l'évitement des participants de même ligue
+          // Pour cette redistribution, taille en premier (équilibrage prioritaire)
+          // puis club puis ligue
+          const score = [pool.length, sameClubCount, sameLigueCount];
           if (
-            pool.length < minPoolSize ||
-            (pool.length === minPoolSize && sameLigueCount < minSameLigue)
+            bestScore === null ||
+            score[0] < bestScore[0] ||
+            (score[0] === bestScore[0] && score[1] < bestScore[1]) ||
+            (score[0] === bestScore[0] &&
+              score[1] === bestScore[1] &&
+              score[2] < bestScore[2])
           ) {
-            minPoolSize = pool.length;
-            minSameLigue = sameLigueCount;
+            bestScore = score;
             bestPoolIndex = poolIndex;
           }
         });

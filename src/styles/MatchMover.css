@@ -1,0 +1,144 @@
+.match-mover {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 10px 0;
+}
+
+.match-mover-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.match-mover-row label {
+  font-weight: 600;
+  color: #374151;
+  margin-right: 4px;
+}
+
+.match-mover-row input[type="number"] {
+  width: 110px;
+  padding: 6px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.match-mover-row select {
+  padding: 6px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  min-width: 130px;
+}
+
+.match-mover-row button {
+  padding: 6px 14px;
+  background: #2563eb;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.match-mover-row button:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+.match-mover-info {
+  margin-top: 8px;
+  font-size: 0.85rem;
+  color: #1f2937;
+  background: white;
+  border: 1px solid #e5e7eb;
+  padding: 6px 10px;
+  border-radius: 4px;
+}
+
+.match-mover-info.muted {
+  color: #6b7280;
+  font-style: italic;
+}
+
+.match-mover-info.error {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.badge-blocked {
+  margin-left: 8px;
+  padding: 2px 8px;
+  background: #fee2e2;
+  color: #991b1b;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.match-mover-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.55);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.match-mover-modal {
+  background: white;
+  border-radius: 10px;
+  padding: 24px 28px;
+  width: min(480px, 92vw);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+}
+
+.match-mover-modal h3 {
+  margin: 0 0 14px;
+}
+
+.match-mover-modal p {
+  margin: 6px 0;
+}
+
+.match-mover-modal .muted {
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+
+.match-mover-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.match-mover-actions button {
+  padding: 8px 18px;
+  border: 1px solid #cbd5e1;
+  background: white;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.match-mover-actions button.primary {
+  background: #2563eb;
+  color: white;
+  border-color: #2563eb;
+}
+
+.match-mover-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

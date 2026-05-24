@@ -215,6 +215,39 @@ function normalizeString(str) {
     .replace(/\s+/g, "");
 }
 
+/**
+ * Seuils de puissance pour les coups de poing (ThresholdPunch).
+ * Valeur par catégorie d'âge (normalisée). Les Benjamins/Minimes ont un
+ * seuil bas (1) car frappes plus légères. Les autres catégories : 0 (désactivé).
+ */
+export const PUNCH_THRESHOLDS = {
+  benjamin: 1,
+  benjamins: 1,
+  minime: 1,
+  minimes: 1,
+  cadet: 0,
+  cadets: 0,
+  junior: 0,
+  juniors: 0,
+  espoir: 0,
+  espoirs: 0,
+  senior: 0,
+  seniors: 0,
+  master: 0,
+  masters: 0,
+};
+
+/**
+ * Retourne le ThresholdPunch pour une catégorie d'âge donnée.
+ * @param {string} ageCategory - "Benjamin", "Minime", etc.
+ * @returns {number}
+ */
+export const findPunchThreshold = (ageCategory) => {
+  if (!ageCategory) return 0;
+  const key = normalizeString(ageCategory);
+  return PUNCH_THRESHOLDS[key] ?? 0;
+};
+
 // Fonction pour trouver le seuil de puissance d'une catégorie
 export const findPowerThreshold = (ageCategory, gender, weightCategory) => {
   try {

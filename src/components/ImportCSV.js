@@ -3,6 +3,28 @@ import { fetchCompetitionDetails } from "../services/dbService";
 import "../styles/ImportCSV.css";
 import { parseCSV } from "../utils/csvParser";
 
+const TEMPLATE_CSV =
+  "lastname;firstname;gender;birthdate;weights;region;team\n" +
+  "DUPONT;Lucas;M;17/03/2012;-41kg;Ile-de-France;TKD Paris\n" +
+  "MARTIN;Emma;F;14/05/2013;29kg - 37kg;Occitanie;TKD Toulouse\n" +
+  "DURAND;Nathan;M;02/09/2011;45kg - 51kg;Auvergne-Rhône-Alpes;TKD Lyon\n" +
+  "LEROY;Sofia;F;22/11/2007;-57kg;Provence-Alpes-Côte d'Azur;TKD Marseille\n";
+
+const downloadTemplate = () => {
+  // BOM UTF-8 pour qu'Excel ouvre correctement les accents
+  const blob = new Blob(["﻿" + TEMPLATE_CSV], {
+    type: "text/csv;charset=utf-8;",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "template-athletes.csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+};
+
 const ImportCSV = ({
   setParticipants,
   nextStep,
@@ -194,13 +216,13 @@ const ImportCSV = ({
           style={{ display: "none" }}
           onChange={handleBrowserFileChange}
         />
-        <a
+        <button
+          type="button"
           className="template-link"
-          href={`${process.env.PUBLIC_URL || ""}/template-athletes.csv`}
-          download="template-athletes.csv"
+          onClick={downloadTemplate}
         >
           Télécharger le template CSV
-        </a>
+        </button>
 
         {file && (
           <div className="file-info">

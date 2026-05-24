@@ -4,18 +4,20 @@
  */
 import { API_URL } from "../services/dbService";
 import { findPssInfo } from "./categories";
-import { findPowerThreshold } from "./constants";
+import { findPowerThreshold, findPunchThreshold } from "./constants";
 
 /**
  * En-têtes CSV standard pour le format Daedo.
  */
 const CSV_HEADERS = [
   "MatchId", "Mat", "Number", "Phase", "Status",
-  "HomeName", "HomeCountry", "HomeOrgId", "HomeCompetitorType", "HomeCompetitorId",
-  "AwayName", "AwayCountry", "AwayOrgId", "AwayCompetitorType", "AwayCompetitorId",
+  "HomeName", "HomeCountry", "HomeOrgId", "HomeOrgName",
+  "HomeCompetitorType", "HomeCompetitorId",
+  "AwayName", "AwayCountry", "AwayOrgId", "AwayOrgName",
+  "AwayCompetitorType", "AwayCompetitorId",
   "Rules", "Rounds", "MaxDifference", "MaxPenalties",
   "TimingRound", "TimingRest", "TimingInjury",
-  "ThresholdBody", "ThresholdHead",
+  "ThresholdBody", "ThresholdHead", "ThresholdPunch",
   "GoldenPointEnabled", "GoldenPointTime",
   "HomeOrg", "AwayOrg",
   "Discipline", "Division", "Gender", "WeightCategory",
@@ -83,14 +85,41 @@ export const exportMatchesToDaedoCsv = async (matches, competitionId, groups = [
 
     const rows = [];
     let indexEventId = 100;
-    let homeOrgId = 200;
-    let awayOrgId = 300;
+
+    // Mapping club/ligue → orgId stable. Tous les athlètes d'un même club
+    // partagent le même orgId, qu'ils soient en position A ou B.
+    const orgIdByName = new Map();
+    let nextOrgId = 200;
+    const resolveOrgId = (orgName) => {
+      const normalized = (orgName || "").trim();
+      if (!normalized) return "";
+      if (!orgIdByName.has(normalized)) {
+        orgIdByName.set(normalized, nextOrgId);
+        nextOrgId++;
+      }
+      return orgIdByName.get(normalized);
+    };
+
+    // Helper : extrait l'objet participant pour une position donnée,
+    // qu'il soit dans match.participants[] (ancien format) ou
+    // match.matchParticipants[].participant (format API).
+    const extractParticipant = (match, position) => {
+      if (Array.isArray(match.participants) && match.participants.length >= 2) {
+        const idx = position === "A" ? 0 : 1;
+        return match.participants[idx] || {};
+      }
+      if (Array.isArray(match.matchParticipants)) {
+        const mp = match.matchParticipants.find((m) => m.position === position);
+        if (mp && mp.participant) return mp.participant;
+      }
+      return {};
+    };
 
     for (let index = 0; index < matches.length; index++) {
       const match = matches[index];
 
-      const participantA = match.participants?.[0] || {};
-      const participantB = match.participants?.[1] || {};
+      const participantA = extractParticipant(match, "A");
+      const participantB = extractParticipant(match, "B");
 
       // Récupérer les informations du groupe
       let ageCategory = "Senior";
@@ -114,20 +143,22 @@ export const exportMatchesToDaedoCsv = async (matches, competitionId, groups = [
         } catch (e) { /* ignore */ }
       }
 
-      const homeOrg = participantA.ligue || participantA.club || "";
-      const awayOrg = participantB.ligue || participantB.club || "";
+      // Club/ligue : on privilégie le club, sinon la ligue.
+      const homeOrgName = participantA.club || participantA.ligue || "";
+      const awayOrgName = participantB.club || participantB.ligue || "";
+      const homeOrgId = resolveOrgId(homeOrgName);
+      const awayOrgId = resolveOrgId(awayOrgName);
 
       const homeCompetitorId = (participantA.id || "").replace(/[^0-9]/g, "").substring(0, 4);
       const awayCompetitorId = (participantB.id || "").replace(/[^0-9]/g, "").substring(0, 4);
 
       const thresholdBody = getPssThreshold(ageCategory, gender, weightCategory);
+      const thresholdPunch = findPunchThreshold(ageCategory);
       const formattedId = String(index + 1).padStart(3, "0");
       const mat = match.area?.areaNumber || match.areaNumber || "1";
       const formattedWeightCategory = weightCategory ? `-${weightCategory}`.replace(/--/g, "-") : "";
 
       indexEventId++;
-      homeOrgId++;
-      awayOrgId++;
 
       // Déterminer la phase Daedo selon le type de match
       let daedoPhase = "R16";
@@ -141,13 +172,13 @@ export const exportMatchesToDaedoCsv = async (matches, competitionId, groups = [
       const row = [
         formattedId, mat, match.matchNumber || match.number || index + 1,
         daedoPhase, "SCHEDULED",
-        getParticipantName(match, "A"), "FRA", homeOrgId, "A", homeCompetitorId,
-        getParticipantName(match, "B"), "FRA", awayOrgId, "A", awayCompetitorId,
+        getParticipantName(match, "A"), "FRA", homeOrgId, homeOrgName, "A", homeCompetitorId,
+        getParticipantName(match, "B"), "FRA", awayOrgId, awayOrgName, "A", awayCompetitorId,
         "BESTOF3", "3", "12", "5",
         roundDuration, breakDuration, "60",
-        thresholdBody, "0",
+        thresholdBody, "0", thresholdPunch,
         "False", "60",
-        homeOrg, awayOrg,
+        homeOrgName, awayOrgName,
         "Taekwondo Kyorugi", ageCategory, gender, formattedWeightCategory,
         "ATHLETE", indexEventId, "1", "1",
       ];
@@ -155,8 +186,8 @@ export const exportMatchesToDaedoCsv = async (matches, competitionId, groups = [
       rows.push(row.join(","));
     }
 
-    // Créer et télécharger le fichier CSV
-    const csvString = [CSV_HEADERS.join(","), ...rows].join("\n");
+    // Créer et télécharger le fichier CSV (BOM UTF-8 pour Excel Windows)
+    const csvString = "\uFEFF" + [CSV_HEADERS.join(","), ...rows].join("\n");
     const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");

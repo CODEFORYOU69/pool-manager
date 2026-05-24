@@ -1,0 +1,255 @@
+.api-keys-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.api-keys-modal {
+  background: #fff;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 800px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 24px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.api-keys-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.api-keys-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 1.75rem;
+  cursor: pointer;
+  color: #6b7280;
+  line-height: 1;
+}
+
+.endpoint-info {
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.endpoint-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.endpoint-row label {
+  font-weight: 600;
+  color: #374151;
+}
+
+.endpoint-row code {
+  flex: 1;
+  background: #fff;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  font-family: ui-monospace, monospace;
+  font-size: 0.875rem;
+}
+
+.endpoint-help {
+  margin: 8px 0 0 0;
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+.endpoint-help code {
+  background: #fff;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.copy-btn {
+  background: #e5e7eb;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.copy-btn:hover {
+  background: #d1d5db;
+}
+
+.copy-btn.primary {
+  background: #3b82f6;
+  color: #fff;
+}
+
+.copy-btn.primary:hover {
+  background: #2563eb;
+}
+
+.revealed-key-box {
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.revealed-key-box strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #92400e;
+}
+
+.revealed-key-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.revealed-key-row code {
+  flex: 1;
+  background: #fff;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.95rem;
+  word-break: break-all;
+}
+
+.dismiss-btn {
+  background: transparent;
+  border: 1px solid #92400e;
+  color: #92400e;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.create-key-form {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.create-key-form input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+}
+
+.create-key-form button {
+  background: #10b981;
+  color: #fff;
+  border: none;
+  padding: 8px 18px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.create-key-form button:hover:not(:disabled) {
+  background: #059669;
+}
+
+.create-key-form button:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+.error-msg {
+  background: #fee2e2;
+  color: #991b1b;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+
+.keys-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.keys-table thead th {
+  text-align: left;
+  padding: 8px;
+  background: #f3f4f6;
+  border-bottom: 1px solid #d1d5db;
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  color: #4b5563;
+}
+
+.keys-table tbody td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.keys-table code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+}
+
+.revoke-btn {
+  background: #fee2e2;
+  color: #991b1b;
+  border: none;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.revoke-btn:hover {
+  background: #fecaca;
+}
+
+.empty {
+  color: #9ca3af;
+  font-style: italic;
+  text-align: center;
+  padding: 20px;
+}
+
+.test-badge {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-left: 8px;
+}
+
+.test-badge.ok {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.test-badge.ko {
+  background: #fee2e2;
+  color: #991b1b;
+}

@@ -33,63 +33,95 @@ const shuffle = (array) => {
 };
 
 /**
- * Génère un graphe K-régulier aléatoire.
- * Chaque combattant a exactement K adversaires différents.
+ * Tente une fois un tirage K-régulier aléatoire.
+ * Retourne les paires si valide, sinon null.
+ */
+const attemptKRegularDraw = (fighterIds, k) => {
+  const stubs = [];
+  for (const id of fighterIds) {
+    for (let i = 0; i < k; i++) stubs.push(id);
+  }
+  shuffle(stubs);
+
+  const pairs = [];
+  const edgeSet = new Set();
+
+  for (let i = 0; i < stubs.length; i += 2) {
+    const a = stubs[i];
+    const b = stubs[i + 1];
+    if (a === b) return null;
+    const edgeKey = [a, b].sort().join("|");
+    if (edgeSet.has(edgeKey)) return null;
+    edgeSet.add(edgeKey);
+    pairs.push({ fighterA: a, fighterB: b });
+  }
+  return pairs;
+};
+
+/**
+ * Score un tirage selon la règle :
+ *   coût = (combats même CLUB) × 100 + (combats même LIGUE) × 1
+ * Plus c'est bas, mieux c'est.
+ */
+const scoreDraw = (pairs, participantsMap) => {
+  let clubCollisions = 0;
+  let ligueCollisions = 0;
+  for (const { fighterA, fighterB } of pairs) {
+    const a = participantsMap?.[fighterA] || {};
+    const b = participantsMap?.[fighterB] || {};
+    if (a.club && b.club && a.club === b.club) clubCollisions++;
+    else if (a.ligue && b.ligue && a.ligue === b.ligue) ligueCollisions++;
+  }
+  return { score: clubCollisions * 100 + ligueCollisions, clubCollisions, ligueCollisions };
+};
+
+/**
+ * Génère un graphe K-régulier aléatoire en minimisant les combats
+ * "même club" puis "même ligue". Tente N fois et retient le meilleur.
  *
  * @param {string[]} fighterIds - IDs des combattants
  * @param {number} k - combats par personne
+ * @param {Object} [participantsMap] - Map id → { club, ligue } pour scoring
  * @returns {Array<{fighterA: string, fighterB: string}>} Liste de paires (combats)
  */
-export const generateKRegularDraw = (fighterIds, k) => {
+export const generateKRegularDraw = (fighterIds, k, participantsMap = null) => {
   const n = fighterIds.length;
   const validation = validateFightsChoice(n, k);
   if (!validation.valid) {
     throw new Error(validation.reason || "Combinaison N×K invalide");
   }
 
-  const maxAttempts = 100;
+  const maxAttempts = participantsMap ? 200 : 100;
+  let bestPairs = null;
+  let bestScore = Infinity;
+  let bestStats = null;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    // 1. Créer une liste de stubs : chaque combattant apparaît K fois
-    const stubs = [];
-    for (const id of fighterIds) {
-      for (let i = 0; i < k; i++) {
-        stubs.push(id);
-      }
-    }
+    const pairs = attemptKRegularDraw(fighterIds, k);
+    if (!pairs) continue;
 
-    // 2. Mélanger aléatoirement
-    shuffle(stubs);
-
-    // 3. Former des paires consécutives
-    const pairs = [];
-    let valid = true;
-    const edgeSet = new Set();
-
-    for (let i = 0; i < stubs.length; i += 2) {
-      const a = stubs[i];
-      const b = stubs[i + 1];
-
-      // 4. Valider : pas de self-loop
-      if (a === b) {
-        valid = false;
-        break;
-      }
-
-      // Pas de multi-edge (A vs B apparaît 2 fois)
-      const edgeKey = [a, b].sort().join("|");
-      if (edgeSet.has(edgeKey)) {
-        valid = false;
-        break;
-      }
-
-      edgeSet.add(edgeKey);
-      pairs.push({ fighterA: a, fighterB: b });
-    }
-
-    if (valid) {
+    if (!participantsMap) {
+      // Pas de scoring : on garde le premier valide (ancien comportement)
       return pairs;
     }
+
+    const { score, clubCollisions, ligueCollisions } = scoreDraw(pairs, participantsMap);
+    if (score < bestScore) {
+      bestScore = score;
+      bestPairs = pairs;
+      bestStats = { clubCollisions, ligueCollisions };
+      // Tirage parfait, on s'arrête
+      if (score === 0) break;
+    }
+  }
+
+  if (bestPairs) {
+    if (bestStats && (bestStats.clubCollisions > 0 || bestStats.ligueCollisions > 0)) {
+      console.log(
+        `[Tirage] meilleur trouvé : ${bestStats.clubCollisions} combats même club, ${bestStats.ligueCollisions} combats même ligue (forcés)`
+      );
+    }
+    return bestPairs;
   }
 
   throw new Error(`Impossible de générer un tirage valide après ${maxAttempts} tentatives`);

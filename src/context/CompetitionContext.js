@@ -24,6 +24,7 @@ export const CompetitionProvider = ({ children }) => {
         breakFrequency: config.breakFrequency,
         poolSize: config.poolSize,
         numAreas: config.numAreas || config.numberOfAreas,
+        tournamentType: config.tournamentType,
       };
 
       console.log("Données de la compétition à sauvegarder:", competitionData);

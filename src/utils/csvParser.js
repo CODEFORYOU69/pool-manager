@@ -53,6 +53,7 @@ export const parseCSV = (csvContent) => {
     header: true,
     skipEmptyLines: "greedy",
     transformHeader: (header) => normalizeHeader(header),
+    transform: (value) => value.trim(),
   });
 
   // Vérifier les erreurs de parsing
